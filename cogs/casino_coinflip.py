@@ -29,7 +29,7 @@ class CoinflipCog(commands.Cog):
 
         # Get server-specific limits
         min_bet = get_server_setting(interaction.guild.id, 'coinflip_min_bet', 5)
-        max_bet = get_server_setting(interaction.guild.id, 'coinflip_max_bet', 1000)
+        max_bet = get_server_setting(interaction.guild.id, 'coinflip_max_bet', 200)
 
         return await casino_base.validate_game_start(
             interaction, "coinflip", bet, min_bet, max_bet

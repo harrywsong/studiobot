@@ -1,4 +1,4 @@
-# cogs/welcomegoodbye.py - Updated for multi-server support
+# cogs/welcomegoodbye.py - Updated for multi-server support with forest theme
 import discord
 from discord.ext import commands
 from discord import File
@@ -85,7 +85,7 @@ class WelcomeCog(commands.Cog):
 
             font = FONT
             welcome_message_format = get_server_setting(guild_id, 'welcome_message_format',
-                                                        '환영합니다, {username}님!')
+                                                        '반짝이는 등불 따라 숲속에 들어왔군요, {username}님! 모험의 시작을 함께해요')
             text = welcome_message_format.format(username=member.display_name)
 
             bbox = draw.textbbox((0, 0), text, font=font)
@@ -163,9 +163,9 @@ class WelcomeCog(commands.Cog):
             file = File(card_buf, filename="welcome.png")
 
         try:
-            embed_title_format = get_server_setting(guild_id, 'welcome_embed_title', '{username}님, 환영합니다!')
+            embed_title_format = get_server_setting(guild_id, 'welcome_embed_title', '🌟 숲속 모험가 {username}님, 환영합니다!')
             embed_description = get_server_setting(guild_id, 'welcome_embed_description',
-                                                   '서버에 오신 것을 환영합니다! 함께 멋진 활동을 시작해요.')
+                                                   '반짝이는 등불을 따라 이곳까지 오셨군요! 함께 멋진 모험을 시작해봐요 ✨')
             embed_color = get_server_setting(guild_id, 'welcome_embed_color', 'green')
 
             if embed_color == 'green':
@@ -190,11 +190,11 @@ class WelcomeCog(commands.Cog):
 
             rules_channel_id = get_channel_id(guild_id, 'rules_channel')
             if rules_channel_id:
-                embed.add_field(name="・서버 규칙을 꼭 확인해 주세요", value=f"<#{rules_channel_id}>", inline=False)
+                embed.add_field(name="📜 https://discord.com/channels/1059211805567746090/1207972911420538900을 꼭 확인해 주세요", value=f"<#{rules_channel_id}>", inline=False)
 
             if file:
                 embed.set_image(url="attachment://welcome.png")
-            embed.set_footer(text="숯검댕이 • 환영 메시지", icon_url=self.bot.user.display_avatar.url)
+            embed.set_footer(text="스튜디오 • 환영 메시지", icon_url=self.bot.user.display_avatar.url)
             embed.set_author(name=member.display_name, icon_url=member.display_avatar.url)
             self.logger.debug(f"📝 [welcome] {member.display_name}님을 위한 임베드 빌드 완료.", extra={'guild_id': guild_id})
         except Exception as e:
@@ -211,7 +211,7 @@ class WelcomeCog(commands.Cog):
             self.logger.info(f"🔧 [welcome] {member.display_name}님을 위한 환영 메시지 전송 중…", extra={'guild_id': guild_id})
 
             mention_user = get_server_setting(guild_id, 'mention_on_welcome', True)
-            content = member.mention if mention_user else None
+            content = f"{member.mention}님 반짝이는 등불 따라 숲속에 들어왔군요! 모험의 시작을 함께해요" if mention_user else None
 
             await ch.send(content=content, embed=embed, file=file,
                           allowed_mentions=discord.AllowedMentions(users=mention_user))
@@ -260,9 +260,9 @@ class WelcomeCog(commands.Cog):
             return
 
         try:
-            goodbye_title = get_server_setting(guild_id, 'goodbye_title', '회원 퇴장')
+            goodbye_title = get_server_setting(guild_id, 'goodbye_title', '🍃 모험가의 떠남')
             goodbye_description_format = get_server_setting(guild_id, 'goodbye_description',
-                                                            '👋 **{username}**님이 클랜을 떠났습니다.')
+                                                            '🌙 **{username}**님이 다른 모험을 찾아 숲을 떠나셨습니다. 행운을 빕니다!')
             goodbye_color = get_server_setting(guild_id, 'goodbye_color', 'dark_grey')
 
             if goodbye_color == 'dark_grey':
@@ -287,7 +287,7 @@ class WelcomeCog(commands.Cog):
             if show_avatar:
                 embed.set_thumbnail(url=member.display_avatar.url)
 
-            embed.set_footer(text="숯검댕이 • 작별 인사", icon_url=self.bot.user.display_avatar.url)
+            embed.set_footer(text="스튜디오 • 작별 인사", icon_url=self.bot.user.display_avatar.url)
 
             self.logger.info(f"👋 {member.display_name}님이 서버를 떠났습니다. 작별 메시지 전송 중…", extra={'guild_id': guild_id})
             await ch.send(embed=embed)

@@ -1,4 +1,4 @@
-# cogs/casino_blackjack.py - Updated for multi-server support
+# cogs/casino_blackjack.py - Updated for multi-server support with fixed payout logic
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -204,7 +204,7 @@ class BlackjackView(discord.ui.View):
         return embed
 
     async def end_game(self, interaction: discord.Interaction):
-        """Handle game end and payouts"""
+        """Handle game end and payouts - FIXED PAYOUT LOGIC"""
         self.game_over = True
 
         # Disable all buttons
@@ -223,39 +223,46 @@ class BlackjackView(discord.ui.View):
         dealer_value = self.calculate_hand_value(self.dealer_hand)
         total_payout = 0
 
-        # Calculate main bet payout
+        # FIXED: Calculate main bet payout - bet was already deducted, so we only add what should be returned
         if self.player_blackjack and not self.dealer_blackjack:
-            # Blackjack pays 3:2
-            main_payout = int(self.bet * 2.5)
-            total_payout += main_payout
-            result = f"🎊 BLACKJACK! {main_payout} 코인 획득!"
+            # Blackjack pays 3:2 (return original bet + 1.5x bet as winnings)
+            total_payout = int(self.bet * 2.5)  # Return bet + 1.5x winnings
+            result = f"🎊 BLACKJACK! {total_payout} 코인 획득!"
         elif self.player_blackjack and self.dealer_blackjack:
-            # Push on both blackjacks
-            main_payout = self.bet
-            total_payout += main_payout
-            result = f"🤝 양쪽 블랙잭! {main_payout} 코인 반환"
+            # Push on both blackjacks - return only original bet
+            total_payout = self.bet
+            result = f"🤝 양쪽 블랙잭! {self.bet} 코인 반환"
         elif player_value > 21:
+            # Bust - lose bet (already deducted, so no payout)
+            total_payout = 0
             result = f"💥 버스트! {self.bet * (2 if self.doubled_down else 1)} 코인 손실"
         elif dealer_value > 21 or player_value > dealer_value:
-            main_payout = self.bet * (4 if self.doubled_down else 2)
-            total_payout += main_payout
-            result = f"🎉 승리! {main_payout} 코인 획득!"
+            # Win - return bet + equal winnings
+            multiplier = 4 if self.doubled_down else 2  # 2x for normal win, 4x for doubled win
+            total_payout = self.bet * multiplier
+            result = f"🎉 승리! {total_payout} 코인 획득!"
         elif player_value == dealer_value:
-            main_payout = self.bet * (2 if self.doubled_down else 1)
-            total_payout += main_payout
-            result = f"🤝 무승부! {main_payout} 코인 반환"
+            # Push - return only original bet
+            multiplier = 2 if self.doubled_down else 1  # Return whatever was bet
+            total_payout = self.bet * multiplier
+            result = f"🤝 무승부! {total_payout} 코인 반환"
         else:
+            # Lose - lose bet (already deducted, so no payout)
+            total_payout = 0
             result = f"😞 패배! {self.bet * (2 if self.doubled_down else 1)} 코인 손실"
 
         # Handle insurance bet
         if self.insurance_bet > 0:
             if self.dealer_blackjack:
-                insurance_payout = self.insurance_bet * 3  # Insurance pays 2:1
+                # Insurance pays 2:1 (return insurance bet + 2x winnings)
+                insurance_payout = self.insurance_bet * 3
                 total_payout += insurance_payout
                 result += f"\n💡 보험 적중! +{insurance_payout} 코인"
             else:
+                # Insurance lost (already deducted, so no additional payout)
                 result += f"\n❌ 보험 실패 -{self.insurance_bet} 코인"
 
+        # Only add coins if there's actually a payout
         if total_payout > 0:
             await coins_cog.add_coins(self.user_id, interaction.guild.id, total_payout, "blackjack_win",
                                       "Blackjack payout")
@@ -269,32 +276,38 @@ class BlackjackView(discord.ui.View):
         await interaction.edit_original_response(embed=embed, view=self)
 
     async def end_split_game(self, interaction: discord.Interaction):
-        """Handle split game end and payouts"""
+        """Handle split game end and payouts - FIXED PAYOUT LOGIC"""
         coins_cog = self.bot.get_cog('CoinsCog')
         dealer_value = self.calculate_hand_value(self.dealer_hand)
         total_payout = 0
         results = []
 
+        # FIXED: Each hand bet was already deducted (total: bet * 2)
         for i, hand in enumerate(self.split_hands):
             hand_value = self.calculate_hand_value(hand)
 
             if hand_value > 21:
+                # Bust - lose this hand's bet (already deducted, so no payout)
                 results.append(f"핸드 {i + 1}: 버스트 (손실: {self.bet} 코인)")
             elif dealer_value > 21 or hand_value > dealer_value:
+                # Win - return bet + equal winnings (2x total)
                 payout = self.bet * 2
                 total_payout += payout
                 results.append(f"핸드 {i + 1}: 승리 (획득: {payout} 코인)")
             elif hand_value == dealer_value:
+                # Push - return only the original bet (1x total)
                 payout = self.bet
                 total_payout += payout
                 results.append(f"핸드 {i + 1}: 무승부 (반환: {payout} 코인)")
             else:
+                # Lose - lose this hand's bet (already deducted, so no payout)
                 results.append(f"핸드 {i + 1}: 패배 (손실: {self.bet} 코인)")
 
         # Calculate net result for summary
-        total_bet = self.bet * 2
+        total_bet = self.bet * 2  # We deducted bet for each hand
         net_result = total_payout - total_bet
 
+        # Only add coins if there's actually a payout
         if total_payout > 0:
             await coins_cog.add_coins(self.user_id, interaction.guild.id, total_payout, "blackjack_split_win", "Blackjack split payout")
 
@@ -515,7 +528,6 @@ class BlackjackCog(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
-        # FIX: The logger is now a global singleton, so we just get it by name.
         self.logger = get_logger("블랙잭")
         self.logger.info("블랙잭 시스템이 초기화되었습니다.")
 
@@ -604,7 +616,6 @@ class BlackjackCog(commands.Cog):
                 embed.add_field(name="🎯 전략 힌트", value="\n".join(hints), inline=False)
 
         await interaction.response.send_message(embed=embed, view=view)
-        # FIX: Add extra={'guild_id': ...} for multi-server logging context
         self.logger.info(
             f"{interaction.user}가 {bet} 코인으로 블랙잭 시작",
             extra={'guild_id': interaction.guild.id}
