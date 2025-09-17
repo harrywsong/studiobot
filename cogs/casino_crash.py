@@ -1,4 +1,4 @@
-# cogs/casino_crash.py - Updated for multi-server support
+# cogs/casino_crash.py - Fixed minimum cashout enforcement
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -36,6 +36,7 @@ else:
     # Fallback to default font if Korean font not available
     font_prop = None
 
+
 class CrashGame:
     """Shared crash game instance for multiple players"""
 
@@ -49,7 +50,8 @@ class CrashGame:
         self.game_over = False
         self.start_time = None
         self.history: list[float] = [1.0]  # Track multiplier history for chart
-        self.min_cashout_multiplier = 1.0  # New: Minimum multiplier to cash out
+        # FIXED: Initialize with server setting immediately
+        self.min_cashout_multiplier = get_server_setting(guild_id, 'crash_min_cashout_multiplier', 1.5)
 
     def add_player(self, user_id: int, bet: int):
         """Add a player to the game"""
@@ -60,17 +62,24 @@ class CrashGame:
         }
 
     def cash_out_player(self, user_id: int) -> bool:
-        """Cash out a player"""
-        if user_id in self.players and not self.players[user_id]['cashed_out'] and not self.game_over:
-            # NEW CHECK: Ensure minimum cashout multiplier is met
-            if self.current_multiplier >= self.min_cashout_multiplier:
-                self.players[user_id]['cashed_out'] = True
-                self.players[user_id]['cash_out_multiplier'] = self.current_multiplier
-                return True
-            else:
-                # Player tried to cash out too early
-                return False
-        return False
+        """Cash out a player - FIXED: Properly enforce minimum cashout"""
+        if user_id not in self.players:
+            return False
+
+        if self.players[user_id]['cashed_out']:
+            return False
+
+        if self.game_over:
+            return False
+
+        # FIXED: Strict enforcement of minimum cashout multiplier
+        if self.current_multiplier < self.min_cashout_multiplier:
+            return False
+
+        # All checks passed - allow cashout
+        self.players[user_id]['cashed_out'] = True
+        self.players[user_id]['cash_out_multiplier'] = self.current_multiplier
+        return True
 
     def get_active_players_count(self) -> int:
         """Get count of players who haven't cashed out"""
@@ -157,12 +166,6 @@ class JoinBetModal(discord.ui.Modal, title="크래시 게임 참가"):
             # Add player to the game
             self.game.add_player(interaction.user.id, bet)
 
-            # --- NEW: Set the minimum cashout multiplier when a player joins ---
-            # Get server setting for minimum cashout multiplier, default to 1.1 if not set
-            min_cashout_setting = get_server_setting(interaction.guild.id, 'crash_min_cashout_multiplier', 1.5)
-            self.game.min_cashout_multiplier = max(self.game.min_cashout_multiplier, min_cashout_setting)
-            # ------------------------------------------------------------------
-
             # Update the game message
             try:
                 embed = await self.view.create_embed()
@@ -227,6 +230,7 @@ class JoinBetModal(discord.ui.Modal, title="크래시 게임 참가"):
         except:
             pass
 
+
 class CrashView(discord.ui.View):
     """Interactive crash game view for multiple players - Multi-server aware"""
 
@@ -280,16 +284,15 @@ class CrashView(discord.ui.View):
                     if hist_multiplier <= player_data['cash_out_multiplier']:
                         cashout_time_point = i
                     else:
-                        break # Once multiplier is exceeded, stop.
+                        break  # Once multiplier is exceeded, stop.
 
                 plt.scatter(cashout_time_point, player_data['cash_out_multiplier'],
                             color='green', s=100, zorder=5, alpha=0.8)
 
-        # --- NEW: Visually indicate the minimum cashout multiplier ---
-        if self.game.game_started and not self.game.game_over:
+        # FIXED: Always show the minimum cashout line when game is active
+        if self.game.game_started or not self.game.game_over:
             plt.axhline(y=self.game.min_cashout_multiplier, color='gold', linestyle=':',
                         linewidth=2, alpha=0.8, label=f'최소 캐시아웃: {self.game.min_cashout_multiplier:.2f}x')
-        # ----------------------------------------------------------
 
         plt.xlabel('시간 (초)', fontproperties=font_prop if font_prop else None)
         plt.ylabel('배수', fontproperties=font_prop if font_prop else None)
@@ -314,7 +317,6 @@ class CrashView(discord.ui.View):
             buf = self.draw_chart()
             return discord.File(buf, filename="crash_chart.png")
         except Exception as e:
-            # FIX: Log chart creation error with guild_id
             self.cog.logger.error(f"차트 생성 실패 for guild {self.game.guild_id}: {e}")
             return None
 
@@ -356,11 +358,11 @@ class CrashView(discord.ui.View):
                         status = "💥 추락"
                         player_info.append(f"{username}: {status} (-{player_data['bet']:,})")
                     else:
-                        # NEW: Indicate if minimum cashout multiplier has been met
+                        # FIXED: Clear indication of cashout availability
                         can_cashout_now = self.game.current_multiplier >= self.game.min_cashout_multiplier
-                        cashout_status = " (캐시아웃 가능!)" if can_cashout_now else ""
+                        cashout_status = " ✅ (캐시아웃 가능!)" if can_cashout_now else f" ⏳ ({self.game.min_cashout_multiplier:.2f}x까지 대기)"
                         player_info.append(f"{username}: 🎲 대기중 ({player_data['bet']:,}){cashout_status}")
-                except Exception: # Catch potential errors during user fetching or processing
+                except Exception:  # Catch potential errors during user fetching or processing
                     continue
 
             if player_info:
@@ -374,7 +376,7 @@ class CrashView(discord.ui.View):
             embed.add_field(
                 name="📋 게임 규칙",
                 value="• '게임 참가' 버튼을 눌러 베팅하세요.\n"
-                      f"• 로켓이 **{self.game.min_cashout_multiplier:.2f}x** 배수 이상에 도달하기 전에 캐시아웃하여 승리하세요!\n" # Updated rule description
+                      f"• 로켓이 **{self.game.min_cashout_multiplier:.2f}x** 배수 이상에 도달한 후 캐시아웃하여 승리하세요!\n"
                       "• '지금 시작'을 누르거나 30초를 기다리면 게임이 시작됩니다.",
                 inline=False
             )
@@ -470,15 +472,16 @@ class CrashView(discord.ui.View):
             await interaction.followup.send("⚠️ 이미 캐시아웃했습니다!", ephemeral=True)
             return
 
-        # --- NEW CHECK: Check if minimum cashout multiplier has been met ---
+        # FIXED: Clear error message for minimum cashout requirement
         if self.game.current_multiplier < self.game.min_cashout_multiplier:
             await interaction.followup.send(
-                f"⚠️ 최소 캐시아웃 배수인 **{self.game.min_cashout_multiplier:.2f}x**에 도달해야 캐시아웃할 수 있습니다.",
+                f"⚠️ 최소 캐시아웃 배수인 **{self.game.min_cashout_multiplier:.2f}x**에 도달해야 캐시아웃할 수 있습니다.\n"
+                f"현재 배수: **{self.game.current_multiplier:.2f}x**",
                 ephemeral=True
             )
             return
-        # -----------------------------------------------------------------
 
+        # Attempt cashout
         if self.game.cash_out_player(interaction.user.id):
             player_data = self.game.players[interaction.user.id]
             payout = int(player_data['bet'] * player_data['cash_out_multiplier'])
@@ -493,8 +496,6 @@ class CrashView(discord.ui.View):
                 ephemeral=False
             )
         else:
-            # This `else` case would now primarily catch if the game ended between the initial check and cash_out_player call,
-            # or if cash_out_player returned False for other (now unlikely) reasons.
             await interaction.followup.send("⚠️ 캐시아웃에 실패했습니다. 게임이 이미 종료되었거나 최소 배수에 도달하지 못했을 수 있습니다.", ephemeral=True)
 
 
@@ -503,7 +504,6 @@ class CrashCog(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
-        # FIX: The logger is now a global singleton, so we just get it by name.
         self.logger = get_logger("크래시")
         # Per-server game tracking
         self.server_games: Dict[int, CrashGame] = {}  # guild_id -> current_game
@@ -606,13 +606,11 @@ class CrashCog(commands.Cog):
 
             try:
                 await asyncio.wait_for(start_event.wait(), timeout=30.0)
-                # FIX: Log game start with guild_id
                 self.logger.info(f"'지금 시작' 버튼으로 게임 시작 for guild {guild_id}.", extra={'guild_id': guild_id})
             except asyncio.TimeoutError:
-                # FIX: Log game start with guild_id
                 self.logger.info(f"30초 타임아웃으로 게임 시작 for guild {guild_id}.", extra={'guild_id': guild_id})
 
-            # 📌 Send pre-crash notice to the global log channel
+            # 🔌 Send pre-crash notice to the global log channel
             log_channel = self.bot.get_channel(1417714557295792229)
             if log_channel:
                 await log_channel.send(
@@ -621,7 +619,6 @@ class CrashCog(commands.Cog):
                 )
 
         except Exception as e:
-            # FIX: Log exception with guild_id
             self.logger.error(f"Game lifecycle error for guild {guild_id}: {e}", exc_info=True,
                               extra={'guild_id': guild_id})
             return
@@ -645,7 +642,6 @@ class CrashCog(commands.Cog):
             chart_file = await game_view.create_chart()
             await game_message.edit(embed=embed, view=game_view, attachments=[chart_file] if chart_file else [])
         except (discord.NotFound, discord.HTTPException) as e:
-            # FIX: Log error with guild_id
             self.logger.error(f"게임 시작 메시지 업데이트 실패 for guild {guild_id}: {e}", exc_info=True,
                               extra={'guild_id': guild_id})
 
@@ -658,7 +654,6 @@ class CrashCog(commands.Cog):
         game_view = self.server_views.get(guild_id)
 
         if not all([current_game, game_message, game_view]):
-            # FIX: Log error with guild_id
             self.logger.error(f"run_crash_game: 필수 컴포넌트 누락 for guild {guild_id}", extra={'guild_id': guild_id})
             return
 
@@ -678,8 +673,8 @@ class CrashCog(commands.Cog):
                 chart_file = await game_view.create_chart()
                 await game_message.edit(embed=embed, view=game_view, attachments=[chart_file] if chart_file else [])
             except (discord.NotFound, discord.HTTPException) as e:
-                # FIX: Log error with guild_id
-                self.logger.error(f"게임 플레이 중 메시지 업데이트 실패 for guild {guild_id}: {e}", exc_info=True, extra={'guild_id': guild_id})
+                self.logger.error(f"게임 플레이 중 메시지 업데이트 실패 for guild {guild_id}: {e}", exc_info=True,
+                                  extra={'guild_id': guild_id})
                 # Optionally break or handle if message is permanently gone
                 break
 
@@ -704,11 +699,11 @@ class CrashCog(commands.Cog):
                 chart_file = await game_view.create_chart()
                 await game_message.edit(embed=embed, view=game_view, attachments=[chart_file] if chart_file else [])
             except (discord.NotFound, discord.HTTPException) as e:
-                # FIX: Log error with guild_id
-                self.logger.error(f"게임 종료 중 메시지 업데이트 실패 for guild {guild_id}: {e}", exc_info=True, extra={'guild_id': guild_id})
+                self.logger.error(f"게임 종료 중 메시지 업데이트 실패 for guild {guild_id}: {e}", exc_info=True,
+                                  extra={'guild_id': guild_id})
 
-        # FIX: Log game end with guild_id
-        self.logger.info(f"크래시 게임 종료 for guild {guild_id}. 추락 지점: {current_game.crash_point:.2f}x", extra={'guild_id': guild_id})
+        self.logger.info(f"크래시 게임 종료 for guild {guild_id}. 추락 지점: {current_game.crash_point:.2f}x",
+                         extra={'guild_id': guild_id})
         self.cleanup_server_game(guild_id)
 
     def cleanup_server_game(self, guild_id: int):
@@ -743,8 +738,8 @@ class CrashCog(commands.Cog):
             return
 
         coins_cog = self.bot.get_cog('CoinsCog')
-        # FIX: Pass guild_id to remove_coins for multi-server support
-        if not await coins_cog.remove_coins(interaction.user.id, interaction.guild.id, bet, "crash_bet", "Crash game bet"):
+        if not await coins_cog.remove_coins(interaction.user.id, interaction.guild.id, bet, "crash_bet",
+                                            "Crash game bet"):
             await interaction.response.send_message("베팅 처리 실패!", ephemeral=True)
             return
 
@@ -761,7 +756,6 @@ class CrashCog(commands.Cog):
         await interaction.response.send_message(embed=embed, view=self.server_views[guild_id], file=chart_file)
         self.server_messages[guild_id] = await interaction.original_response()
 
-        # FIX: Log game start with guild_id
         self.logger.info(f"{interaction.user}가 {bet} 코인으로 크래시 게임 시작", extra={'guild_id': guild_id})
         await self.announce_crash_point(guild_id, crash_point)
 
