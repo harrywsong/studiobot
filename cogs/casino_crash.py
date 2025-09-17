@@ -36,7 +36,6 @@ else:
     # Fallback to default font if Korean font not available
     font_prop = None
 
-
 class CrashGame:
     """Shared crash game instance for multiple players"""
 
@@ -50,6 +49,7 @@ class CrashGame:
         self.game_over = False
         self.start_time = None
         self.history: list[float] = [1.0]  # Track multiplier history for chart
+        self.min_cashout_multiplier = 1.0  # New: Minimum multiplier to cash out
 
     def add_player(self, user_id: int, bet: int):
         """Add a player to the game"""
@@ -62,9 +62,14 @@ class CrashGame:
     def cash_out_player(self, user_id: int) -> bool:
         """Cash out a player"""
         if user_id in self.players and not self.players[user_id]['cashed_out'] and not self.game_over:
-            self.players[user_id]['cashed_out'] = True
-            self.players[user_id]['cash_out_multiplier'] = self.current_multiplier
-            return True
+            # NEW CHECK: Ensure minimum cashout multiplier is met
+            if self.current_multiplier >= self.min_cashout_multiplier:
+                self.players[user_id]['cashed_out'] = True
+                self.players[user_id]['cash_out_multiplier'] = self.current_multiplier
+                return True
+            else:
+                # Player tried to cash out too early
+                return False
         return False
 
     def get_active_players_count(self) -> int:
@@ -151,6 +156,12 @@ class JoinBetModal(discord.ui.Modal, title="크래시 게임 참가"):
 
             # Add player to the game
             self.game.add_player(interaction.user.id, bet)
+
+            # --- NEW: Set the minimum cashout multiplier when a player joins ---
+            # Get server setting for minimum cashout multiplier, default to 1.1 if not set
+            min_cashout_setting = get_server_setting(interaction.guild.id, 'crash_min_cashout_multiplier', 1.5)
+            self.game.min_cashout_multiplier = max(self.game.min_cashout_multiplier, min_cashout_setting)
+            # ------------------------------------------------------------------
 
             # Update the game message
             try:
@@ -274,6 +285,12 @@ class CrashView(discord.ui.View):
                 plt.scatter(cashout_time_point, player_data['cash_out_multiplier'],
                             color='green', s=100, zorder=5, alpha=0.8)
 
+        # --- NEW: Visually indicate the minimum cashout multiplier ---
+        if self.game.game_started and not self.game.game_over:
+            plt.axhline(y=self.game.min_cashout_multiplier, color='gold', linestyle=':',
+                        linewidth=2, alpha=0.8, label=f'최소 캐시아웃: {self.game.min_cashout_multiplier:.2f}x')
+        # ----------------------------------------------------------
+
         plt.xlabel('시간 (초)', fontproperties=font_prop if font_prop else None)
         plt.ylabel('배수', fontproperties=font_prop if font_prop else None)
         plt.title(f'크래시 게임 진행 상황 - 현재: {self.game.current_multiplier:.2f}x',
@@ -339,7 +356,10 @@ class CrashView(discord.ui.View):
                         status = "💥 추락"
                         player_info.append(f"{username}: {status} (-{player_data['bet']:,})")
                     else:
-                        player_info.append(f"{username}: 🎲 대기중 ({player_data['bet']:,})")
+                        # NEW: Indicate if minimum cashout multiplier has been met
+                        can_cashout_now = self.game.current_multiplier >= self.game.min_cashout_multiplier
+                        cashout_status = " (캐시아웃 가능!)" if can_cashout_now else ""
+                        player_info.append(f"{username}: 🎲 대기중 ({player_data['bet']:,}){cashout_status}")
                 except Exception: # Catch potential errors during user fetching or processing
                     continue
 
@@ -353,7 +373,9 @@ class CrashView(discord.ui.View):
         if not self.game.game_started:
             embed.add_field(
                 name="📋 게임 규칙",
-                value="• '게임 참가' 버튼을 눌러 베팅하세요.\n• 로켓이 추락하기 전에 캐시아웃하여 승리하세요!\n• '지금 시작'을 누르거나 30초를 기다리면 게임이 시작됩니다.",
+                value="• '게임 참가' 버튼을 눌러 베팅하세요.\n"
+                      f"• 로켓이 **{self.game.min_cashout_multiplier:.2f}x** 배수 이상에 도달하기 전에 캐시아웃하여 승리하세요!\n" # Updated rule description
+                      "• '지금 시작'을 누르거나 30초를 기다리면 게임이 시작됩니다.",
                 inline=False
             )
 
@@ -448,6 +470,15 @@ class CrashView(discord.ui.View):
             await interaction.followup.send("⚠️ 이미 캐시아웃했습니다!", ephemeral=True)
             return
 
+        # --- NEW CHECK: Check if minimum cashout multiplier has been met ---
+        if self.game.current_multiplier < self.game.min_cashout_multiplier:
+            await interaction.followup.send(
+                f"⚠️ 최소 캐시아웃 배수인 **{self.game.min_cashout_multiplier:.2f}x**에 도달해야 캐시아웃할 수 있습니다.",
+                ephemeral=True
+            )
+            return
+        # -----------------------------------------------------------------
+
         if self.game.cash_out_player(interaction.user.id):
             player_data = self.game.players[interaction.user.id]
             payout = int(player_data['bet'] * player_data['cash_out_multiplier'])
@@ -462,7 +493,9 @@ class CrashView(discord.ui.View):
                 ephemeral=False
             )
         else:
-            await interaction.followup.send("⚠️ 캐시아웃에 실패했습니다. 게임이 이미 종료되었을 수 있습니다.", ephemeral=True)
+            # This `else` case would now primarily catch if the game ended between the initial check and cash_out_player call,
+            # or if cash_out_player returned False for other (now unlikely) reasons.
+            await interaction.followup.send("⚠️ 캐시아웃에 실패했습니다. 게임이 이미 종료되었거나 최소 배수에 도달하지 못했을 수 있습니다.", ephemeral=True)
 
 
 class CrashCog(commands.Cog):
