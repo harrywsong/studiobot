@@ -93,43 +93,47 @@ class JoinBetModal(discord.ui.Modal, title="크래시 게임 참가"):
         self.view = view
 
     async def on_submit(self, interaction: discord.Interaction):
+        # IMPORTANT: Defer the response immediately to prevent timeout
+        await interaction.response.defer(ephemeral=True)
+
         try:
             # Validate bet amount input
             try:
-                bet = int(self.bet_amount.value)
+                bet = int(self.bet_amount.value.strip())
             except ValueError:
-                await interaction.response.send_message("⚠️ 유효한 숫자를 입력해주세요.", ephemeral=True)
+                await interaction.followup.send("⚠️ 유효한 숫자를 입력해주세요.", ephemeral=True)
                 return
 
             # Check if bet amount is positive
             if bet <= 0:
-                await interaction.response.send_message("⚠️ 베팅 금액은 0보다 커야 합니다.", ephemeral=True)
+                await interaction.followup.send("⚠️ 베팅 금액은 0보다 커야 합니다.", ephemeral=True)
                 return
 
-            # Check if game exists and user is not already in it
-            if not self.game:
-                await interaction.response.send_message("⚠️ 게임을 찾을 수 없습니다.", ephemeral=True)
+            # Check if game still exists and is valid
+            if not self.game or self.game != self.cog.server_games.get(interaction.guild.id):
+                await interaction.followup.send("⚠️ 게임을 찾을 수 없거나 이미 종료되었습니다.", ephemeral=True)
                 return
 
+            # Check if user is already in the game
             if interaction.user.id in self.game.players:
-                await interaction.response.send_message("⚠️ 이미 현재 게임에 참가 중입니다!", ephemeral=True)
+                await interaction.followup.send("⚠️ 이미 현재 게임에 참가 중입니다!", ephemeral=True)
                 return
 
             # Check if game has already started
             if self.game.game_started:
-                await interaction.response.send_message("⚠️ 이미 게임이 시작되었습니다.", ephemeral=True)
+                await interaction.followup.send("⚠️ 이미 게임이 시작되었습니다.", ephemeral=True)
                 return
 
-            # Validate game constraints (min/max bet, user balance, etc.)
+            # Validate game constraints using the cog's validation
             can_start, error_msg = await self.cog.validate_game(interaction, bet)
             if not can_start:
-                await interaction.response.send_message(error_msg, ephemeral=True)
+                await interaction.followup.send(error_msg, ephemeral=True)
                 return
 
             # Get coins cog and verify it exists
             coins_cog = self.cog.bot.get_cog('CoinsCog')
             if not coins_cog:
-                await interaction.response.send_message("⚠️ 코인 시스템을 찾을 수 없습니다.", ephemeral=True)
+                await interaction.followup.send("⚠️ 코인 시스템을 찾을 수 없습니다.", ephemeral=True)
                 return
 
             # Attempt to remove coins for the bet
@@ -142,7 +146,7 @@ class JoinBetModal(discord.ui.Modal, title="크래시 게임 참가"):
             )
 
             if not coin_removal_success:
-                await interaction.response.send_message("⚠️ 베팅 처리에 실패했습니다. 잔액을 확인해주세요.", ephemeral=True)
+                await interaction.followup.send("⚠️ 베팅 처리에 실패했습니다. 잔액을 확인해주세요.", ephemeral=True)
                 return
 
             # Add player to the game
@@ -158,16 +162,17 @@ class JoinBetModal(discord.ui.Modal, title="크래시 게임 참가"):
                 if game_message:
                     await game_message.edit(
                         embed=embed,
+                        view=self.view,
                         attachments=[chart_file] if chart_file else []
                     )
                 else:
                     self.cog.logger.warning(f"게임 메시지를 찾을 수 없음 for guild {interaction.guild.id}")
             except discord.HTTPException as e:
                 self.cog.logger.error(f"게임 메시지 업데이트 실패 for guild {interaction.guild.id}: {e}")
-                # Still continue since the player was added successfully
+                # Continue since the player was added successfully
 
             # Send success response
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 f"✅ 게임에 참가했습니다! ({bet:,} 코인)",
                 ephemeral=True
             )
@@ -178,10 +183,6 @@ class JoinBetModal(discord.ui.Modal, title="크래시 게임 참가"):
                 extra={'guild_id': interaction.guild.id}
             )
 
-        except discord.InteractionResponded:
-            # This exception occurs if we already responded to the interaction
-            self.cog.logger.warning(f"Interaction already responded for user {interaction.user.id}")
-            return
         except Exception as e:
             # Catch any other unexpected errors
             self.cog.logger.error(
@@ -190,21 +191,36 @@ class JoinBetModal(discord.ui.Modal, title="크래시 게임 참가"):
                 extra={'guild_id': interaction.guild.id}
             )
 
-            # Try to respond with an error message if we haven't responded yet
             try:
-                if not interaction.response.is_done():
-                    await interaction.response.send_message(
-                        "⚠️ 게임 참가 중 오류가 발생했습니다. 다시 시도해주세요.",
-                        ephemeral=True
-                    )
-            except discord.InteractionResponded:
-                pass  # Already responded, nothing we can do
+                await interaction.followup.send(
+                    "⚠️ 게임 참가 중 오류가 발생했습니다. 다시 시도해주세요.",
+                    ephemeral=True
+                )
+            except:
+                pass  # If followup fails, there's nothing more we can do
+
+    async def on_error(self, interaction: discord.Interaction, error: Exception) -> None:
+        """Handle modal errors"""
+        self.cog.logger.error(f"Modal error for guild {interaction.guild.id}: {error}", exc_info=True)
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "⚠️ 모달 처리 중 오류가 발생했습니다.",
+                    ephemeral=True
+                )
+            else:
+                await interaction.followup.send(
+                    "⚠️ 모달 처리 중 오류가 발생했습니다.",
+                    ephemeral=True
+                )
+        except:
+            pass
 
 class CrashView(discord.ui.View):
     """Interactive crash game view for multiple players - Multi-server aware"""
 
     def __init__(self, cog: 'CrashCog', game: CrashGame):
-        super().__init__(timeout=None)
+        super().__init__(timeout=None)  # Persistent view
         self.cog = cog
         self.bot = cog.bot
         self.game = game
@@ -352,21 +368,34 @@ class CrashView(discord.ui.View):
 
     @discord.ui.button(label="게임 참가", style=discord.ButtonStyle.green, emoji="🎲", custom_id="join_game")
     async def join_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Quick validation before showing modal
         if self.game.game_started:
-            await interaction.response.send_message("⚠ 이미 게임이 시작되었습니다.", ephemeral=True)
+            await interaction.response.send_message("⚠️ 이미 게임이 시작되었습니다.", ephemeral=True)
             return
+
+        if interaction.user.id in self.game.players:
+            await interaction.response.send_message("⚠️ 이미 현재 게임에 참가 중입니다!", ephemeral=True)
+            return
+
+        # Verify game still exists in the cog
+        if self.game != self.cog.server_games.get(interaction.guild.id):
+            await interaction.response.send_message("⚠️ 게임이 더 이상 활성화되어 있지 않습니다.", ephemeral=True)
+            return
+
         modal = JoinBetModal(self.cog, self.game, self)
         await interaction.response.send_modal(modal)
 
     @discord.ui.button(label="게임 나가기", style=discord.ButtonStyle.red, emoji="❌", custom_id="leave_game")
     async def leave_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+
         if self.game.game_started:
-            await interaction.response.send_message("⚠ 이미 게임이 시작되었습니다.", ephemeral=True)
+            await interaction.followup.send("⚠️ 이미 게임이 시작되었습니다.", ephemeral=True)
             return
 
         player_data = self.game.players.get(interaction.user.id)
         if not player_data:
-            await interaction.response.send_message("⚠ 이 게임에 참가하지 않았습니다!", ephemeral=True)
+            await interaction.followup.send("⚠️ 이 게임에 참가하지 않았습니다!", ephemeral=True)
             return
 
         bet_amount = player_data['bet']
@@ -374,48 +403,57 @@ class CrashView(discord.ui.View):
 
         coins_cog = self.cog.bot.get_cog('CoinsCog')
         if coins_cog:
-            # FIX: Pass guild_id to add_coins for multi-server support
-            await coins_cog.add_coins(interaction.user.id, interaction.guild.id, bet_amount, "crash_leave", "Crash game leave refund")
+            await coins_cog.add_coins(interaction.user.id, interaction.guild.id, bet_amount, "crash_leave",
+                                      "Crash game leave refund")
 
-        embed = await self.create_embed()
-        chart_file = await self.create_chart()
-        # FIX: Use guild_id to get message for editing
-        await self.cog.game_message[interaction.guild.id].edit(embed=embed, attachments=[chart_file] if chart_file else [])
-        await interaction.response.send_message(f"✅ 게임에서 나갔습니다. {bet_amount:,} 코인이 환불되었습니다.", ephemeral=True)
+        try:
+            embed = await self.create_embed()
+            chart_file = await self.create_chart()
+            game_message = self.cog.server_messages.get(interaction.guild.id)
+            if game_message:
+                await game_message.edit(embed=embed, view=self, attachments=[chart_file] if chart_file else [])
+        except Exception as e:
+            self.cog.logger.error(f"게임 메시지 업데이트 실패: {e}")
+
+        await interaction.followup.send(f"✅ 게임에서 나갔습니다. {bet_amount:,} 코인이 환불되었습니다.", ephemeral=True)
 
     @discord.ui.button(label="지금 시작", style=discord.ButtonStyle.blurple, emoji="🚀", custom_id="start_game_now")
     async def start_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.game.game_started:
-            await interaction.response.send_message("⚠ 이미 게임이 시작되었습니다.", ephemeral=True)
+            await interaction.response.send_message("⚠️ 이미 게임이 시작되었습니다.", ephemeral=True)
             return
         if not self.game.players:
-            await interaction.response.send_message("⚠ 참가한 플레이어가 없어 게임을 시작할 수 없습니다.", ephemeral=True)
+            await interaction.response.send_message("⚠️ 참가한 플레이어가 없어 게임을 시작할 수 없습니다.", ephemeral=True)
             return
 
         guild_id = interaction.guild.id
-        self.cog.start_events[guild_id].set()
-        await interaction.response.send_message("🚀 게임을 곧 시작합니다!", ephemeral=True)
+        start_event = self.cog.start_events.get(guild_id)
+        if start_event:
+            start_event.set()
+            await interaction.response.send_message("🚀 게임을 곧 시작합니다!", ephemeral=True)
+        else:
+            await interaction.response.send_message("⚠️ 게임 시작 이벤트를 찾을 수 없습니다.", ephemeral=True)
 
     @discord.ui.button(label="캐시아웃", style=discord.ButtonStyle.success, emoji="💸", custom_id="cash_out")
     async def cash_out_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
+
         if not self.game.game_started:
-            await interaction.response.send_message("⚠ 아직 게임이 시작되지 않았습니다!", ephemeral=True)
+            await interaction.followup.send("⚠️ 아직 게임이 시작되지 않았습니다!", ephemeral=True)
             return
         if interaction.user.id not in self.game.players:
-            await interaction.response.send_message("⚠ 이 게임에 참가하지 않았습니다!", ephemeral=True)
+            await interaction.followup.send("⚠️ 이 게임에 참가하지 않았습니다!", ephemeral=True)
             return
         if self.game.players[interaction.user.id]['cashed_out']:
-            await interaction.response.send_message("⚠ 이미 캐시아웃했습니다!", ephemeral=True)
+            await interaction.followup.send("⚠️ 이미 캐시아웃했습니다!", ephemeral=True)
             return
 
-        await interaction.response.defer()
         if self.game.cash_out_player(interaction.user.id):
             player_data = self.game.players[interaction.user.id]
             payout = int(player_data['bet'] * player_data['cash_out_multiplier'])
 
             coins_cog = self.cog.bot.get_cog('CoinsCog')
             if coins_cog:
-                # FIX: Pass guild_id to add_coins for multi-server support
                 await coins_cog.add_coins(interaction.user.id, interaction.guild.id, payout, "crash_win",
                                           f"Crash cashout at {player_data['cash_out_multiplier']:.2f}x")
 
@@ -424,7 +462,7 @@ class CrashView(discord.ui.View):
                 ephemeral=False
             )
         else:
-            await interaction.followup.send("⚠ 캐시아웃에 실패했습니다. 게임이 이미 종료되었을 수 있습니다.", ephemeral=True)
+            await interaction.followup.send("⚠️ 캐시아웃에 실패했습니다. 게임이 이미 종료되었을 수 있습니다.", ephemeral=True)
 
 
 class CrashCog(commands.Cog):
