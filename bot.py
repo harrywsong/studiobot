@@ -812,9 +812,10 @@ class MyBot(commands.Bot):
             'cogs.voice',
             'cogs.welcomegoodbye',
             'cogs.message_history',
-            'cogs.recording',
+            # 'cogs.recording',
             'cogs.admin',
             'cogs.setup',
+            'cogs.scrim'
         ]
 
         # Casino extensions (depend on coins)
@@ -903,7 +904,7 @@ class MyBot(commands.Bot):
                 status=discord.Status.online,
                 activity=discord.Activity(
                     type=discord.ActivityType.playing,
-                    name=f"Managing {guild_count} servers | {configured_count} configured"
+                    name=f"ㅎㅇㅎㅇ"
                 )
             )
         except Exception as e:

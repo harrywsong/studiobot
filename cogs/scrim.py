@@ -1065,6 +1065,43 @@ class ScrimCog(commands.Cog):
         else:
             await interaction.followup.send("❌ 내전 취소 중 오류가 발생했습니다.", ephemeral=True)
 
+    @app_commands.command(name="내전종료", description="내전 패널 메시지를 새로고침하고 맨 아래에 다시 게시합니다. (스태프 전용)")
+    @app_commands.default_permissions(administrator=True)
+    async def end_scrim(self, interaction: discord.Interaction):
+        # Defer the interaction response
+        await interaction.response.defer(ephemeral=True)
 
+        guild_id = interaction.guild.id
+        scrim_channel_id = config.get_channel_id(guild_id, 'scrim_channel')
+
+        if not scrim_channel_id:
+            await interaction.followup.send("❌ 내전 채널이 설정되지 않았습니다.", ephemeral=True)
+            return
+
+        channel = interaction.guild.get_channel(scrim_channel_id)
+        if not channel:
+            await interaction.followup.send("❌ 내전 채널을 찾을 수 없습니다.", ephemeral=True)
+            return
+
+        # Delete previous scrim panel messages
+        deleted_count = 0
+        async for message in channel.history(limit=50):
+            if message.author == self.bot.user and message.embeds and "내전 생성 패널" in message.embeds[0].title:
+                try:
+                    await message.delete()
+                    deleted_count += 1
+                except discord.errors.NotFound:
+                    continue  # Message was already deleted, continue
+                except Exception as e:
+                    self.logger.error(f"Error deleting old scrim panel message: {e}",
+                                      extra={'guild_id': guild_id})
+                    await interaction.followup.send("❌ 이전 메시지 삭제 중 오류가 발생했습니다.", ephemeral=True)
+                    return
+
+        # Post the new scrim panel
+        await self.setup_scrim_panel(channel)
+
+        # Acknowledge the user
+        await interaction.followup.send("✅ 내전 패널이 성공적으로 새로고침되었습니다.", ephemeral=True)
 async def setup(bot):
     await bot.add_cog(ScrimCog(bot))

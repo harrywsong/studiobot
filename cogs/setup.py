@@ -60,8 +60,8 @@ class MultiServerBotSetup:
     async def send_welcome_message(self):
         """Send initial setup message"""
         embed = discord.Embed(
-            title="🎮 [아날로그] Discord Bot Setup",
-            description="Welcome to the 아날로그 bot setup! I'll configure this server for our multi-feature bot.\n\n"
+            title="🎮 [숯검댕이] Discord Bot Setup",
+            description="Welcome to the 숯검댕이 bot setup! I'll configure this server for our multi-feature bot.\n\n"
                         "🎯 **Available Features:**\n"
                         "• 🎰 Casino Games (Blackjack, Roulette, Slots, etc.)\n"
                         "• 🏆 Achievement System\n"
@@ -80,7 +80,7 @@ class MultiServerBotSetup:
                         "Let's begin! 🚀",
             color=0x7289DA
         )
-        embed.set_footer(text="아날로그 Bot Setup • This channel will auto-delete after setup")
+        embed.set_footer(text="숯검댕이 Bot Setup • This channel will auto-delete after setup")
         await self.setup_channel.send(embed=embed)
 
     async def get_user_input(self, prompt: str, timeout: int = 300) -> Optional[str]:
@@ -248,6 +248,74 @@ class MultiServerBotSetup:
             else:
                 await self.setup_channel.send("❌ Invalid role. Skipping.")
                 self.config['roles'][config_key] = None
+
+        # Auto-role configuration
+        embed = discord.Embed(
+            title="🤖 Auto-Role Configuration",
+            description="Configure roles that are automatically given when users join the server",
+            color=0xffa500
+        )
+        await self.setup_channel.send(embed=embed)
+
+        response = await self.get_user_input("🤖 Do you want to configure auto-roles for new members? (yes/no)")
+        if response and response.lower() in ['yes', 'y', 'true']:
+            auto_role_ids = []
+
+            await self.setup_channel.send(
+                "ℹ️ **Auto-Role Setup:**\n"
+                "• Enter role IDs or mention roles (@role)\n"
+                "• You can add multiple roles\n"
+                "• The unverified role (if configured above) will be automatically included\n"
+                "• Type `done` when finished\n"
+                "• Type `skip` to not configure additional auto-roles"
+            )
+
+            while True:
+                response = await self.get_user_input(
+                    f"🎭 **Auto-Role #{len(auto_role_ids) + 1}**: Enter role ID or mention (or `done` to finish, `skip` to cancel)")
+                if response is None:
+                    return False
+                if response.lower() == 'done':
+                    break
+                if response.lower() == 'skip':
+                    auto_role_ids = []
+                    break
+
+                role_id = await self.parse_role_mention_or_id(response)
+                if role_id:
+                    role = self.guild.get_role(role_id)
+                    if role:
+                        auto_role_ids.append(role_id)
+                        await self.setup_channel.send(f"✅ Added auto-role: @{role.name}")
+
+                        # Ask if they want to add another
+                        continue_response = await self.get_user_input("Add another auto-role? (yes/no)")
+                        if not continue_response or continue_response.lower() not in ['yes', 'y']:
+                            break
+                    else:
+                        await self.setup_channel.send("❌ Role not found. Please try again.")
+                else:
+                    await self.setup_channel.send("❌ Invalid role format. Please try again.")
+
+            if auto_role_ids:
+                self.config['auto_role_ids'] = auto_role_ids
+                # Get role names for display
+                role_names = []
+                for role_id in auto_role_ids:
+                    role = self.guild.get_role(role_id)
+                    role_names.append(role.name if role else f"ID:{role_id}")
+                await self.setup_channel.send(f"✅ Configured {len(auto_role_ids)} auto-roles: {', '.join(role_names)}")
+
+                # Explain the system
+                await self.setup_channel.send(
+                    "ℹ️ **Auto-Role System Info:**\n"
+                    "• Auto-roles are controlled by the 'Welcome Messages' feature\n"
+                    "• When enabled, new members will automatically receive the configured roles\n"
+                    "• The unverified role (if set) will also be automatically assigned\n"
+                    "• You can manage this later with server settings"
+                )
+            else:
+                await self.setup_channel.send("ℹ️ No additional auto-roles configured.")
 
         # Log completion with guild_id context
         self.logger.info(f"Role configuration step completed for guild {self.guild.id}",

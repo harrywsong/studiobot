@@ -514,40 +514,56 @@ class UserTrackManager {
   }
 
   cleanup() {
-    console.log(`[트랙] 사용자 ${this.username} 정리 중`);
+    return new Promise((resolve, reject) => {
+      console.log(`[트랙] 사용자 ${this.username} 정리 중`);
 
-    // 메모리 모니터링 중지
-    if (this.memoryCheckInterval) {
-      clearInterval(this.memoryCheckInterval);
-    }
+      // 메모리 모니터링 중지
+      if (this.memoryCheckInterval) {
+        clearInterval(this.memoryCheckInterval);
+      }
 
-    this._stopCurrentAudioStream();
+      this._stopCurrentAudioStream();
 
-    if (this.audioMixer) {
-      try {
-        this.audioMixer.end();
-        this.audioMixer.destroy();
-      } catch (_) {}
-    }
-
-    // FFmpeg 정리 (긴 녹음을 위해 더 긴 시간 허용)
-    if (this.ffmpegProcess && !this.ffmpegProcess.killed) {
-      setTimeout(() => {
+      if (this.audioMixer) {
         try {
-          if (!this.ffmpegProcess.killed) {
-            this.ffmpegProcess.stdin.end();
-          }
+          this.audioMixer.end();
+          this.audioMixer.destroy();
         } catch (_) {}
-      }, 3000);
+      }
 
-      setTimeout(() => {
-        try {
-          if (!this.ffmpegProcess.killed) {
-            this.ffmpegProcess.kill('SIGTERM');
-          }
-        } catch (_) {}
-      }, 12000); // 긴 녹음을 위해 12초로 증가
-    }
+      // FFmpeg 프로세스가 존재하고 아직 종료되지 않았다면
+      if (this.ffmpegProcess && !this.ffmpegProcess.killed) {
+        // 1초 후 stdin 종료 시도
+        setTimeout(() => {
+          try {
+            if (!this.ffmpegProcess.killed) {
+              this.ffmpegProcess.stdin.end();
+            }
+          } catch (_) {}
+        }, 1000);
+
+        // FFmpeg 프로세스 종료 대기
+        const timeoutId = setTimeout(() => {
+          console.warn(`[트랙] 사용자 ${this.username} FFmpeg 프로세스 강제 종료`);
+          try {
+            if (!this.ffmpegProcess.killed) {
+              this.ffmpegProcess.kill('SIGKILL');
+            }
+          } catch (_) {}
+          resolve(); // 타임아웃으로 종료
+        }, 15000); // 긴 녹음을 위해 15초 대기
+
+        this.ffmpegProcess.on('close', (code) => {
+          clearTimeout(timeoutId);
+          console.log(`[트랙] 사용자 ${this.username} FFmpeg 프로세스 정상 종료 (코드: ${code})`);
+          this._validateOutputFile();
+          resolve();
+        });
+      } else {
+        // FFmpeg 프로세스가 없으면 즉시 해결
+        resolve();
+      }
+    });
   }
 
   _validateOutputFile() {
@@ -965,31 +981,20 @@ class VoiceRecorder {
     }
   }
 
-  async _stopCurrentRecording() {
+async _stopCurrentRecording() {
     if (!this.activeRecording) return false;
 
     const rec = this.activeRecording;
     console.log('[정리] 모든 사용자 트랙 중지 중...');
 
-    // 모든 사용자 트랙 중지
-    const trackPromises = [];
+    const cleanupPromises = [];
     for (const [userId, trackManager] of rec.userTracks) {
-      console.log(`[정리] 사용자 ${trackManager.username}(${userId}) 트랙 정리 중`);
-      trackPromises.push(
-        new Promise((resolve) => {
-          trackManager.cleanup();
-          // 각 트랙마다 개별적으로 시간 허용
-          setTimeout(resolve, 3000);
-        })
-      );
+      cleanupPromises.push(trackManager.cleanup());
     }
 
-    // 모든 트랙 정리 완료 대기
-    await Promise.all(trackPromises);
-
-    // 긴 녹음을 위해 인코더 완료까지 더 긴 시간 대기
-    console.log('[정리] 인코더 완료까지 8초 대기...');
-    await new Promise((r) => setTimeout(r, 8000));
+    // 모든 트랙 정리 작업이 완료될 때까지 대기
+    await Promise.all(cleanupPromises);
+    console.log('[정리] 모든 트랙 정리가 완료되었습니다.');
 
     if (rec.player) {
       try { rec.player.stop(); } catch (_) {}
@@ -1020,7 +1025,6 @@ class VoiceRecorder {
 
     return true;
   }
-
   async cleanup() {
     console.log('[정리] 전역 정리 중...');
     if (this.activeRecording) {

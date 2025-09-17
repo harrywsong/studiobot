@@ -144,7 +144,7 @@ class TempVoice(commands.Cog):
                         )
 
                 # Get custom channel name format from server settings
-                channel_name_format = get_server_setting(guild_id, 'temp_channel_name_format', '〔🔊〕{username}님의 음성채널')
+                channel_name_format = get_server_setting(guild_id, 'temp_channel_name_format', '🔊┆ {username}님의 음성채널')
                 channel_name = channel_name_format.format(username=member.display_name)
 
                 # Get user limit from server settings

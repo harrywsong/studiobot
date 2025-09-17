@@ -254,7 +254,8 @@ class Recording(commands.Cog):
 
                         except Exception as e:
                             if attempt < 4:
-                                self.logger.warning(f"업로드 시도 {attempt + 1} 실패: {e}. 재시도 중...", extra={'guild_id': guild_id})
+                                self.logger.warning(f"업로드 시도 {attempt + 1} 실패: {e}. 재시도 중...",
+                                                    extra={'guild_id': guild_id})
                                 await asyncio.sleep(5)
                             else:
                                 self.logger.error(f"{file_name} 5번 시도 후 업로드 실패", extra={'guild_id': guild_id})
@@ -357,15 +358,18 @@ class Recording(commands.Cog):
 
         try:
             # Pass guild_id in extra for all relevant logs
-            self.logger.info(f"녹음 시작 - 길드: {interaction.guild.name} ({interaction.guild.id})", extra={'guild_id': interaction.guild.id})
+            self.logger.info(f"녹음 시작 - 길드: {interaction.guild.name} ({interaction.guild.id})",
+                             extra={'guild_id': interaction.guild.id})
             self.logger.info(f"채널: {channel.name} ({channel.id})", extra={'guild_id': interaction.guild.id})
-            self.logger.info(f"사용자: {interaction.user.display_name} ({interaction.user.id})", extra={'guild_id': interaction.guild.id})
+            self.logger.info(f"사용자: {interaction.user.display_name} ({interaction.user.id})",
+                             extra={'guild_id': interaction.guild.id})
 
             # 봇 권한 확인
             bot_member = interaction.guild.get_member(self.bot.user.id)
             if bot_member:
                 permissions = channel.permissions_for(bot_member)
-                self.logger.info(f"봇 권한 - 연결: {permissions.connect}, 말하기: {permissions.speak}", extra={'guild_id': interaction.guild.id})
+                self.logger.info(f"봇 권한 - 연결: {permissions.connect}, 말하기: {permissions.speak}",
+                                 extra={'guild_id': interaction.guild.id})
                 if not permissions.connect or not permissions.speak:
                     await interaction.followup.send("⛔ 봇이 음성 채널에 필요한 권한이 부족합니다!",
                                                     ephemeral=True)
@@ -392,7 +396,8 @@ class Recording(commands.Cog):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                creationflags=creationflags
+                creationflags=creationflags,
+                encoding='utf-8'  # ADDED THIS LINE
             )
 
             # 프로세스가 시작될 때까지 잠시 대기
@@ -490,13 +495,14 @@ class Recording(commands.Cog):
                 stop_env = dict(os.environ, DISCORD_BOT_TOKEN=global_config['DISCORD_TOKEN'])
                 stop_process = subprocess.Popen([
                     'node', 'utils/voice_recorder.js', 'stop', str(interaction.guild.id)
-                ], env=stop_env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                ], env=stop_env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                    encoding='utf-8')
 
                 try:
                     # 동기화된 트랙 처리를 위해 타임아웃 조정
                     stdout, stderr = await asyncio.wait_for(
                         asyncio.create_task(asyncio.to_thread(stop_process.communicate)),
-                        timeout=25.0  # 동기화 처리를 위해 25초로 증가
+                        timeout=60.0  # <--- 이 부분을 60초로 변경
                     )
                     self.logger.info(f"중지 명령 출력: {stdout}", extra={'guild_id': interaction.guild.id})
                     if stderr:
@@ -508,14 +514,16 @@ class Recording(commands.Cog):
             # 디렉터리 구조 디버깅
             self.logger.info(f"녹음 디렉터리 확인: {recording['dir']}", extra={'guild_id': interaction.guild.id})
             if os.path.exists(recording['dir']):
-                self.logger.info(f"디렉터리 존재함. 내용: {os.listdir(recording['dir'])}", extra={'guild_id': interaction.guild.id})
+                self.logger.info(f"디렉터리 존재함. 내용: {os.listdir(recording['dir'])}",
+                                 extra={'guild_id': interaction.guild.id})
 
                 # 하위 디렉터리가 있는지 확인 (타임스탬프 폴더 때문에)
                 for item in os.listdir(recording['dir']):
                     item_path = os.path.join(recording['dir'], item)
                     if os.path.isdir(item_path):
                         self.logger.info(f"하위 디렉터리 발견: {item}", extra={'guild_id': interaction.guild.id})
-                        self.logger.info(f"하위 디렉터리 내용: {os.listdir(item_path)}", extra={'guild_id': interaction.guild.id})
+                        self.logger.info(f"하위 디렉터리 내용: {os.listdir(item_path)}",
+                                         extra={'guild_id': interaction.guild.id})
                         # 실제 검색 경로를 하위 디렉터리로 업데이트
                         recording['dir'] = item_path
                         break
@@ -539,7 +547,8 @@ class Recording(commands.Cog):
                                   not f.startswith('stop')]
 
                     self.logger.info(
-                        f"확인 {i // check_interval + 1}: {len(user_files)}개의 동기화된 사용자 트랙 파일 발견", extra={'guild_id': interaction.guild.id})
+                        f"확인 {i // check_interval + 1}: {len(user_files)}개의 동기화된 사용자 트랙 파일 발견",
+                        extra={'guild_id': interaction.guild.id})
 
                     for f in user_files:
                         file_path = os.path.join(recording['dir'], f)
@@ -603,7 +612,8 @@ class Recording(commands.Cog):
                     drive_folder_id, uploaded_files = await self._upload_to_drive(recording['dir'], recording['id'],
                                                                                   interaction.guild.id)
                     self.logger.info(
-                        f"Google Drive 폴더 {drive_folder_id}에 {len(uploaded_files)}개 파일 업로드 성공", extra={'guild_id': interaction.guild.id})
+                        f"Google Drive 폴더 {drive_folder_id}에 {len(uploaded_files)}개 파일 업로드 성공",
+                        extra={'guild_id': interaction.guild.id})
                 except Exception as e:
                     self.logger.error(f"Google Drive 업로드 실패: {e}", extra={'guild_id': interaction.guild.id})
                     drive_folder_id = None
@@ -710,7 +720,7 @@ class Recording(commands.Cog):
             )
             error_embed.add_field(name="오류", value=str(e)[:200], inline=False)
 
-            await interaction.edit_original_response(embed=error_embed)
+            await interaction.followup.send(embed=error_embed, ephemeral=True)
 
     @commands.Cog.listener()
     async def on_guild_join(self, guild):

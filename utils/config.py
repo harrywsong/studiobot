@@ -2,7 +2,7 @@
 import os
 import json
 from dotenv import load_dotenv
-from typing import Optional, Dict, Any, Union
+from typing import Optional, Dict, Any, Union, List
 
 # Load environment variables
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -57,23 +57,24 @@ ACHIEVEMENT_EMOJIS = {
     "hidden": "🤫",
 }
 
-HOLIDAYS = [
-    "january 1",  # New Year's Day (Canada & USA)
-    "february 14",  # Valentine's Day (Canada & USA)
-    "february 19",  # Family Day (Canada - 3rd Monday in Feb, varies by province)
-    "february 19",  # Presidents' Day (USA - 3rd Monday in Feb)
-    "march 17",  # St. Patrick's Day (Canada & USA)
-    "april 1",  # April Fools' Day (Canada & USA)
-    "july 1",  # Canada Day (Canada)
-    "july 4",  # Independence Day (USA)
-    "september 2",  # Labour Day (Canada & USA - 1st Monday in Sept)
-    "october 14",  # Thanksgiving (Canada - 2nd Monday in Oct)
-    "october 31",  # Halloween (Canada & USA)
-    "november 11",  # Remembrance Day (Canada)
-    "november 28",  # Thanksgiving (USA - 4th Thursday in Nov)
-    "december 25",  # Christmas (Canada & USA)
-    "december 26",  # Boxing Day (Canada)
-]
+# Corrected HOLIDAYS definition as a dictionary
+HOLIDAYS = {
+    "new year's day": {"month": 1, "day": 1},
+    "valentine's day": {"month": 2, "day": 14},
+    "family day": {"month": 2, "day": 19},
+    "presidents' day": {"month": 2, "day": 19},
+    "st. patrick's day": {"month": 3, "day": 17},
+    "april fools' day": {"month": 4, "day": 1},
+    "canada day": {"month": 7, "day": 1},
+    "independence day": {"month": 7, "day": 4},
+    "labour day": {"month": 9, "day": 2},
+    "thanksgiving (canada)": {"month": 10, "day": 14},
+    "halloween": {"month": 10, "day": 31},
+    "remembrance day": {"month": 11, "day": 11},
+    "thanksgiving (usa)": {"month": 11, "day": 28},
+    "christmas": {"month": 12, "day": 25},
+    "boxing day": {"month": 12, "day": 26}
+}
 
 
 # =============================================================================
@@ -420,4 +421,56 @@ def migrate_legacy_env_to_server_config(guild_id: int, env_file_path: str = '.en
 
     except Exception as e:
         print(f"Error migrating legacy config for guild {guild_id}: {e}")
+        return False
+
+
+# Additional functions to add to utils/config.py for auto-roles
+# These work with the existing autoguest.py format
+
+def get_auto_role_ids(guild_id: int) -> List[int]:
+    """Get list of auto-role IDs for a specific server (compatible with existing autoguest.py)"""
+    config = load_server_config(guild_id)
+    auto_role_ids = config.get('auto_role_ids', [])
+
+    # Ensure it's a list and contains only integers
+    if isinstance(auto_role_ids, list):
+        return [role_id for role_id in auto_role_ids if isinstance(role_id, int)]
+
+    return []
+
+
+def set_auto_role_ids(guild_id: int, role_ids: List[int]) -> bool:
+    """Set auto-role IDs for a specific server"""
+    try:
+        config = load_server_config(guild_id)
+        config['auto_role_ids'] = role_ids
+        return save_server_config(guild_id, config)
+    except Exception as e:
+        print(f"Error setting auto-role IDs for guild {guild_id}: {e}")
+        return False
+
+
+def add_auto_role_id(guild_id: int, role_id: int) -> bool:
+    """Add a single auto-role ID to a server's configuration"""
+    try:
+        current_ids = get_auto_role_ids(guild_id)
+        if role_id not in current_ids:
+            current_ids.append(role_id)
+            return set_auto_role_ids(guild_id, current_ids)
+        return True  # Role already exists
+    except Exception as e:
+        print(f"Error adding auto-role ID for guild {guild_id}: {e}")
+        return False
+
+
+def remove_auto_role_id(guild_id: int, role_id: int) -> bool:
+    """Remove an auto-role ID from a server's configuration"""
+    try:
+        current_ids = get_auto_role_ids(guild_id)
+        if role_id in current_ids:
+            current_ids.remove(role_id)
+            return set_auto_role_ids(guild_id, current_ids)
+        return True  # Role wasn't there anyway
+    except Exception as e:
+        print(f"Error removing auto-role ID for guild {guild_id}: {e}")
         return False

@@ -492,7 +492,7 @@ class TicketSystem(commands.Cog):
         embed.set_thumbnail(
             url="https://cdn1.iconfinder.com/data/icons/unicons-line-vol-2/24/comment-question-256.png"
         )
-        embed.set_footer(text="아날로그 • 티켓 시스템")
+        embed.set_footer(text="숯검댕이 • 티켓 시스템")
         embed.set_author(
             name="티켓 안내",
             icon_url="https://cdn-icons-png.flaticon.com/512/295/295128.png"
@@ -551,7 +551,7 @@ class TicketSystem(commands.Cog):
             ),
             color=discord.Color.teal()
         )
-        embed.set_footer(text="아날로그 • 티켓 시스템")
+        embed.set_footer(text="숯검댕이 • 티켓 시스템")
         try:
             await interaction.followup.send(embed=embed, view=HelpView(self.bot, self.logger), ephemeral=True)
             # extra={'guild_id': guild_id} 추가
