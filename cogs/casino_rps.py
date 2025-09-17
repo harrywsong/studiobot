@@ -1,4 +1,4 @@
-# cogs/casino_rps.py - Rock Paper Scissors game
+# cogs/casino_rps.py - Rock Paper Scissors game (FIXED)
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -16,6 +16,7 @@ from utils.config import (
 class RPSChoice:
     """Represents a Rock Paper Scissors choice"""
 
+    # Fixed Korean text - properly encoded
     ROCK = "바위"
     PAPER = "보"
     SCISSORS = "가위"
@@ -69,55 +70,71 @@ class RPSView(discord.ui.View):
             await interaction.response.send_message("❌ 게임이 이미 끝났습니다!", ephemeral=True)
             return
 
-        # Make choices
-        self.player_choice = choice
-        self.bot_choice = random.choice(RPSChoice.CHOICES)
-        self.result = RPSChoice.get_winner(self.player_choice, self.bot_choice)
-        self.game_over = True
+        try:
+            # Make choices
+            self.player_choice = choice
+            self.bot_choice = random.choice(RPSChoice.CHOICES)
+            self.result = RPSChoice.get_winner(self.player_choice, self.bot_choice)
+            self.game_over = True
 
-        # Disable all buttons
-        for item in self.children:
-            item.disabled = True
+            # Disable all buttons
+            for item in self.children:
+                item.disabled = True
 
-        # Handle coin rewards/losses
-        coins_cog = self.bot.get_cog('CoinsCog')
-        payout_msg = ""
+            # Handle coin rewards/losses
+            coins_cog = self.bot.get_cog('CoinsCog')
+            payout_msg = ""
 
-        if coins_cog:
-            if self.result == "player":
-                # Win: get 20 coins (plus return bet)
-                total_payout = 20 + self.bet
-                success = await coins_cog.add_coins(
-                    self.user_id,
-                    self.guild_id,
-                    total_payout,
-                    "rps_win",
-                    f"가위바위보 승리 - {self.player_choice} vs {self.bot_choice}"
-                )
-                if success:
-                    payout_msg = f"\n💰 **+{total_payout:,}코인** (승리 보상 20 + 베팅금 {self.bet})"
+            if coins_cog:
+                if self.result == "player":
+                    # Win: get 20 coins (plus return bet)
+                    total_payout = 20 + self.bet
+                    success = await coins_cog.add_coins(
+                        self.user_id,
+                        self.guild_id,
+                        total_payout,
+                        "rps_win",
+                        f"가위바위보 승리 - {self.player_choice} vs {self.bot_choice}"
+                    )
+                    if success:
+                        payout_msg = f"\n💰 **+{total_payout:,}코인** (승리 보상 20 + 베팅금 {self.bet})"
+                    else:
+                        payout_msg = f"\n❌ 코인 지급에 실패했습니다"
+                elif self.result == "tie":
+                    # Tie: return bet
+                    success = await coins_cog.add_coins(
+                        self.user_id,
+                        self.guild_id,
+                        self.bet,
+                        "rps_tie",
+                        f"가위바위보 무승부 - {self.player_choice} vs {self.bot_choice}"
+                    )
+                    if success:
+                        payout_msg = f"\n🔄 **베팅금 {self.bet:,}코인 반환** (무승부)"
+                    else:
+                        payout_msg = f"\n❌ 베팅금 반환에 실패했습니다"
+                # Loss: no payout (bet already deducted)
                 else:
-                    payout_msg = f"\n❌ 코인 지급에 실패했습니다"
-            elif self.result == "tie":
-                # Tie: return bet
-                success = await coins_cog.add_coins(
-                    self.user_id,
-                    self.guild_id,
-                    self.bet,
-                    "rps_tie",
-                    f"가위바위보 무승부 - {self.player_choice} vs {self.bot_choice}"
-                )
-                if success:
-                    payout_msg = f"\n🔄 **베팅금 {self.bet:,}코인 반환** (무승부)"
-                else:
-                    payout_msg = f"\n❌ 베팅금 반환에 실패했습니다"
-            # Loss: no payout (bet already deducted)
-            else:
-                payout_msg = f"\n💸 **-{self.bet:,}코인** (패배)"
+                    payout_msg = f"\n💸 **-{self.bet:,}코인** (패배)"
 
-        # Create result embed
-        embed = self.create_result_embed(payout_msg)
-        await interaction.response.edit_message(embed=embed, view=self)
+            # Create result embed
+            embed = self.create_result_embed(payout_msg)
+            await interaction.response.edit_message(embed=embed, view=self)
+
+        except Exception as e:
+            # Log the error
+            logger = get_logger("가위바위보")
+            logger.error(f"Error in RPS choice handling: {e}", exc_info=True)
+
+            # Send error message
+            try:
+                await interaction.response.send_message("❌ 게임 처리 중 오류가 발생했습니다!", ephemeral=True)
+            except:
+                # If response already sent, try followup
+                try:
+                    await interaction.followup.send("❌ 게임 처리 중 오류가 발생했습니다!", ephemeral=True)
+                except:
+                    pass
 
     def create_result_embed(self, payout_msg: str = "") -> discord.Embed:
         """Create the result embed"""
@@ -174,14 +191,19 @@ class RPSView(discord.ui.View):
             # Refund bet on timeout
             coins_cog = self.bot.get_cog('CoinsCog')
             if coins_cog:
-                await coins_cog.add_coins(
-                    self.user_id,
-                    self.guild_id,
-                    self.bet,
-                    "rps_timeout",
-                    "가위바위보 시간 초과 - 베팅금 반환"
-                )
+                try:
+                    await coins_cog.add_coins(
+                        self.user_id,
+                        self.guild_id,
+                        self.bet,
+                        "rps_timeout",
+                        "가위바위보 시간 초과 - 베팅금 반환"
+                    )
+                except Exception as e:
+                    logger = get_logger("가위바위보")
+                    logger.error(f"Error refunding bet on timeout: {e}")
 
+            # Disable all buttons
             for item in self.children:
                 item.disabled = True
 
@@ -207,82 +229,90 @@ class RPSCog(commands.Cog):
         self.active_games: Dict[int, RPSView] = {}  # user_id -> game
         self.logger.info("가위바위보 게임 시스템이 초기화되었습니다.")
 
-    async def validate_game(self, interaction: discord.Interaction, bet: int):
-        """Validate game using casino base"""
-        casino_base = self.bot.get_cog('CasinoBaseCog')
-        if not casino_base:
-            return False, "카지노 시스템을 찾을 수 없습니다!"
-
-        return await casino_base.validate_game_start(
-            interaction, "rps", bet, 10, 100
-        )
-
     @app_commands.command(name="가위바위보", description="봇과 가위바위보를 플레이합니다 (승리시 20코인)")
     @app_commands.describe(bet="베팅 금액 (10-100코인, 기본값: 10)")
     async def rps(self, interaction: discord.Interaction, bet: int = 10):
-        # Validate game using casino base
-        casino_base = self.bot.get_cog('CasinoBaseCog')
-        if casino_base:
-            can_start, error_msg = await casino_base.validate_game_start(
-                interaction, "rps", bet, 10, 100
+        try:
+            # Validate bet range
+            if bet < 10 or bet > 100:
+                await interaction.response.send_message("❌ 베팅 금액은 10-100코인 사이여야 합니다!", ephemeral=True)
+                return
+
+            # Validate game using casino base (if available)
+            casino_base = self.bot.get_cog('CasinoBaseCog')
+            if casino_base:
+                can_start, error_msg = await casino_base.validate_game_start(
+                    interaction, "rps", bet, 10, 100
+                )
+                if not can_start:
+                    await interaction.response.send_message(error_msg, ephemeral=True)
+                    return
+
+            user_id = interaction.user.id
+
+            # Check if user already has an active game
+            if user_id in self.active_games:
+                existing_game = self.active_games[user_id]
+                if not existing_game.game_over:
+                    await interaction.response.send_message("❌ 이미 진행 중인 가위바위보 게임이 있습니다!", ephemeral=True)
+                    return
+                else:
+                    # Clean up finished game
+                    del self.active_games[user_id]
+
+            # Check coins availability
+            coins_cog = self.bot.get_cog('CoinsCog')
+            if not coins_cog:
+                await interaction.response.send_message("❌ 코인 시스템을 찾을 수 없습니다!", ephemeral=True)
+                return
+
+            # Check user balance
+            balance = await coins_cog.get_balance(user_id, interaction.guild.id)
+            if balance < bet:
+                await interaction.response.send_message(f"❌ 코인이 부족합니다! (필요: {bet:,}, 보유: {balance:,})", ephemeral=True)
+                return
+
+            # Deduct the bet
+            success = await coins_cog.remove_coins(
+                user_id,
+                interaction.guild.id,
+                bet,
+                "rps_bet",
+                f"가위바위보 베팅 ({bet}코인)"
             )
-            if not can_start:
-                await interaction.response.send_message(error_msg, ephemeral=True)
+
+            if not success:
+                await interaction.response.send_message("❌ 베팅 처리에 실패했습니다!", ephemeral=True)
                 return
 
-        user_id = interaction.user.id
+            # Create and start the game
+            game_view = RPSView(self.bot, user_id, interaction.guild.id, bet)
+            self.active_games[user_id] = game_view
 
-        # Check if user already has an active game
-        if user_id in self.active_games:
-            existing_game = self.active_games[user_id]
-            if not existing_game.game_over:
-                await interaction.response.send_message("❌ 이미 진행 중인 가위바위보 게임이 있습니다!", ephemeral=True)
-                return
-            else:
-                # Clean up finished game
-                del self.active_games[user_id]
+            embed = game_view.create_game_embed()
+            await interaction.response.send_message(embed=embed, view=game_view)
 
-        # Validate the bet
-        can_start, error_msg = await self.validate_game(interaction, bet)
-        if not can_start:
-            await interaction.response.send_message(error_msg, ephemeral=True)
-            return
+            self.logger.info(
+                f"{interaction.user}가 {bet}코인으로 가위바위보 게임을 시작했습니다",
+                extra={'guild_id': interaction.guild.id}
+            )
 
-        # Deduct the bet
-        coins_cog = self.bot.get_cog('CoinsCog')
-        if not coins_cog:
-            await interaction.response.send_message("❌ 코인 시스템을 찾을 수 없습니다!", ephemeral=True)
-            return
+            # Clean up after game ends or timeout
+            await asyncio.sleep(35)  # Wait a bit longer than timeout
+            if user_id in self.active_games:
+                if self.active_games[user_id].game_over:
+                    del self.active_games[user_id]
 
-        success = await coins_cog.remove_coins(
-            user_id,
-            interaction.guild.id,
-            bet,
-            "rps_bet",
-            f"가위바위보 베팅 ({bet}코인)"
-        )
+        except Exception as e:
+            self.logger.error(f"RPS command error: {e}", exc_info=True)
 
-        if not success:
-            await interaction.response.send_message("❌ 베팅 처리에 실패했습니다!", ephemeral=True)
-            return
-
-        # Create and start the game
-        game_view = RPSView(self.bot, user_id, interaction.guild.id, bet)
-        self.active_games[user_id] = game_view
-
-        embed = game_view.create_game_embed()
-        await interaction.response.send_message(embed=embed, view=game_view)
-
-        self.logger.info(
-            f"{interaction.user}가 {bet}코인으로 가위바위보 게임을 시작했습니다",
-            extra={'guild_id': interaction.guild.id}
-        )
-
-        # Clean up after game ends or timeout
-        await asyncio.sleep(35)  # Wait a bit longer than timeout
-        if user_id in self.active_games:
-            if self.active_games[user_id].game_over:
-                del self.active_games[user_id]
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message("❌ 게임 시작 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.", ephemeral=True)
+                else:
+                    await interaction.followup.send("❌ 게임 시작 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.", ephemeral=True)
+            except:
+                pass
 
 
 async def setup(bot):
