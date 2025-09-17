@@ -63,6 +63,7 @@ class CrashGame:
 
     def cash_out_player(self, user_id: int) -> bool:
         """Cash out a player - FIXED: Properly enforce minimum cashout"""
+        # Early validation checks
         if user_id not in self.players:
             return False
 
@@ -72,13 +73,20 @@ class CrashGame:
         if self.game_over:
             return False
 
-        # FIXED: Strict enforcement of minimum cashout multiplier
-        if self.current_multiplier < self.min_cashout_multiplier:
+        if not self.game_started:
+            return False
+
+        # CRITICAL FIX: Round current multiplier to avoid floating point precision issues
+        current_mult_rounded = round(self.current_multiplier, 2)
+        min_mult_rounded = round(self.min_cashout_multiplier, 2)
+
+        # FIXED: Strict enforcement of minimum cashout multiplier with proper comparison
+        if current_mult_rounded < min_mult_rounded:
             return False
 
         # All checks passed - allow cashout
         self.players[user_id]['cashed_out'] = True
-        self.players[user_id]['cash_out_multiplier'] = self.current_multiplier
+        self.players[user_id]['cash_out_multiplier'] = current_mult_rounded
         return True
 
     def get_active_players_count(self) -> int:
@@ -472,19 +480,38 @@ class CrashView(discord.ui.View):
             await interaction.followup.send("⚠️ 이미 캐시아웃했습니다!", ephemeral=True)
             return
 
-        # FIXED: Clear error message for minimum cashout requirement
-        if self.game.current_multiplier < self.game.min_cashout_multiplier:
+        # CRITICAL FIX: Add more detailed validation and logging
+        current_mult_rounded = round(self.game.current_multiplier, 2)
+        min_mult_rounded = round(self.game.min_cashout_multiplier, 2)
+
+        # Log the cashout attempt for debugging
+        self.cog.logger.info(
+            f"Cashout attempt by {interaction.user} - Current: {current_mult_rounded}x, Min: {min_mult_rounded}x",
+            extra={'guild_id': self.game.guild_id}
+        )
+
+        # FIXED: More explicit error message with rounded values for clarity
+        if current_mult_rounded < min_mult_rounded:
             await interaction.followup.send(
-                f"⚠️ 최소 캐시아웃 배수인 **{self.game.min_cashout_multiplier:.2f}x**에 도달해야 캐시아웃할 수 있습니다.\n"
-                f"현재 배수: **{self.game.current_multiplier:.2f}x**",
+                f"⚠️ 최소 캐시아웃 배수인 **{min_mult_rounded:.2f}x**에 도달해야 캐시아웃할 수 있습니다.\n"
+                f"현재 배수: **{current_mult_rounded:.2f}x**\n"
+                f"필요한 추가 상승: **{min_mult_rounded - current_mult_rounded:.2f}x**",
                 ephemeral=True
             )
             return
 
-        # Attempt cashout
-        if self.game.cash_out_player(interaction.user.id):
+        # Attempt cashout with additional validation
+        cashout_success = self.game.cash_out_player(interaction.user.id)
+
+        if cashout_success:
             player_data = self.game.players[interaction.user.id]
             payout = int(player_data['bet'] * player_data['cash_out_multiplier'])
+
+            # Log successful cashout
+            self.cog.logger.info(
+                f"Successful cashout by {interaction.user} at {player_data['cash_out_multiplier']:.2f}x for {payout} coins",
+                extra={'guild_id': self.game.guild_id}
+            )
 
             coins_cog = self.cog.bot.get_cog('CoinsCog')
             if coins_cog:
@@ -496,7 +523,17 @@ class CrashView(discord.ui.View):
                 ephemeral=False
             )
         else:
-            await interaction.followup.send("⚠️ 캐시아웃에 실패했습니다. 게임이 이미 종료되었거나 최소 배수에 도달하지 못했을 수 있습니다.", ephemeral=True)
+            # Log failed cashout for debugging
+            self.cog.logger.warning(
+                f"Cashout failed for {interaction.user} - Current: {current_mult_rounded}x, Min: {min_mult_rounded}x, Game Over: {self.game.game_over}",
+                extra={'guild_id': self.game.guild_id}
+            )
+            await interaction.followup.send(
+                f"⚠️ 캐시아웃에 실패했습니다.\n"
+                f"현재 상태: {current_mult_rounded:.2f}x (최소: {min_mult_rounded:.2f}x)\n"
+                f"게임이 이미 종료되었을 수 있습니다.",
+                ephemeral=True
+            )
 
 
 class CrashCog(commands.Cog):
