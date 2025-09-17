@@ -585,16 +585,16 @@ class CrashCog(commands.Cog):
         """Generate crash point with custom odds distribution"""
         rand = random.random()
 
-        if rand <= 0.50:  # 50% chance for 1.1x - 2.0x (safe cashouts)
-            return round(random.uniform(1.1, 2.0), 2)
-        elif rand <= 0.85:  # 35% chance for 2.0x - 4.0x (moderate risk)
-            return round(random.uniform(2.0, 4.0), 2)
-        elif rand <= 0.95:  # 10% chance for 4.0x - 10.0x (good multipliers)
-            return round(random.uniform(4.0, 10.0), 2)
-        elif rand <= 0.99:  # 4% chance for 10.0x - 50.0x (high risk/reward)
-            return round(random.uniform(10.0, 50.0), 2)
-        else:  # 1% chance for 100.0x (jackpot)
-            return 100.0
+        if rand <= 0.55:  # 55% chance for 1.1x - 1.5x
+            return round(random.uniform(1.1, 1.5), 2)
+        elif rand <= 0.80:  # 25% chance for 1.5x - 2.0x
+            return round(random.uniform(1.5, 2.0), 2)
+        elif rand <= 0.92:  # 12% chance for 2.0x - 3.0x
+            return round(random.uniform(2.0, 3.0), 2)
+        elif rand <= 0.98:  # 6% chance for 3.0x - 5.0x
+            return round(random.uniform(3.0, 5.0), 2)
+        else:  # 2% chance for 5.0x - 10.0x
+            return round(random.uniform(5.0, 10.0), 2)
 
     async def announce_crash_point(self, guild_id: int, crash_point: float):
         """Announce crash point to the announcement channel for this server"""
