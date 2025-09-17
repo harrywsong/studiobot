@@ -326,12 +326,23 @@ class MultiBingoView(discord.ui.View):
         if coins_cog and self.winners:
             for winner in self.winners:
                 payout = self.calculate_payout(winner)
-                await coins_cog.add_coins(
+
+                # FIX: The add_coins method likely requires guild_id parameter
+                # The original call was missing the guild_id parameter
+                success = await coins_cog.add_coins(
                     winner.user_id,
+                    interaction.guild.id,  # FIX: Added missing guild_id parameter
                     payout,
                     "bingo_win",
                     f"멀티플레이어 빙고 승리 ({winner.bingo_achieved_at}번 호출)"
                 )
+
+                # FIX: Add error handling for failed coin transactions
+                if not success:
+                    self.logger.error(
+                        f"Failed to add {payout} coins to user {winner.user_id} for bingo win",
+                        extra={'guild_id': interaction.guild.id}
+                    )
 
         embed = self.create_game_embed()
 
@@ -347,7 +358,6 @@ class MultiBingoView(discord.ui.View):
             await interaction.edit_original_response(embed=embed, view=self)
         except discord.NotFound:
             pass
-
     @discord.ui.button(label="🎲 게임 참가", style=discord.ButtonStyle.green, custom_id="join_game")
     async def join_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not self.join_phase:
@@ -405,8 +415,18 @@ class MultiBingoView(discord.ui.View):
         player = self.players[interaction.user.id]
         coins_cog = self.bot.get_cog('CoinsCog')
         if coins_cog:
-            await coins_cog.add_coins(interaction.user.id, interaction.guild.id, player.bet, "bingo_refund",
-                                      "빙고 게임 나가기")
+            # FIX: Add error handling for refund
+            success = await coins_cog.add_coins(
+                interaction.user.id,
+                interaction.guild.id,
+                player.bet,
+                "bingo_refund",
+                "빙고 게임 나가기"
+            )
+
+            if not success:
+                await interaction.response.send_message("❌ 환불 처리에 실패했습니다!", ephemeral=True)
+                return
 
         # Remove player
         self.remove_player(interaction.user.id)
