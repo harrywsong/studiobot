@@ -1,4 +1,4 @@
-# cogs/casino_minesweeper.py - Updated for multi-server support
+# cogs/casino_minesweeper.py - Updated for multi-server support with balanced odds
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -115,18 +115,42 @@ class MinesweeperView(discord.ui.View):
         await self.end_game(interaction, True)
 
     def calculate_multiplier(self) -> float:
-        """Calculate current multiplier based on revealed gems and mine count"""
+        """Calculate current multiplier based on revealed gems and mine count - BALANCED VERSION"""
         if self.revealed_gems == 0:
             return 1.0
 
-        # Get server-specific multiplier settings
-        base_multiplier = get_server_setting(self.guild_id, 'minesweeper_base_multiplier', 1.0)
-        multiplier_per_gem = get_server_setting(self.guild_id, 'minesweeper_gem_multiplier', 0.15)
-        mine_bonus = get_server_setting(self.guild_id, 'minesweeper_mine_bonus', 0.03)
+        # Get server-specific multiplier settings with much more conservative defaults
+        base_multiplier = get_server_setting(self.guild_id, 'minesweeper_base_multiplier',
+                                             0.95)  # Slightly less than 1x to account for house edge
+        multiplier_per_gem = get_server_setting(self.guild_id, 'minesweeper_gem_multiplier',
+                                                0.08)  # Reduced from 0.15 to 0.08
+        mine_bonus = get_server_setting(self.guild_id, 'minesweeper_mine_bonus', 0.01)  # Reduced from 0.03 to 0.01
 
-        # Progressive multiplier based on risk
-        # More mines = higher multiplier per gem found
-        return base_multiplier + (self.revealed_gems * (multiplier_per_gem + (self.mines_count * mine_bonus)))
+        # Calculate remaining gems and total revealed cells
+        remaining_gems = self.total_gems - self.revealed_gems
+        total_revealed = sum(sum(row) for row in self.revealed)
+        remaining_cells = self.total_cells - total_revealed
+
+        # Progressive multiplier with diminishing returns and risk consideration
+        # The multiplier should reflect the actual probability of success
+        if remaining_cells <= self.mines_count:
+            # If only mines are left, this shouldn't happen, but handle it
+            return base_multiplier + (self.revealed_gems * multiplier_per_gem * (1 + self.mines_count * mine_bonus))
+
+        # Calculate risk factor: probability of hitting a mine on next reveal
+        mine_risk_factor = self.mines_count / remaining_cells if remaining_cells > 0 else 1.0
+
+        # Multiplier increases with each gem found, but with diminishing returns
+        # Higher mine counts give slightly better multipliers, but not excessively
+        multiplier = base_multiplier + (
+                self.revealed_gems * multiplier_per_gem *
+                (1 + (self.mines_count * mine_bonus)) *
+                (1.0 + mine_risk_factor * 0.1)  # Small risk bonus
+        )
+
+        # Cap the multiplier to prevent excessive payouts
+        max_multiplier = get_server_setting(self.guild_id, 'minesweeper_max_multiplier', 3.0)
+        return min(multiplier, max_multiplier)
 
     async def reveal_cell(self, interaction: discord.Interaction, row: int, col: int):
         """Reveal a cell and handle game logic"""
@@ -177,21 +201,28 @@ class MinesweeperView(discord.ui.View):
                 title = "💎 승리! 성공적으로 캐시아웃!"
                 color = discord.Color.green()
                 payout = int(self.bet * self.current_multiplier)
-                description = f"🎯 **발견한 보석:** {self.revealed_gems}/{self.total_gems}개\n📈 **최종 배수:** {self.current_multiplier:.2f}x\n💰 **획득 코인:** +{payout:,}코인"
+                profit = payout - self.bet
+                description = f"🎯 **발견한 보석:** {self.revealed_gems}/{self.total_gems}개\n📈 **최종 배수:** {self.current_multiplier:.2f}x\n💰 **총 획득:** {payout:,}코인 (순익: +{profit:,})"
             else:
                 title = "💣 폭발! 지뢰를 밟았습니다!"
                 color = discord.Color.red()
-                description = f"🎯 **발견한 보석:** {self.revealed_gems}/{self.total_gems}개\n📉 **배수:** {self.current_multiplier:.2f}x\n💸 **손실 코인:** -{self.bet:,}코인"
+                description = f"🎯 **발견한 보석:** {self.revealed_gems}/{self.total_gems}개\n📉 **도달 배수:** {self.current_multiplier:.2f}x\n💸 **손실:** -{self.bet:,}코인"
         else:
             title = "💣 지뢰찾기"
             color = discord.Color.blue()
             remaining_gems = self.total_gems - self.revealed_gems
             potential_payout = int(self.bet * self.current_multiplier)
+            potential_profit = potential_payout - self.bet
 
             description = f"💣 **지뢰:** {self.mines_count}개 | 💎 **남은 보석:** {remaining_gems}개\n"
             description += f"🎯 **발견한 보석:** {self.revealed_gems}개\n"
             description += f"📈 **현재 배수:** {self.current_multiplier:.2f}x\n"
-            description += f"💰 **예상 수익:** {potential_payout:,}코인"
+            description += f"💰 **현재 캐시아웃:** {potential_payout:,}코인"
+
+            if potential_profit > 0:
+                description += f" (순익: +{potential_profit:,})"
+            elif potential_profit < 0:
+                description += f" (손실: {potential_profit:,})"
 
             if self.selected_position:
                 row, col = self.selected_position
@@ -210,20 +241,39 @@ class MinesweeperView(discord.ui.View):
                 inline=False
             )
 
-            # Risk/Reward info
-            next_multiplier_base = get_server_setting(self.guild_id, 'minesweeper_base_multiplier', 1.0)
-            multiplier_per_gem = get_server_setting(self.guild_id, 'minesweeper_gem_multiplier', 0.15)
-            mine_bonus = get_server_setting(self.guild_id, 'minesweeper_mine_bonus', 0.03)
+            # Calculate next reveal statistics
+            total_revealed = sum(sum(row) for row in self.revealed)
+            remaining_cells = self.total_cells - total_revealed
 
-            next_multiplier = next_multiplier_base + (
-                        (self.revealed_gems + 1) * (multiplier_per_gem + (self.mines_count * mine_bonus)))
-            next_payout = int(self.bet * next_multiplier)
+            if remaining_cells > 0 and remaining_gems > 0:
+                # Calculate probability and next multiplier
+                success_rate = (remaining_gems / remaining_cells) * 100
 
-            embed.add_field(
-                name="📊 위험도 분석",
-                value=f"🎯 **다음 보석 발견시:** {next_multiplier:.2f}x ({next_payout:,}코인)\n⚡ **성공 확률:** {((self.total_gems - self.revealed_gems) / (25 - len([r for row in self.revealed for r in row if r])) * 100):.1f}%",
-                inline=False
-            )
+                # Simulate next multiplier
+                temp_gems = self.revealed_gems + 1
+                base_multiplier = get_server_setting(self.guild_id, 'minesweeper_base_multiplier', 0.95)
+                multiplier_per_gem = get_server_setting(self.guild_id, 'minesweeper_gem_multiplier', 0.08)
+                mine_bonus = get_server_setting(self.guild_id, 'minesweeper_mine_bonus', 0.01)
+
+                next_remaining_cells = remaining_cells - 1
+                next_mine_risk = self.mines_count / next_remaining_cells if next_remaining_cells > 0 else 1.0
+
+                next_multiplier = base_multiplier + (
+                        temp_gems * multiplier_per_gem *
+                        (1 + (self.mines_count * mine_bonus)) *
+                        (1.0 + next_mine_risk * 0.1)
+                )
+                max_multiplier = get_server_setting(self.guild_id, 'minesweeper_max_multiplier', 3.0)
+                next_multiplier = min(next_multiplier, max_multiplier)
+
+                next_payout = int(self.bet * next_multiplier)
+                next_profit = next_payout - self.bet
+
+                embed.add_field(
+                    name="📊 위험도 분석",
+                    value=f"🎯 **다음 보석 발견시:** {next_multiplier:.2f}x ({next_payout:,}코인, 순익: +{next_profit:,})\n⚡ **성공 확률:** {success_rate:.1f}%\n💣 **지뢰 확률:** {100 - success_rate:.1f}%",
+                    inline=False
+                )
 
         embed.set_footer(
             text=f"Server: {interaction.guild.name if hasattr(self, '_interaction') and self._interaction.guild else 'Unknown'}")
@@ -325,7 +375,8 @@ class MinesweeperCog(commands.Cog):
 
         # Get server-specific limits
         min_bet = get_server_setting(interaction.guild.id, 'minesweeper_min_bet', 10)
-        max_bet = get_server_setting(interaction.guild.id, 'minesweeper_max_bet', 200)
+        max_bet = get_server_setting(interaction.guild.id, 'minesweeper_max_bet',
+                                     500)  # Increased max bet since payouts are now balanced
 
         return await casino_base.validate_game_start(
             interaction, "minesweeper", bet, min_bet, max_bet
@@ -334,23 +385,24 @@ class MinesweeperCog(commands.Cog):
     @app_commands.command(name="지뢰찾기", description="지뢰를 피해 보석을 찾는 게임")
     @app_commands.describe(
         bet="베팅 금액",
-        mines="지뢰 개수 (1-15, 많을수록 위험하지만 높은 수익)"
+        mines="지뢰 개수 (1-12, 많을수록 위험하지만 높은 수익)"
     )
-    async def minesweeper(self, interaction: discord.Interaction, bet: int, mines: int = 3):
+    async def minesweeper(self, interaction: discord.Interaction, bet: int,
+                          mines: int = 5):  # Changed default from 3 to 5
         # Check if casino games are enabled for this server
         if not interaction.guild or not is_feature_enabled(interaction.guild.id, 'casino_games'):
             await interaction.response.send_message("❌ 이 서버에서는 카지노 게임이 비활성화되어 있습니다!", ephemeral=True)
             return
 
-        # Get server-specific mine limits
-        max_mines = get_server_setting(interaction.guild.id, 'minesweeper_max_mines', 15)
+        # Get server-specific mine limits - reduced max mines since higher mine counts were too profitable
+        max_mines = get_server_setting(interaction.guild.id, 'minesweeper_max_mines', 12)
 
         if not (1 <= mines <= max_mines):
             await interaction.response.send_message(f"❌ 지뢰는 1-{max_mines}개 사이만 설정 가능합니다!", ephemeral=True)
             return
 
         if mines >= 24:  # Max 24 mines in 5x5 grid (need at least 1 gem)
-            await interaction.response.send_message("❌ 5x5 보드에서는 최대 15개의 지뢰만 설정 가능합니다!", ephemeral=True)
+            await interaction.response.send_message("❌ 5x5 보드에서는 최대 12개의 지뢰만 설정 가능합니다!", ephemeral=True)
             return
 
         can_start, error_msg = await self.validate_game(interaction, bet)
@@ -359,7 +411,8 @@ class MinesweeperCog(commands.Cog):
             return
 
         coins_cog = self.bot.get_cog('CoinsCog')
-        if not await coins_cog.remove_coins(interaction.user.id, interaction.guild.id, bet, "minesweeper_bet", "지뢰찾기 베팅"):
+        if not await coins_cog.remove_coins(interaction.user.id, interaction.guild.id, bet, "minesweeper_bet",
+                                            "지뢰찾기 베팅"):
             await interaction.response.send_message("❌ 베팅 처리 실패!", ephemeral=True)
             return
 
