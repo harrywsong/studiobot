@@ -507,7 +507,7 @@ class CrashCog(commands.Cog):
 
         # Get server-specific limits
         min_bet = get_server_setting(interaction.guild.id, 'crash_min_bet', 10)
-        max_bet = get_server_setting(interaction.guild.id, 'crash_max_bet', 2000)
+        max_bet = get_server_setting(interaction.guild.id, 'crash_max_bet', 200)
 
         return await casino_base.validate_game_start(interaction, "crash", bet, min_bet, max_bet)
 
