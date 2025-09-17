@@ -397,8 +397,8 @@ class MinesweeperCog(commands.Cog):
         # Get server-specific mine limits - reduced max mines since higher mine counts were too profitable
         max_mines = get_server_setting(interaction.guild.id, 'minesweeper_max_mines', 12)
 
-        if not (5 <= mines <= max_mines):
-            await interaction.response.send_message(f"❌ 지뢰는 5-{max_mines}개 사이만 설정 가능합니다!", ephemeral=True)
+        if not (4 <= mines <= max_mines):
+            await interaction.response.send_message(f"❌ 지뢰는 4-{max_mines}개 사이만 설정 가능합니다!", ephemeral=True)
             return
 
         if mines >= 24:  # Max 24 mines in 5x5 grid (need at least 1 gem)

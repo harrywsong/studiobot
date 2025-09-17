@@ -831,11 +831,11 @@ class MyBot(commands.Bot):
             'cogs.casino_minesweeper',
             'cogs.casino_slots',
             'cogs.casino_bingo',
-            'casino_tictactoe.py',
-            'casino_holdem.py',
-            'casino_carddraw.py',
-            'casino_numberguess.py',
-            'casino_rps.py'
+            'cogs.casino_tictactoe',
+            'cogs.casino_holdem',
+            'cogs.casino_carddraw',
+            'cogs.casino_numberguess',
+            'cogs.casino_rps'
         ]
 
         # Database-dependent extensions
