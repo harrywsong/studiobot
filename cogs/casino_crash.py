@@ -579,9 +579,18 @@ class CrashCog(commands.Cog):
                 # FIX: Log game start with guild_id
                 self.logger.info(f"30초 타임아웃으로 게임 시작 for guild {guild_id}.", extra={'guild_id': guild_id})
 
+            # 📌 Send pre-crash notice to the global log channel
+            log_channel = self.bot.get_channel(1417714557295792229)
+            if log_channel:
+                await log_channel.send(
+                    f"⚠️ Guild `{guild_id}`: Crash game about to start.\n"
+                    f"Crash point is **{current_game.crash_point:.2f}x**."
+                )
+
         except Exception as e:
             # FIX: Log exception with guild_id
-            self.logger.error(f"Game lifecycle error for guild {guild_id}: {e}", exc_info=True, extra={'guild_id': guild_id})
+            self.logger.error(f"Game lifecycle error for guild {guild_id}: {e}", exc_info=True,
+                              extra={'guild_id': guild_id})
             return
 
         if not current_game.players:
@@ -604,7 +613,8 @@ class CrashCog(commands.Cog):
             await game_message.edit(embed=embed, view=game_view, attachments=[chart_file] if chart_file else [])
         except (discord.NotFound, discord.HTTPException) as e:
             # FIX: Log error with guild_id
-            self.logger.error(f"게임 시작 메시지 업데이트 실패 for guild {guild_id}: {e}", exc_info=True, extra={'guild_id': guild_id})
+            self.logger.error(f"게임 시작 메시지 업데이트 실패 for guild {guild_id}: {e}", exc_info=True,
+                              extra={'guild_id': guild_id})
 
         await self.run_crash_game(guild_id)
 
