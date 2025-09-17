@@ -880,7 +880,6 @@ class CoinsCog(commands.Cog):
                 f"✅ {user.mention}님에게 {amount:,} 코인을 추가했습니다.\n"
                 f"현재 잔액: {new_balance:,} 코인\n"
                 f"이유: {reason}",
-                ephemeral=True
             )
             self.logger.info(
                 f"Admin {interaction.user.id} added {amount} coins to user {user.id} in guild {guild_id}: {reason}",
@@ -931,7 +930,6 @@ class CoinsCog(commands.Cog):
                 f"이전 잔액: {current_balance:,} 코인\n"
                 f"현재 잔액: {new_balance:,} 코인\n"
                 f"이유: {reason}",
-                ephemeral=True
             )
             self.logger.info(
                 f"Admin {interaction.user.id} removed {amount} coins from user {user.id} in guild {guild_id}: {reason}",
