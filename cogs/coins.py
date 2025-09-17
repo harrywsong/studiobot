@@ -839,6 +839,172 @@ class CoinsCog(commands.Cog):
         # FIX: Add guild_id to log message
         self.logger.info(f"User {interaction.user.id} gave {amount} coins to {user.id} in guild {guild_id}", extra={'guild_id': guild_id})
 
+    # Add these admin commands to the CoinsCog class:
+
+    @app_commands.command(name="코인추가", description="사용자에게 코인을 추가합니다. (관리자 전용)")
+    @app_commands.describe(
+        user="코인을 받을 사용자",
+        amount="추가할 코인 수량",
+        reason="추가 이유 (선택사항)"
+    )
+    async def admin_add_coins(self, interaction: discord.Interaction, user: discord.Member, amount: int,
+                              reason: str = "Admin addition"):
+        guild_id = interaction.guild.id
+
+        # Check if casino games are enabled
+        if not config.is_feature_enabled(guild_id, 'casino_games'):
+            await interaction.response.send_message(
+                "❌ 이 서버에서는 코인 시스템이 비활성화되어 있습니다.",
+                ephemeral=True
+            )
+            return
+
+        # Check admin permissions
+        if not self.has_admin_permissions(interaction.user):
+            await interaction.response.send_message("❌ 이 명령어를 사용할 권한이 없습니다.", ephemeral=True)
+            return
+
+        if amount <= 0:
+            await interaction.response.send_message("❌ 코인 수량은 0보다 커야 합니다.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        # Add coins
+        success = await self.add_coins(user.id, guild_id, amount, "admin_add",
+                                       f"Admin addition by {interaction.user.display_name}: {reason}")
+
+        if success:
+            new_balance = await self.get_user_coins(user.id, guild_id)
+            await interaction.followup.send(
+                f"✅ {user.mention}님에게 {amount:,} 코인을 추가했습니다.\n"
+                f"현재 잔액: {new_balance:,} 코인\n"
+                f"이유: {reason}",
+                ephemeral=True
+            )
+            self.logger.info(
+                f"Admin {interaction.user.id} added {amount} coins to user {user.id} in guild {guild_id}: {reason}",
+                extra={'guild_id': guild_id})
+        else:
+            await interaction.followup.send("❌ 코인 추가 중 오류가 발생했습니다.", ephemeral=True)
+
+    @app_commands.command(name="코인제거", description="사용자의 코인을 제거합니다. (관리자 전용)")
+    @app_commands.describe(
+        user="코인을 제거할 사용자",
+        amount="제거할 코인 수량",
+        reason="제거 이유 (선택사항)"
+    )
+    async def admin_remove_coins(self, interaction: discord.Interaction, user: discord.Member, amount: int,
+                                 reason: str = "Admin removal"):
+        guild_id = interaction.guild.id
+
+        # Check if casino games are enabled
+        if not config.is_feature_enabled(guild_id, 'casino_games'):
+            await interaction.response.send_message(
+                "❌ 이 서버에서는 코인 시스템이 비활성화되어 있습니다.",
+                ephemeral=True
+            )
+            return
+
+        # Check admin permissions
+        if not self.has_admin_permissions(interaction.user):
+            await interaction.response.send_message("❌ 이 명령어를 사용할 권한이 없습니다.", ephemeral=True)
+            return
+
+        if amount <= 0:
+            await interaction.response.send_message("❌ 코인 수량은 0보다 커야 합니다.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        # Check current balance
+        current_balance = await self.get_user_coins(user.id, guild_id)
+
+        # Remove coins (can go negative if admin chooses)
+        success = await self.remove_coins(user.id, guild_id, amount, "admin_remove",
+                                          f"Admin removal by {interaction.user.display_name}: {reason}")
+
+        if success:
+            new_balance = await self.get_user_coins(user.id, guild_id)
+            await interaction.followup.send(
+                f"✅ {user.mention}님에게서 {amount:,} 코인을 제거했습니다.\n"
+                f"이전 잔액: {current_balance:,} 코인\n"
+                f"현재 잔액: {new_balance:,} 코인\n"
+                f"이유: {reason}",
+                ephemeral=True
+            )
+            self.logger.info(
+                f"Admin {interaction.user.id} removed {amount} coins from user {user.id} in guild {guild_id}: {reason}",
+                extra={'guild_id': guild_id})
+        else:
+            await interaction.followup.send(f"❌ 코인 제거에 실패했습니다. (현재 잔액: {current_balance:,} 코인)", ephemeral=True)
+
+    @app_commands.command(name="코인설정값", description="사용자의 코인을 특정 값으로 설정합니다. (관리자 전용)")
+    @app_commands.describe(
+        user="코인을 설정할 사용자",
+        amount="설정할 코인 수량",
+        reason="설정 이유 (선택사항)"
+    )
+    async def admin_set_coins(self, interaction: discord.Interaction, user: discord.Member, amount: int,
+                              reason: str = "Admin set"):
+        guild_id = interaction.guild.id
+
+        # Check if casino games are enabled
+        if not config.is_feature_enabled(guild_id, 'casino_games'):
+            await interaction.response.send_message(
+                "❌ 이 서버에서는 코인 시스템이 비활성화되어 있습니다.",
+                ephemeral=True
+            )
+            return
+
+        # Check admin permissions
+        if not self.has_admin_permissions(interaction.user):
+            await interaction.response.send_message("❌ 이 명령어를 사용할 권한이 없습니다.", ephemeral=True)
+            return
+
+        if amount < 0:
+            await interaction.response.send_message("❌ 코인 수량은 0 이상이어야 합니다.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            # Get current balance
+            current_balance = await self.get_user_coins(user.id, guild_id)
+
+            # Update user coins directly
+            await self.bot.pool.execute("""
+                INSERT INTO user_coins (user_id, guild_id, coins)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (user_id, guild_id) 
+                DO UPDATE SET coins = EXCLUDED.coins
+            """, user.id, guild_id, amount)
+
+            # Log transaction
+            difference = amount - current_balance
+            await self.bot.pool.execute("""
+                INSERT INTO coin_transactions (user_id, guild_id, amount, transaction_type, description)
+                VALUES ($1, $2, $3, $4, $5)
+            """, user.id, guild_id, difference, "admin_set", f"Admin set by {interaction.user.display_name}: {reason}")
+
+            # Trigger leaderboard update
+            self.bot.loop.create_task(self.schedule_leaderboard_update(guild_id))
+
+            await interaction.followup.send(
+                f"✅ {user.mention}님의 코인을 {amount:,} 코인으로 설정했습니다.\n"
+                f"이전 잔액: {current_balance:,} 코인\n"
+                f"현재 잔액: {amount:,} 코인\n"
+                f"이유: {reason}",
+                ephemeral=True
+            )
+            self.logger.info(
+                f"Admin {interaction.user.id} set user {user.id} coins to {amount} in guild {guild_id}: {reason}",
+                extra={'guild_id': guild_id})
+
+        except Exception as e:
+            await interaction.followup.send(f"❌ 코인 설정 중 오류가 발생했습니다: {e}", ephemeral=True)
+            self.logger.error(f"Error in admin_set_coins for user {user.id} in guild {guild_id}: {e}",
+                              extra={'guild_id': guild_id})
     @app_commands.command(name="코인거래내역", description="사용자의 코인 거래 내역을 확인합니다.")
     async def view_transactions(self, interaction: discord.Interaction, user: discord.Member = None):
         guild_id = interaction.guild.id
