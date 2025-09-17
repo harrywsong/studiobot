@@ -94,35 +94,111 @@ class JoinBetModal(discord.ui.Modal, title="크래시 게임 참가"):
 
     async def on_submit(self, interaction: discord.Interaction):
         try:
-            bet = int(self.bet_amount.value)
-        except ValueError:
-            await interaction.response.send_message("⚠ 유효한 숫자를 입력해주세요.", ephemeral=True)
+            # Validate bet amount input
+            try:
+                bet = int(self.bet_amount.value)
+            except ValueError:
+                await interaction.response.send_message("⚠️ 유효한 숫자를 입력해주세요.", ephemeral=True)
+                return
+
+            # Check if bet amount is positive
+            if bet <= 0:
+                await interaction.response.send_message("⚠️ 베팅 금액은 0보다 커야 합니다.", ephemeral=True)
+                return
+
+            # Check if game exists and user is not already in it
+            if not self.game:
+                await interaction.response.send_message("⚠️ 게임을 찾을 수 없습니다.", ephemeral=True)
+                return
+
+            if interaction.user.id in self.game.players:
+                await interaction.response.send_message("⚠️ 이미 현재 게임에 참가 중입니다!", ephemeral=True)
+                return
+
+            # Check if game has already started
+            if self.game.game_started:
+                await interaction.response.send_message("⚠️ 이미 게임이 시작되었습니다.", ephemeral=True)
+                return
+
+            # Validate game constraints (min/max bet, user balance, etc.)
+            can_start, error_msg = await self.cog.validate_game(interaction, bet)
+            if not can_start:
+                await interaction.response.send_message(error_msg, ephemeral=True)
+                return
+
+            # Get coins cog and verify it exists
+            coins_cog = self.cog.bot.get_cog('CoinsCog')
+            if not coins_cog:
+                await interaction.response.send_message("⚠️ 코인 시스템을 찾을 수 없습니다.", ephemeral=True)
+                return
+
+            # Attempt to remove coins for the bet
+            coin_removal_success = await coins_cog.remove_coins(
+                interaction.user.id,
+                interaction.guild.id,
+                bet,
+                "crash_bet",
+                "Crash game bet"
+            )
+
+            if not coin_removal_success:
+                await interaction.response.send_message("⚠️ 베팅 처리에 실패했습니다. 잔액을 확인해주세요.", ephemeral=True)
+                return
+
+            # Add player to the game
+            self.game.add_player(interaction.user.id, bet)
+
+            # Update the game message
+            try:
+                embed = await self.view.create_embed()
+                chart_file = await self.view.create_chart()
+
+                # Get the game message for this guild
+                game_message = self.cog.server_messages.get(interaction.guild.id)
+                if game_message:
+                    await game_message.edit(
+                        embed=embed,
+                        attachments=[chart_file] if chart_file else []
+                    )
+                else:
+                    self.cog.logger.warning(f"게임 메시지를 찾을 수 없음 for guild {interaction.guild.id}")
+            except discord.HTTPException as e:
+                self.cog.logger.error(f"게임 메시지 업데이트 실패 for guild {interaction.guild.id}: {e}")
+                # Still continue since the player was added successfully
+
+            # Send success response
+            await interaction.response.send_message(
+                f"✅ 게임에 참가했습니다! ({bet:,} 코인)",
+                ephemeral=True
+            )
+
+            # Log the successful participation
+            self.cog.logger.info(
+                f"{interaction.user}가 {bet} 코인으로 크래시 게임 참가",
+                extra={'guild_id': interaction.guild.id}
+            )
+
+        except discord.InteractionResponded:
+            # This exception occurs if we already responded to the interaction
+            self.cog.logger.warning(f"Interaction already responded for user {interaction.user.id}")
             return
+        except Exception as e:
+            # Catch any other unexpected errors
+            self.cog.logger.error(
+                f"크래시 게임 참가 중 예상치 못한 오류 for guild {interaction.guild.id}: {e}",
+                exc_info=True,
+                extra={'guild_id': interaction.guild.id}
+            )
 
-        if self.game and interaction.user.id in self.game.players:
-            await interaction.response.send_message("⚠ 이미 현재 게임에 참가 중입니다!", ephemeral=True)
-            return
-
-        can_start, error_msg = await self.cog.validate_game(interaction, bet)
-        if not can_start:
-            await interaction.response.send_message(error_msg, ephemeral=True)
-            return
-
-        coins_cog = self.cog.bot.get_cog('CoinsCog')
-        # FIX: Pass guild_id to remove_coins for multi-server support
-        if not await coins_cog.remove_coins(interaction.user.id, interaction.guild.id, bet, "crash_bet", "Crash game bet"):
-            await interaction.response.send_message("베팅 처리 실패!", ephemeral=True)
-            return
-
-        self.game.add_player(interaction.user.id, bet)
-
-        embed = await self.view.create_embed()
-        chart_file = await self.view.create_chart()
-        await self.cog.game_message[interaction.guild.id].edit(embed=embed, attachments=[chart_file] if chart_file else []) # FIX: Use guild_id to get message
-        await interaction.response.send_message(f"✅ 게임에 참가했습니다! ({bet:,} 코인)", ephemeral=True)
-        # FIX: Add extra={'guild_id': ...} for multi-server logging context
-        self.cog.logger.info(f"{interaction.user}가 {bet} 코인으로 크래시 게임 참가", extra={'guild_id': interaction.guild.id})
-
+            # Try to respond with an error message if we haven't responded yet
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(
+                        "⚠️ 게임 참가 중 오류가 발생했습니다. 다시 시도해주세요.",
+                        ephemeral=True
+                    )
+            except discord.InteractionResponded:
+                pass  # Already responded, nothing we can do
 
 class CrashView(discord.ui.View):
     """Interactive crash game view for multiple players - Multi-server aware"""
