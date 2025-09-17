@@ -1,4 +1,4 @@
-# cogs/achievements.py - Fixed for proper multi-server support
+# cogs/achievements.py - Fixed for proper multi-server support with hint system
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
@@ -10,6 +10,8 @@ from datetime import timedelta, time as dt_time
 import asyncio
 import traceback
 from typing import Optional
+import pytz
+import re
 
 # Updated imports for multi-server config
 from utils.config import (
@@ -148,22 +150,21 @@ class Achievements(commands.Cog):
     }
 
     HIDDEN_ACHIEVEMENTS = {
-        "🤫 The Echo": "봇에게 특별한 한 마디를 속삭이면, 그 말이 메아리가 되어 돌아옵니다.",
-        "🕛 Midnight Mystery": "하루가 끝나고 새로운 하루가 시작될 때, 조용히 나타나는 현상을 목격하세요.",
-        "🪐 Zero Gravity": "무중력 상태에서는 오직 당신의 목소리만 울려 퍼집니다.",
-        "⏳ Time Capsule": "아주 오래된 추억을 되살려보세요.",
-        "🔄 Palindrome Pro": "말장난은 거꾸로 해도 통합니다.",
-        "🤐 The Unmentionable": "모두가 알지만 누구도 입 밖에 내지 않는, 그런 단어가 존재합니다.",
-        "🙉 I'm Not Listening": "특정 단어에 대한 경고를 무시하고 자유롭게 외쳐보세요.",
-        "❄️ Code Breaker": "차가운 겨울을 상징하는 단 하나의 무엇이 모든 것을 바꿔놓을 수 있습니다.",
-        "👻 Ghost Hunter": "서버에 없는 유령을 찾아 이름을 불러보세요.",
-        "✒️ Invisible Ink": "아무도 볼 수 없는 비밀 메시지를 만들어보세요.",
-        "📢 Echo Chamber": "연속된 외침이 만들어내는 소리, 그 메아리를 들어보세요.",
-        "🚶 Shadow Lurker": "그림자 속에 숨어 있다가 빛 속으로 걸어 나오세요.",
-        "✏️ Phantom Poster": "당신의 메시지는 유령처럼 재빨리 모습을 바꿉니다. 아무도 그 변화를 눈치채지 못하게 해보세요.",
-        "❤️ Secret Admirer": "봇의 마음에 불을 붙여보세요.",
-        "📍 Error 404": "존재하지 않는 페이지를 찾아 헤매는 것처럼 명령어를 입력해보세요.",
-        "📟 Ping Master": "봇에게 당신의 존재를 알리세요."
+        "🤫 The Echo": "봇에게 특별한 인사를 건네보세요.",
+        "🕛 Midnight Mystery": "시간의 경계에서 메시지를 남겨보세요.",
+        "🪐 Zero Gravity": "혼자만의 공간에서 메시지를 보내보세요.",
+        "🔄 Palindrome Pro": "앞으로 읽어도 뒤로 읽어도 같은 메시지를 보내보세요.",
+        "🤐 The Unmentionable": "모든 사람의 주의를 끌어보세요.",
+        "🙉 I'm Not Listening": "음성 채널에서 소리를 완전히 차단해보세요.",
+        "❄️ Code Breaker": "디스코드의 숨겨진 ID를 메시지에 포함해보세요.",
+        "👻 Ghost Hunter": "존재하지 않는 유령을 찾아 멘션해보세요.",
+        "✒️ Invisible Ink": "모든 내용을 숨긴 메시지를 보내보세요.",
+        "📢 Echo Chamber": "다른 사람들과 함께 메아리를 만들어보세요.",
+        "🚶 Shadow Lurker": "긴 침묵 후에 다시 나타나보세요.",
+        "✏️ Phantom Poster": "흔적을 남기지 않고 사라져보세요.",
+        "❤️ Secret Admirer": "오래된 메시지에 첫 번째 반응을 남겨보세요.",
+        "📍 Error 404": "존재하지 않는 명령어를 찾아보세요.",
+        "📟 Ping Master": "누군가의 부름에 빠르게 응답해보세요."
     }
 
     ACHIEVEMENT_EMOJI_MAP = {
@@ -191,7 +192,6 @@ class Achievements(commands.Cog):
         "The Echo": "🤫",
         "Midnight Mystery": "🕛",
         "Zero Gravity": "🪐",
-        "Time Capsule": "⏳",
         "Palindrome Pro": "🔄",
         "The Unmentionable": "🤐",
         "I'm Not Listening": "🙉",
@@ -211,7 +211,7 @@ class Achievements(commands.Cog):
         self.logger = get_logger("업적 시스템")
         self.logger.info("업적 시스템이 초기화되었습니다.")
 
-        # FIXED: Per-guild data structure - user_id: {guild_id: data}
+        # Per-guild data structure - user_id: {guild_id: data}
         self.data = defaultdict(lambda: defaultdict(lambda: {
             "general_unlocked": [],
             "hidden_unlocked": [],
@@ -220,8 +220,8 @@ class Achievements(commands.Cog):
             "different_reactions": set(),
             "last_message_date": None,
             "daily_streak": 0,
-            "weekend_count": 0,  # FIXED: Count actual weekends, not messages
-            "weekends_participated": set(),  # FIXED: Track which weekends
+            "weekend_count": 0,
+            "weekends_participated": set(),
             "command_count": 0,
             "voice_time": 0.0,
             "first_command_used": False,
@@ -244,6 +244,10 @@ class Achievements(commands.Cog):
             "has_boosted": False,
             "bot_pinged": False,
             "voice_join_time": None,
+            "last_activity": None,
+            "echo_chamber_participants": set(),
+            "last_echo_message": None,
+            "message_delete_times": [],
         }))
         self.load_data()
         self.voice_update_task.start()
@@ -255,13 +259,12 @@ class Achievements(commands.Cog):
                 with open(ACHIEVEMENT_DATA_PATH, 'r') as f:
                     data = json.load(f)
 
-                    # Handle both old format (user_id: data) and new format (user_id: {guild_id: data})
+                    # Handle both old format and new format
                     for user_id, user_data in data.items():
                         user_id = int(user_id)
 
-                        # Check if this is old format (has achievement data directly)
                         if "general_unlocked" in user_data:
-                            # Old format - migrate to new format for all guilds
+                            # Old format - migrate to new format
                             self.logger.info(f"Migrating old format data for user {user_id}")
 
                             # Convert sets from lists
@@ -270,40 +273,24 @@ class Achievements(commands.Cog):
                             user_data["message_ids_reacted_to"] = set(user_data.get("message_ids_reacted_to", []))
                             user_data["holidays_sent"] = set(user_data.get("holidays_sent", []))
                             user_data["weekends_participated"] = set(user_data.get("weekends_participated", []))
+                            user_data["echo_chamber_participants"] = set(user_data.get("echo_chamber_participants", []))
 
                             # Convert datetime strings
-                            user_data["last_message_date"] = (
-                                datetime.datetime.fromisoformat(user_data["last_message_date"])
-                                if user_data.get("last_message_date")
-                                else None
-                            )
-                            user_data["last_edit_time"] = (
-                                datetime.datetime.fromisoformat(user_data.get("last_edit_time"))
-                                if user_data.get("last_edit_time")
-                                else None
-                            )
-                            user_data["last_lurker_message"] = (
-                                datetime.datetime.fromisoformat(user_data.get("last_lurker_message"))
-                                if user_data.get("last_lurker_message")
-                                else None
-                            )
+                            for dt_field in ["last_message_date", "last_edit_time", "last_lurker_message",
+                                             "voice_join_time", "last_activity", "last_echo_message"]:
+                                if user_data.get(dt_field):
+                                    user_data[dt_field] = datetime.datetime.fromisoformat(user_data[dt_field])
+
                             user_data["edit_timestamps"] = [
                                 datetime.datetime.fromisoformat(ts)
                                 for ts in user_data.get("edit_timestamps", [])
                             ]
-                            user_data["voice_join_time"] = (
-                                datetime.datetime.fromisoformat(user_data.get("voice_join_time"))
-                                if user_data.get("voice_join_time")
-                                else None
-                            )
 
-                            # FIXED: Migrate weekend_streak to weekend_count and weekends_participated
-                            if "weekend_streak" in user_data:
-                                user_data["weekend_count"] = user_data.get("weekend_streak", 0)
-                                user_data.pop("weekend_streak", None)
-                                user_data.pop("last_weekend_date", None)  # Remove old field
+                            user_data["message_delete_times"] = [
+                                datetime.datetime.fromisoformat(ts)
+                                for ts in user_data.get("message_delete_times", [])
+                            ]
 
-                            # Store as guild-specific data (we'll copy to all known guilds later)
                             self.data[user_id]["migrated"] = user_data
 
                         else:
@@ -317,32 +304,24 @@ class Achievements(commands.Cog):
                                 guild_data["message_ids_reacted_to"] = set(guild_data.get("message_ids_reacted_to", []))
                                 guild_data["holidays_sent"] = set(guild_data.get("holidays_sent", []))
                                 guild_data["weekends_participated"] = set(guild_data.get("weekends_participated", []))
+                                guild_data["echo_chamber_participants"] = set(
+                                    guild_data.get("echo_chamber_participants", []))
 
                                 # Convert datetime strings
-                                guild_data["last_message_date"] = (
-                                    datetime.datetime.fromisoformat(guild_data["last_message_date"])
-                                    if guild_data.get("last_message_date")
-                                    else None
-                                )
-                                guild_data["last_edit_time"] = (
-                                    datetime.datetime.fromisoformat(guild_data.get("last_edit_time"))
-                                    if guild_data.get("last_edit_time")
-                                    else None
-                                )
-                                guild_data["last_lurker_message"] = (
-                                    datetime.datetime.fromisoformat(guild_data.get("last_lurker_message"))
-                                    if guild_data.get("last_lurker_message")
-                                    else None
-                                )
+                                for dt_field in ["last_message_date", "last_edit_time", "last_lurker_message",
+                                                 "voice_join_time", "last_activity", "last_echo_message"]:
+                                    if guild_data.get(dt_field):
+                                        guild_data[dt_field] = datetime.datetime.fromisoformat(guild_data[dt_field])
+
                                 guild_data["edit_timestamps"] = [
                                     datetime.datetime.fromisoformat(ts)
                                     for ts in guild_data.get("edit_timestamps", [])
                                 ]
-                                guild_data["voice_join_time"] = (
-                                    datetime.datetime.fromisoformat(guild_data.get("voice_join_time"))
-                                    if guild_data.get("voice_join_time")
-                                    else None
-                                )
+
+                                guild_data["message_delete_times"] = [
+                                    datetime.datetime.fromisoformat(ts)
+                                    for ts in guild_data.get("message_delete_times", [])
+                                ]
 
                                 self.data[user_id][guild_id] = guild_data
 
@@ -363,7 +342,7 @@ class Achievements(commands.Cog):
                     serializable_data[user_id] = {}
 
                     for guild_id, guild_data in guild_data_dict.items():
-                        if guild_id == "migrated":  # Skip migration marker
+                        if guild_id == "migrated":
                             continue
 
                         serializable_data[user_id][guild_id] = {
@@ -373,30 +352,22 @@ class Achievements(commands.Cog):
                             "message_ids_reacted_to": list(guild_data.get("message_ids_reacted_to", set())),
                             "holidays_sent": list(guild_data.get("holidays_sent", set())),
                             "weekends_participated": list(guild_data.get("weekends_participated", set())),
-                            "last_message_date": (
-                                guild_data["last_message_date"].isoformat()
-                                if guild_data.get("last_message_date")
-                                else None
-                            ),
-                            "last_edit_time": (
-                                guild_data["last_edit_time"].isoformat()
-                                if guild_data.get("last_edit_time")
-                                else None
-                            ),
-                            "last_lurker_message": (
-                                guild_data["last_lurker_message"].isoformat()
-                                if guild_data.get("last_lurker_message")
-                                else None
-                            ),
-                            "edit_timestamps": [
-                                ts.isoformat() for ts in guild_data.get("edit_timestamps", [])
-                            ],
-                            "voice_join_time": (
-                                guild_data.get("voice_join_time").isoformat()
-                                if guild_data.get("voice_join_time")
-                                else None
-                            ),
+                            "echo_chamber_participants": list(guild_data.get("echo_chamber_participants", set())),
                         }
+
+                        # Convert datetime objects to strings
+                        for dt_field in ["last_message_date", "last_edit_time", "last_lurker_message",
+                                         "voice_join_time", "last_activity", "last_echo_message"]:
+                            if guild_data.get(dt_field):
+                                serializable_data[user_id][guild_id][dt_field] = guild_data[dt_field].isoformat()
+
+                        serializable_data[user_id][guild_id]["edit_timestamps"] = [
+                            ts.isoformat() for ts in guild_data.get("edit_timestamps", [])
+                        ]
+
+                        serializable_data[user_id][guild_id]["message_delete_times"] = [
+                            ts.isoformat() for ts in guild_data.get("message_delete_times", [])
+                        ]
 
                 json.dump(serializable_data, f, indent=4)
                 self.logger.debug("업적 데이터 저장 완료")
@@ -413,12 +384,10 @@ class Achievements(commands.Cog):
         self.logger.info("업적 시스템 Cog 언로드됨")
 
     async def _send_achievement_notification(self, member, achievement_name, is_hidden):
-        # Check if achievements are enabled for this server
         if not is_feature_enabled(member.guild.id, 'achievements'):
             return
 
         try:
-            # Get server-specific achievement alert channel
             achievement_alert_channel_id = get_channel_id(member.guild.id, 'achievement_alert_channel')
             if not achievement_alert_channel_id:
                 self.logger.warning("No achievement alert channel configured.", extra={'guild_id': member.guild.id})
@@ -455,8 +424,7 @@ class Achievements(commands.Cog):
                               extra={'guild_id': member.guild.id})
 
     def unlock_achievement(self, user, achievement_name, is_hidden=False, guild_id=None):
-        """FIXED: Properly handle guild-specific achievements"""
-        # Determine guild_id
+        """Properly handle guild-specific achievements"""
         if guild_id is None:
             if hasattr(user, 'guild') and user.guild:
                 guild_id = user.guild.id
@@ -465,7 +433,6 @@ class Achievements(commands.Cog):
                     f"Cannot determine guild for achievement unlock: {achievement_name} for user {user.id}")
                 return False
 
-        # Check if achievements are enabled for this server
         if not is_feature_enabled(guild_id, 'achievements'):
             return False
 
@@ -480,16 +447,42 @@ class Achievements(commands.Cog):
             self.logger.info(f"업적 달성: {user.name} (ID: {user_id}) - {achievement_name} ({achievement_type})",
                              extra={'guild_id': guild_id})
 
-            # Send notification and update display for the specific guild
             if hasattr(user, 'guild') and user.guild:
                 self.bot.loop.create_task(self._send_achievement_notification(user, achievement_name, is_hidden))
                 self.bot.loop.create_task(self.post_achievements_display(guild_id))
 
-            # Achievement Hunter check (guild-specific)
+            # Achievement Hunter check
             if not is_hidden and len(user_data["general_unlocked"]) >= 10:
                 self.unlock_achievement(user, "Achievement Hunter", guild_id=guild_id)
             return True
         return False
+
+    # Helper functions for new achievements
+    def is_discord_snowflake(self, text):
+        """Check if text contains a valid Discord snowflake ID"""
+        snowflake_pattern = r'\b\d{17,19}\b'
+        return bool(re.search(snowflake_pattern, text))
+
+    def is_palindrome(self, text):
+        """Check if text is a palindrome (case-insensitive, ignoring spaces and punctuation)"""
+        clean_text = re.sub(r'[^a-zA-Z0-9가-힣]', '', text.lower())
+        return len(clean_text) > 3 and clean_text == clean_text[::-1]
+
+    def is_spoiler_only(self, text):
+        """Check if entire message is formatted as spoilers"""
+        if not text.strip():
+            return False
+        # Remove spoiler tags and check if anything remains
+        no_spoilers = re.sub(r'\|\|.*?\|\|', '', text)
+        return not no_spoilers.strip() and '||' in text
+
+    async def count_non_bot_members_online(self, guild):
+        """Count non-bot members who are online"""
+        online_count = 0
+        for member in guild.members:
+            if not member.bot and member.status != discord.Status.offline:
+                online_count += 1
+        return online_count
 
     async def _get_sorted_members(self, guild_id):
         guild = self.bot.get_guild(guild_id)
@@ -515,7 +508,6 @@ class Achievements(commands.Cog):
         return [item['member'] for item in sorted_members]
 
     async def post_achievements_display(self, guild_id):
-        # Check if achievements are enabled for this server
         if not is_feature_enabled(guild_id, 'achievements'):
             return
 
@@ -610,11 +602,11 @@ class Achievements(commands.Cog):
 
         embed = discord.Embed(
             title="업적 목록 및 힌트",
-            description="아래는 봇에서 달성할 수 있는 모든 업적 목록입니다.",
+            description="아래는 봇에서 달성할 수 있는 모든 업적 목록입니다. 히든 업적은 힌트로만 제공됩니다!",
             color=discord.Color.green()
         )
         embed.add_field(name=f"일반 업적 ({len(self.GENERAL_ACHIEVEMENTS)})", value=general_list, inline=False)
-        embed.add_field(name=f"히든 업적 ({len(self.HIDDEN_ACHIEVEMENTS)})", value=hidden_list, inline=False)
+        embed.add_field(name=f"히든 업적 힌트 ({len(self.HIDDEN_ACHIEVEMENTS)})", value=hidden_list, inline=False)
         return embed
 
     @commands.Cog.listener()
@@ -718,21 +710,10 @@ class Achievements(commands.Cog):
         user_data = self.get_user_data(user_id, guild_id)
         now = datetime.datetime.now(datetime.timezone.utc)
 
-        # Error 404 achievement check
-        if message.content.startswith('/') and message.guild:
-            try:
-                command_name = message.content.split(' ')[0][1:].lower()
-                all_slash_commands = [c.name.lower() for c in self.bot.tree.get_commands(guild=message.guild)]
-                if command_name not in all_slash_commands:
-                    self.unlock_achievement(message.author, "Error 404", is_hidden=True, guild_id=guild_id)
-            except IndexError:
-                pass
-
-        # Handle DM messages
+        # Handle DM messages for The Echo achievement
         if isinstance(message.channel, discord.DMChannel):
             if "안녕" in message.content:
-                # For DMs, we need to find which guild to attribute this to
-                # We'll find the first guild where achievements are enabled and the user is a member
+                # For DMs, find the first guild where achievements are enabled and the user is a member
                 for guild in self.bot.guilds:
                     if is_feature_enabled(guild.id, 'achievements'):
                         member = guild.get_member(user_id)
@@ -741,6 +722,9 @@ class Achievements(commands.Cog):
                             break
             self.save_data()
             return
+
+        # Update user activity timestamp
+        user_data["last_activity"] = now
 
         # Set join date if not already set
         if not user_data.get("join_date") and message.author.joined_at:
@@ -795,6 +779,12 @@ class Achievements(commands.Cog):
             if len(user_data["holidays_sent"]) >= 5:
                 self.unlock_achievement(message.author, "Holiday Greeter", guild_id=guild_id)
 
+        # Midnight Mystery achievement (23:55-00:05)
+        hour = now.hour
+        minute = now.minute
+        if (hour == 23 and minute >= 55) or (hour == 0 and minute <= 5):
+            self.unlock_achievement(message.author, "Midnight Mystery", is_hidden=True, guild_id=guild_id)
+
         # Night Owl achievement (5 AM - 6 AM)
         if 5 <= now.hour < 6:
             self.unlock_achievement(message.author, "Night Owl", guild_id=guild_id)
@@ -803,7 +793,63 @@ class Achievements(commands.Cog):
         if 9 <= now.hour < 10:
             self.unlock_achievement(message.author, "Early Bird", guild_id=guild_id)
 
-        # FIXED: Daily Devotee achievement - proper streak calculation
+        # Zero Gravity achievement - only user online
+        online_count = await self.count_non_bot_members_online(message.guild)
+        if online_count == 1:  # Only this user is online
+            self.unlock_achievement(message.author, "Zero Gravity", is_hidden=True, guild_id=guild_id)
+
+        # Palindrome Pro achievement
+        if self.is_palindrome(message.content):
+            self.unlock_achievement(message.author, "Palindrome Pro", is_hidden=True, guild_id=guild_id)
+
+        # The Unmentionable achievement
+        if "@everyone" in message.content or "@here" in message.content:
+            self.unlock_achievement(message.author, "The Unmentionable", is_hidden=True, guild_id=guild_id)
+
+        # Code Breaker achievement
+        if self.is_discord_snowflake(message.content):
+            self.unlock_achievement(message.author, "Code Breaker", is_hidden=True, guild_id=guild_id)
+
+        # Ghost Hunter achievement - mention the specific ghost user ID
+        if "1365499246962540606" in message.content and "<@1365499246962540606>" in message.content:
+            self.unlock_achievement(message.author, "Ghost Hunter", is_hidden=True, guild_id=guild_id)
+
+        # Invisible Ink achievement
+        if self.is_spoiler_only(message.content):
+            self.unlock_achievement(message.author, "Invisible Ink", is_hidden=True, guild_id=guild_id)
+
+        # Echo Chamber achievement - 3+ people sending same message
+        clean_content = message.content.strip().lower()
+        if clean_content and len(clean_content) > 0:
+            # Check if this is part of an echo chamber
+            recent_messages = []
+            async for msg in message.channel.history(limit=10, before=message):
+                if msg.content.strip().lower() == clean_content:
+                    recent_messages.append(msg)
+                else:
+                    break
+
+            # If we have 2+ previous identical messages, this creates an echo chamber
+            if len(recent_messages) >= 2:
+                # Get all unique authors in the chain (including current message author)
+                authors = {message.author.id}
+                for msg in recent_messages:
+                    authors.add(msg.author.id)
+
+                # Award achievement to all participants if we have 3+ unique people
+                if len(authors) >= 3:
+                    for author_id in authors:
+                        member = message.guild.get_member(author_id)
+                        if member and not member.bot:
+                            self.unlock_achievement(member, "Echo Chamber", is_hidden=True, guild_id=guild_id)
+
+        # Shadow Lurker - message after 7 days of inactivity
+        if user_data.get("last_activity"):
+            time_diff = (now - user_data["last_activity"]).total_seconds()
+            if time_diff >= 604800:  # 7 days in seconds
+                self.unlock_achievement(message.author, "Shadow Lurker", is_hidden=True, guild_id=guild_id)
+
+        # Daily Devotee achievement - proper streak calculation
         today = now.date()
         if user_data.get("last_message_date"):
             last_date = user_data["last_message_date"].date()
@@ -827,11 +873,9 @@ class Achievements(commands.Cog):
         if user_data["daily_streak"] >= 7:
             self.unlock_achievement(message.author, "Daily Devotee", guild_id=guild_id)
 
-        # FIXED: Weekend Warrior achievement - count actual weekends
+        # Weekend Warrior achievement - count actual weekends
         if now.weekday() >= 5:  # Saturday (5) or Sunday (6)
-            # Get the current weekend identifier (year-week)
             year = now.year
-            # Get the week number, but adjust so weekends are grouped together
             week = now.isocalendar()[1]
             weekend_id = f"{year}-{week}"
 
@@ -842,37 +886,35 @@ class Achievements(commands.Cog):
                 if user_data["weekend_count"] >= 10:
                     self.unlock_achievement(message.author, "Weekend Warrior", guild_id=guild_id)
 
-        # Phantom Poster - message posted within 10 seconds of editing
-        if user_data.get("last_edit_time") and (now - user_data["last_edit_time"]).total_seconds() <= 10:
+        # Error 404 achievement check
+        if message.content.startswith('/'):
+            try:
+                command_name = message.content.split(' ')[0][1:].lower()
+                all_slash_commands = [c.name.lower() for c in self.bot.tree.get_commands(guild=message.guild)]
+                if command_name not in all_slash_commands:
+                    self.unlock_achievement(message.author, "Error 404", is_hidden=True, guild_id=guild_id)
+            except IndexError:
+                pass
+
+        self.save_data()
+
+    @commands.Cog.listener()
+    async def on_message_delete(self, message):
+        if message.author.bot:
+            return
+        if not message.guild or not is_feature_enabled(message.guild.id, 'achievements'):
+            return
+
+        user_id = message.author.id
+        guild_id = message.guild.id
+        user_data = self.get_user_data(user_id, guild_id)
+        now = datetime.datetime.now(datetime.timezone.utc)
+
+        # Phantom Poster - message deleted within 5 seconds
+        message_age = (now - message.created_at.replace(tzinfo=datetime.timezone.utc)).total_seconds()
+        if message_age <= 5:
             self.unlock_achievement(message.author, "Phantom Poster", is_hidden=True, guild_id=guild_id)
 
-        # Palindrome Pro
-        clean_content = message.content.lower().strip()
-        if len(clean_content) > 3 and clean_content == clean_content[::-1]:
-            self.unlock_achievement(message.author, "Palindrome Pro", is_hidden=True, guild_id=guild_id)
-
-        # Zero Gravity - empty message with attachment in voice channel
-        if not message.content.strip() and message.attachments and message.author.voice:
-            self.unlock_achievement(message.author, "Zero Gravity", is_hidden=True, guild_id=guild_id)
-
-        # Echo Chamber - 3+ consecutive identical messages
-        if user_data.get("last_message_text") and message.content.strip().lower() == user_data[
-            "last_message_text"].strip().lower():
-            user_data["consecutive_messages"] = user_data.get("consecutive_messages", 0) + 1
-            if user_data["consecutive_messages"] >= 3:
-                self.unlock_achievement(message.author, "Echo Chamber", is_hidden=True, guild_id=guild_id)
-        else:
-            user_data["consecutive_messages"] = 1
-
-        user_data["last_message_text"] = message.content
-
-        # Shadow Lurker - message after 1+ hour of silence
-        if user_data.get("last_lurker_message"):
-            time_diff = (now - user_data["last_lurker_message"]).total_seconds()
-            if time_diff >= 3600:  # 1 hour
-                self.unlock_achievement(message.author, "Shadow Lurker", is_hidden=True, guild_id=guild_id)
-
-        user_data["last_lurker_message"] = now
         self.save_data()
 
     @commands.Cog.listener()
@@ -887,6 +929,41 @@ class Achievements(commands.Cog):
         user_data = self.get_user_data(user_id, guild_id)
         now = datetime.datetime.now(datetime.timezone.utc)
         user_data["last_edit_time"] = now
+        self.save_data()
+
+    @commands.Cog.listener()
+    async def on_reaction_add(self, reaction, user):
+        if user.bot or not reaction.message.guild or not is_feature_enabled(reaction.message.guild.id, 'achievements'):
+            return
+
+        user_id = user.id
+        guild_id = reaction.message.guild.id
+        message_id = reaction.message.id
+        user_data = self.get_user_data(user_id, guild_id)
+        now = datetime.datetime.now(datetime.timezone.utc)
+
+        # Secret Admirer achievement - first reaction to message over 24 hours old
+        message_age = (now - reaction.message.created_at.replace(tzinfo=datetime.timezone.utc)).total_seconds()
+        if message_age >= 86400 and len(reaction.message.reactions) == 1:  # 24 hours, first reaction
+            # Check if this is actually the first reaction
+            total_reactions = sum(r.count for r in reaction.message.reactions)
+            if total_reactions == 1:
+                self.unlock_achievement(user, "Secret Admirer", is_hidden=True, guild_id=guild_id)
+
+        # The Collector achievement
+        emoji_str = str(reaction.emoji)
+        if emoji_str not in user_data["different_reactions"]:
+            user_data["different_reactions"].add(emoji_str)
+            if len(user_data["different_reactions"]) >= 10:
+                self.unlock_achievement(user, "The Collector", guild_id=guild_id)
+
+        # Reaction Responder achievement
+        if message_id not in user_data["message_ids_reacted_to"]:
+            user_data["reaction_responder_count"] = user_data.get("reaction_responder_count", 0) + 1
+            user_data["message_ids_reacted_to"].add(message_id)
+            if user_data["reaction_responder_count"] >= 50:
+                self.unlock_achievement(user, "Reaction Responder", guild_id=guild_id)
+
         self.save_data()
 
     @commands.Cog.listener()
@@ -906,40 +983,14 @@ class Achievements(commands.Cog):
                 self.unlock_achievement(interaction.user, "First Steps", guild_id=guild_id)
                 user_data["first_command_used"] = True
 
-            # Bot Buddy
+            # Bot Buddy achievement
             user_data["bot_interactions"] = user_data.get("bot_interactions", 0) + 1
             if user_data["bot_interactions"] >= 100:
                 self.unlock_achievement(interaction.user, "Bot Buddy", guild_id=guild_id)
 
-            # Ping Master
+            # Ping Master achievement (for ping-related commands)
             if interaction.command and "ping" in interaction.command.name.lower():
                 self.unlock_achievement(interaction.user, "Ping Master", is_hidden=True, guild_id=guild_id)
-
-        self.save_data()
-
-    @commands.Cog.listener()
-    async def on_reaction_add(self, reaction, user):
-        if user.bot or not reaction.message.guild or not is_feature_enabled(reaction.message.guild.id, 'achievements'):
-            return
-
-        user_id = user.id
-        guild_id = reaction.message.guild.id
-        message_id = reaction.message.id
-        user_data = self.get_user_data(user_id, guild_id)
-
-        # The Collector
-        emoji_str = str(reaction.emoji)
-        if emoji_str not in user_data["different_reactions"]:
-            user_data["different_reactions"].add(emoji_str)
-            if len(user_data["different_reactions"]) >= 10:
-                self.unlock_achievement(user, "The Collector", guild_id=guild_id)
-
-        # Reaction Responder
-        if message_id not in user_data["message_ids_reacted_to"]:
-            user_data["reaction_responder_count"] = user_data.get("reaction_responder_count", 0) + 1
-            user_data["message_ids_reacted_to"].add(message_id)
-            if user_data["reaction_responder_count"] >= 50:
-                self.unlock_achievement(user, "Reaction Responder", guild_id=guild_id)
 
         self.save_data()
 
@@ -953,6 +1004,11 @@ class Achievements(commands.Cog):
         user_data = self.get_user_data(user_id, guild_id)
         now = datetime.datetime.now(datetime.timezone.utc)
 
+        # I'm Not Listening achievement - user deafened themselves
+        if (before.self_deaf != after.self_deaf and after.self_deaf and
+                after.channel is not None):
+            self.unlock_achievement(member, "I'm Not Listening", is_hidden=True, guild_id=guild_id)
+
         # Joined a voice channel
         if before.channel is None and after.channel is not None:
             user_data["voice_join_time"] = now
@@ -961,7 +1017,6 @@ class Achievements(commands.Cog):
         # Left a voice channel
         elif before.channel is not None and after.channel is None:
             if user_data.get("voice_join_time"):
-                # FIXED: Proper timezone handling
                 join_time = user_data["voice_join_time"]
                 if join_time.tzinfo is None:
                     join_time = join_time.replace(tzinfo=datetime.timezone.utc)
@@ -993,13 +1048,12 @@ class Achievements(commands.Cog):
                         user_data["voice_join_time"] = now
                         continue
 
-                    # FIXED: Proper timezone handling and duration calculation
                     voice_join_time = user_data["voice_join_time"]
                     if voice_join_time.tzinfo is None:
                         voice_join_time = voice_join_time.replace(tzinfo=datetime.timezone.utc)
 
                     # Calculate time since last update (5 minutes max)
-                    duration = min((now - voice_join_time).total_seconds(), 300)  # Cap at 5 minutes
+                    duration = min((now - voice_join_time).total_seconds(), 300)
                     user_data["voice_time"] = user_data.get("voice_time", 0) + duration
                     user_data["voice_join_time"] = now
 
