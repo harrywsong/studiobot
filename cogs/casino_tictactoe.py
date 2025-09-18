@@ -291,6 +291,9 @@ class TicTacToeCog(commands.Cog):
             opponent: discord.Member,
             bet: int = 50
     ):
+        # Acknowledge the interaction immediately to prevent timeout
+        await interaction.response.defer()
+
         # Validate game using casino base
         casino_base = self.bot.get_cog('CasinoBaseCog')
         if casino_base:
@@ -298,16 +301,17 @@ class TicTacToeCog(commands.Cog):
                 interaction, "tictactoe", bet, 10, 500
             )
             if not can_start:
-                await interaction.response.send_message(error_msg, ephemeral=True)
+                # Use followup.send to respond after deferring
+                await interaction.followup.send(error_msg, ephemeral=True)
                 return
 
         # Basic validation
         if opponent.id == interaction.user.id:
-            await interaction.response.send_message("❌ 자기 자신과는 대전할 수 없습니다!", ephemeral=True)
+            await interaction.followup.send("❌ 자기 자신과는 대전할 수 없습니다!", ephemeral=True)
             return
 
         if opponent.bot:
-            await interaction.response.send_message("❌ 봇과는 대전할 수 없습니다!", ephemeral=True)
+            await interaction.followup.send("❌ 봇과는 대전할 수 없습니다!", ephemeral=True)
             return
 
         channel_id = interaction.channel.id
@@ -315,7 +319,7 @@ class TicTacToeCog(commands.Cog):
         # Check if channel has active game
         if channel_id in self.active_games:
             if not self.active_games[channel_id].game_over:
-                await interaction.response.send_message("❌ 이 채널에서 이미 틱택토 게임이 진행 중입니다!", ephemeral=True)
+                await interaction.followup.send("❌ 이 채널에서 이미 틱택토 게임이 진행 중입니다!", ephemeral=True)
                 return
             else:
                 del self.active_games[channel_id]
@@ -323,12 +327,12 @@ class TicTacToeCog(commands.Cog):
         # Check if opponent can afford bet
         coins_cog = self.bot.get_cog('CoinsCog')
         if not coins_cog:
-            await interaction.response.send_message("❌ 코인 시스템을 찾을 수 없습니다!", ephemeral=True)
+            await interaction.followup.send("❌ 코인 시스템을 찾을 수 없습니다!", ephemeral=True)
             return
 
         opponent_balance = await coins_cog.get_balance(opponent.id, interaction.guild.id)
         if opponent_balance < bet:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 f"❌ {opponent.display_name}님의 코인이 부족합니다! (필요: {bet:,}, 보유: {opponent_balance:,})", ephemeral=True)
             return
 
@@ -340,13 +344,14 @@ class TicTacToeCog(commands.Cog):
         )
 
         challenge_view = TicTacToeChallenge(self, interaction.user.id, opponent.id, bet, channel_id)
-        await interaction.response.send_message(embed=challenge_embed, view=challenge_view)
+
+        # Send the final response using followup.send
+        await interaction.followup.send(embed=challenge_embed, view=challenge_view)
 
         self.logger.info(
             f"{interaction.user}가 {opponent}에게 {bet}코인으로 틱택토 대전을 신청했습니다",
             extra={'guild_id': interaction.guild.id}
         )
-
 
 class TicTacToeChallenge(discord.ui.View):
     """Challenge acceptance view"""
