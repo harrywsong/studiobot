@@ -1,4 +1,4 @@
-# cogs/casino_tictactoe.py - Tic Tac Toe PvP game (FIXED)
+# cogs/casino_tictactoe.py - Tic Tac Toe PvP game (FINAL FIXED)
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -77,6 +77,7 @@ class TicTacToeView(discord.ui.View):
         self.game_over = False
         self.winner = None
         self.is_tie = False
+        self.message = None  # Store the message object
 
         # Create 3x3 grid of buttons
         for row in range(3):
@@ -97,8 +98,8 @@ class TicTacToeView(discord.ui.View):
 
     async def make_move(self, interaction: discord.Interaction, row: int, col: int):
         """Handle a player move"""
-        # FIXED: Use proper response handling
-        await interaction.response.defer()
+        # FIXED: Use proper response handling for button interactions
+        await interaction.response.defer(ephemeral=True)
 
         if self.game_over:
             await interaction.followup.send("❌ 게임이 이미 끝났습니다!", ephemeral=True)
@@ -135,8 +136,13 @@ class TicTacToeView(discord.ui.View):
             # Switch turns
             self.current_turn = 2 if self.current_turn == 1 else 1
 
+            # FIXED: Update the stored message object, not the interaction response
             embed = self.create_game_embed()
-            await interaction.edit_original_response(embed=embed, view=self)
+            if self.message:
+                await self.message.edit(embed=embed, view=self)
+
+        # Send confirmation to the player who made the move
+        await interaction.followup.send("✅ 수를 두었습니다!", ephemeral=True)
 
     async def end_game(self, interaction: discord.Interaction):
         """End the game and handle payouts"""
@@ -177,8 +183,10 @@ class TicTacToeView(discord.ui.View):
                 "틱택토 무승부 - 베팅금 반환"
             )
 
+        # Update the stored message object
         embed = self.create_game_embed()
-        await interaction.edit_original_response(embed=embed, view=self)
+        if self.message:
+            await self.message.edit(embed=embed, view=self)
 
     def create_game_embed(self) -> discord.Embed:
         """Create game status embed"""
@@ -357,7 +365,6 @@ class TicTacToeChallenge(discord.ui.View):
             await interaction.response.send_message("❌ 대전 상대방만 수락할 수 있습니다!", ephemeral=True)
             return
 
-        # FIXED: Use response.defer() instead of followup operations
         await interaction.response.defer()
 
         try:
@@ -403,8 +410,9 @@ class TicTacToeChallenge(discord.ui.View):
 
             embed = game_view.create_game_embed()
 
-            # FIXED: Use interaction.edit_original_response instead of followup.edit_message
-            await interaction.edit_original_response(embed=embed, view=game_view)
+            # FIXED: Store the message object and edit it properly
+            message = await interaction.edit_original_response(embed=embed, view=game_view)
+            game_view.message = message
 
             # Disable this view
             for item in self.children:
@@ -425,7 +433,6 @@ class TicTacToeChallenge(discord.ui.View):
             await interaction.response.send_message("❌ 대전 상대방만 거절할 수 있습니다!", ephemeral=True)
             return
 
-        # FIXED: Use response.defer() and edit_original_response
         await interaction.response.defer()
 
         embed = discord.Embed(
@@ -438,7 +445,6 @@ class TicTacToeChallenge(discord.ui.View):
 
     async def on_timeout(self):
         """Handle challenge timeout"""
-        # This won't automatically edit the message, but the timeout will disable buttons
         pass
 
 
