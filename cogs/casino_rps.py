@@ -225,25 +225,18 @@ class RPSCog(commands.Cog):
 
     @app_commands.command(name="가위바위보", description="봇과 가위바위보를 플레이합니다 (무료, 승리시 15코인)")
     async def rps(self, interaction: discord.Interaction):
-        # Check if casino games are enabled for this server
-        if not interaction.guild or not is_feature_enabled(interaction.guild.id, 'casino_games'):
-            await interaction.response.send_message("❌ 이 서버에서는 카지노 게임이 비활성화되어 있습니다!", ephemeral=True)
+
+        casino_base = self.bot.get_cog('CasinoBaseCog')
+        if not casino_base:
+            await interaction.response.send_message("❌ 카지노 시스템을 찾을 수 없습니다!", ephemeral=True)
             return
 
-        # Check cooldown (2 minutes)
-        casino_base = self.bot.get_cog('CasinoBaseCog')
-        if casino_base:
-            if not casino_base.check_game_cooldown(interaction.user.id, "rps"):
-                await interaction.response.send_message("⏳ 가위바위보는 2분마다 한 번씩만 플레이할 수 있습니다!", ephemeral=True)
-                return
+        # Use the centralized validation method from CasinoBaseCog
+        can_start, error_msg = await casino_base.validate_game_start(interaction, "rps", bet=0)
 
-            # Check channel restriction
-            allowed, channel_msg = casino_base.check_channel_restriction(
-                interaction.guild.id, "rps", interaction.channel.id
-            )
-            if not allowed:
-                await interaction.response.send_message(channel_msg, ephemeral=True)
-                return
+        if not can_start:
+            await interaction.response.send_message(error_msg, ephemeral=True)
+            return
 
         user_id = interaction.user.id
 

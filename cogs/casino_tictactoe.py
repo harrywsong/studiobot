@@ -97,18 +97,21 @@ class TicTacToeView(discord.ui.View):
 
     async def make_move(self, interaction: discord.Interaction, row: int, col: int):
         """Handle a player move"""
+        # Defer the response to avoid timeout
+        await interaction.response.defer()
+
         if self.game_over:
-            await interaction.response.send_message("❌ 게임이 이미 끝났습니다!", ephemeral=True)
+            await interaction.followup.send_message("❌ 게임이 이미 끝났습니다!", ephemeral=True)
             return
 
         if interaction.user.id != self.get_current_player_id():
             current_player = self.get_player_name(self.get_current_player_id())
-            await interaction.response.send_message(f"❌ 지금은 {current_player}의 차례입니다!", ephemeral=True)
+            await interaction.followup.send_message(f"❌ 지금은 {current_player}의 차례입니다!", ephemeral=True)
             return
 
         # Try to make the move
         if not self.board.make_move(row, col, self.current_turn):
-            await interaction.response.send_message("❌ 이미 선택된 칸입니다!", ephemeral=True)
+            await interaction.followup.send_message("❌ 이미 선택된 칸입니다!", ephemeral=True)
             return
 
         # Update button to show the move
@@ -133,7 +136,7 @@ class TicTacToeView(discord.ui.View):
             self.current_turn = 2 if self.current_turn == 1 else 1
 
             embed = self.create_game_embed()
-            await interaction.response.edit_message(embed=embed, view=self)
+            await interaction.followup.edit_message(message=interaction.message, embed=embed, view=self)
 
     async def end_game(self, interaction: discord.Interaction):
         """End the game and handle payouts"""
@@ -155,7 +158,7 @@ class TicTacToeView(discord.ui.View):
                 self.guild_id,
                 payout,
                 "tictactoe_win",
-                f"틱택토 승리 vs {self.get_player_name(loser_id)}"
+                f"틱택토 승리 vs {self.bot.get_user(loser_id).display_name}"
             )
         elif self.is_tie and coins_cog:
             # Refund both players on tie
@@ -175,7 +178,7 @@ class TicTacToeView(discord.ui.View):
             )
 
         embed = self.create_game_embed()
-        await interaction.response.edit_message(embed=embed, view=self)
+        await interaction.followup.edit_message(message=interaction.message, embed=embed, view=self)
 
     def create_game_embed(self) -> discord.Embed:
         """Create game status embed"""
@@ -217,7 +220,8 @@ class TicTacToeView(discord.ui.View):
                 inline=True
             )
 
-        embed.set_footer(text=f"Server: {self.bot.get_guild(self.guild_id).name if self.bot.get_guild(self.guild_id) else 'Unknown'}")
+        embed.set_footer(
+            text=f"Server: {self.bot.get_guild(self.guild_id).name if self.bot.get_guild(self.guild_id) else 'Unknown'}")
         return embed
 
     async def on_timeout(self):
@@ -353,6 +357,9 @@ class TicTacToeChallenge(discord.ui.View):
             await interaction.response.send_message("❌ 대전 상대방만 수락할 수 있습니다!", ephemeral=True)
             return
 
+        # Defer the response to avoid timeout
+        await interaction.response.defer()
+
         # Deduct bets from both players
         coins_cog = self.cog.bot.get_cog('CoinsCog')
 
@@ -379,7 +386,7 @@ class TicTacToeChallenge(discord.ui.View):
             if success1:
                 await coins_cog.add_coins(self.challenger_id, interaction.guild.id, self.bet, "tictactoe_refund",
                                           "틱택토 베팅 환불")
-            await interaction.response.send_message("❌ 베팅 처리에 실패했습니다!", ephemeral=True)
+            await interaction.followup.send_message("❌ 베팅 처리에 실패했습니다!", ephemeral=True)
             return
 
         # Start the game
@@ -394,7 +401,8 @@ class TicTacToeChallenge(discord.ui.View):
         self.cog.active_games[self.channel_id] = game_view
 
         embed = game_view.create_game_embed()
-        await interaction.response.edit_message(embed=embed, view=game_view)
+        # Use followup.edit_message after deferring
+        await interaction.followup.edit_message(message=interaction.message, embed=embed, view=game_view)
 
         # Disable this view
         for item in self.children:
@@ -406,13 +414,17 @@ class TicTacToeChallenge(discord.ui.View):
             await interaction.response.send_message("❌ 대전 상대방만 거절할 수 있습니다!", ephemeral=True)
             return
 
+        # Defer the response to avoid timeout
+        await interaction.response.defer()
+
         embed = discord.Embed(
             title="❌ 틱택토 대전 거절됨",
             description=f"{interaction.user.mention}님이 대전을 거절했습니다.",
             color=discord.Color.red()
         )
 
-        await interaction.response.edit_message(embed=embed, view=None)
+        # Use followup.edit_message after deferring
+        await interaction.followup.edit_message(message=interaction.message, embed=embed, view=None)
 
     async def on_timeout(self):
         """Handle challenge timeout"""

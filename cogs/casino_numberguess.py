@@ -111,29 +111,33 @@ class NumberGuessView(discord.ui.View):
 
         embed = self.create_game_embed()
         try:
-            await interaction.edit_original_response(embed=embed, view=self)
+            # Use followup.edit_message after deferring
+            await interaction.followup.edit_message(message=interaction.message, embed=embed, view=self)
         except:
             # If edit fails, the message might be from a different interaction
             pass
 
     async def make_guess(self, interaction: discord.Interaction, user_id: int, guess: int):
         """Handle player guess"""
+        # Defer the response to avoid timeout
+        await interaction.response.defer()
+
         if not self.game_phase:
-            await interaction.response.send_message("❌ 아직 추리 단계가 시작되지 않았습니다!", ephemeral=True)
+            await interaction.followup.send_message("❌ 아직 추리 단계가 시작되지 않았습니다!", ephemeral=True)
             return
 
         current_player = self.get_current_player()
         if user_id != current_player.user_id:
-            await interaction.response.send_message("❌ 지금은 당신의 차례가 아닙니다!", ephemeral=True)
+            await interaction.followup.send_message("❌ 지금은 당신의 차례가 아닙니다!", ephemeral=True)
             return
 
         if not (self.min_number <= guess <= self.max_number):
-            await interaction.response.send_message(f"❌ 추리는 {self.min_number}-{self.max_number} 범위여야 합니다!",
+            await interaction.followup.send_message(f"❌ 추리는 {self.min_number}-{self.max_number} 범위여야 합니다!",
                                                     ephemeral=True)
             return
 
         if guess in current_player.guesses_made:
-            await interaction.response.send_message("❌ 이미 추리한 숫자입니다!", ephemeral=True)
+            await interaction.followup.send_message("❌ 이미 추리한 숫자입니다!", ephemeral=True)
             return
 
         # Process guess
@@ -187,12 +191,12 @@ class NumberGuessView(discord.ui.View):
             color=discord.Color.orange()
         )
 
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.followup.send_message(embed=embed, ephemeral=True)
 
         # Update main game display
         try:
             embed = self.create_game_embed()
-            await interaction.edit_original_response(embed=embed, view=self)
+            await interaction.followup.edit_message(message=interaction.message, embed=embed, view=self)
         except:
             pass
 
@@ -232,7 +236,7 @@ class NumberGuessView(discord.ui.View):
 
         embed = self.create_results_embed(result_msg)
         try:
-            await interaction.edit_original_response(embed=embed, view=self)
+            await interaction.followup.edit_message(message=interaction.message, embed=embed, view=self)
         except:
             pass
 
@@ -555,6 +559,9 @@ class NumberGuessChallenge(discord.ui.View):
             await interaction.response.send_message("❌ 대전 상대방만 수락할 수 있습니다!", ephemeral=True)
             return
 
+        # Defer the response to avoid timeout
+        await interaction.response.defer()
+
         # Deduct bets from both players
         coins_cog = self.cog.bot.get_cog('CoinsCog')
 
@@ -581,7 +588,7 @@ class NumberGuessChallenge(discord.ui.View):
             if success1:
                 await coins_cog.add_coins(self.challenger_id, interaction.guild.id, self.bet, "numberguess_refund",
                                           "숫자 맞추기 베팅 환불")
-            await interaction.response.send_message("❌ 베팅 처리에 실패했습니다!", ephemeral=True)
+            await interaction.followup.send_message("❌ 베팅 처리에 실패했습니다!", ephemeral=True)
             return
 
         # Start the game
@@ -605,7 +612,8 @@ class NumberGuessChallenge(discord.ui.View):
         self.cog.active_games[self.channel_id] = game_view
 
         embed = game_view.create_setup_embed()
-        await interaction.response.edit_message(embed=embed, view=game_view)
+        # Use followup.edit_message after deferring
+        await interaction.followup.edit_message(message=interaction.message, embed=embed, view=game_view)
 
         # Disable this challenge view
         for item in self.children:
@@ -617,13 +625,15 @@ class NumberGuessChallenge(discord.ui.View):
             await interaction.response.send_message("❌ 대전 상대방만 거절할 수 있습니다!", ephemeral=True)
             return
 
+        await interaction.response.defer()
+
         embed = discord.Embed(
             title="❌ 숫자 맞추기 대결 거절됨",
             description=f"{interaction.user.mention}님이 대결을 거절했습니다.",
             color=discord.Color.red()
         )
 
-        await interaction.response.edit_message(embed=embed, view=None)
+        await interaction.followup.edit_message(message=interaction.message, embed=embed, view=None)
 
     async def on_timeout(self):
         """Handle challenge timeout"""
