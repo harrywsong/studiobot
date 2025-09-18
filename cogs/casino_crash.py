@@ -585,9 +585,9 @@ class CrashCog(commands.Cog):
         """Generate crash point with custom odds distribution"""
         rand = random.random()
 
-        if rand <= 0.55:  # 55% chance for 1.1x - 1.5x
+        if rand <= 0.55:  # 55% chance for 1.1x - 1.6x
             return round(random.uniform(1.1, 1.6), 2)
-        elif rand <= 0.80:  # 25% chance for 1.5x - 2.0x
+        elif rand <= 0.80:  # 25% chance for 1.6x - 2.0x
             return round(random.uniform(1.6, 2.0), 2)
         elif rand <= 0.92:  # 12% chance for 2.0x - 3.0x
             return round(random.uniform(2.0, 3.0), 2)

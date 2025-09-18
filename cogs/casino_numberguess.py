@@ -1,4 +1,4 @@
-# cogs/casino_numberguess.py - Number Guessing Duel game
+# cogs/casino_numberguess.py - Number Guessing Duel game (FIXED)
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -464,16 +464,6 @@ class NumberGuessCog(commands.Cog):
         self.active_games: Dict[int, NumberGuessView] = {}  # channel_id -> game
         self.logger.info("숫자 맞추기 대결 게임 시스템이 초기화되었습니다.")
 
-    async def validate_game(self, interaction: discord.Interaction, bet: int):
-        """Validate game using casino base"""
-        casino_base = self.bot.get_cog('CasinoBaseCog')
-        if not casino_base:
-            return False, "카지노 시스템을 찾을 수 없습니다!"
-
-        return await casino_base.validate_game_start(
-            interaction, "numberguess", bet, 30, 500
-        )
-
     @app_commands.command(name="숫자맞추기", description="다른 플레이어와 숫자 맞추기 대결을 합니다")
     @app_commands.describe(
         opponent="대전할 상대방",
@@ -494,6 +484,7 @@ class NumberGuessCog(commands.Cog):
             if not can_start:
                 await interaction.response.send_message(error_msg, ephemeral=True)
                 return
+
         # Basic validation
         if opponent.id == interaction.user.id:
             await interaction.response.send_message("❌ 자기 자신과는 대결할 수 없습니다!", ephemeral=True)
@@ -512,12 +503,6 @@ class NumberGuessCog(commands.Cog):
                 return
             else:
                 del self.active_games[channel_id]
-
-        # Validate both players' bets
-        can_start, error_msg = await self.validate_game(interaction, bet)
-        if not can_start:
-            await interaction.response.send_message(error_msg, ephemeral=True)
-            return
 
         # Check opponent's balance
         coins_cog = self.bot.get_cog('CoinsCog')

@@ -1,4 +1,4 @@
-# cogs/casino_tictactoe.py - Tic Tac Toe PvP game
+# cogs/casino_tictactoe.py - Tic Tac Toe PvP game (FIXED)
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -8,7 +8,7 @@ from typing import Dict, List, Optional, Tuple
 from utils.logger import get_logger
 from utils.config import (
     is_feature_enabled,
-    is_server_configured
+    get_server_setting
 )
 
 
@@ -217,6 +217,7 @@ class TicTacToeView(discord.ui.View):
                 inline=True
             )
 
+        embed.set_footer(text=f"Server: {self.bot.get_guild(self.guild_id).name if self.bot.get_guild(self.guild_id) else 'Unknown'}")
         return embed
 
     async def on_timeout(self):
@@ -267,16 +268,6 @@ class TicTacToeCog(commands.Cog):
         self.pending_challenges: Dict[int, dict] = {}  # challenger_id -> challenge_info
         self.logger.info("틱택토 게임 시스템이 초기화되었습니다.")
 
-    async def validate_game(self, interaction: discord.Interaction, bet: int):
-        """Validate game using casino base"""
-        casino_base = self.bot.get_cog('CasinoBaseCog')
-        if not casino_base:
-            return False, "카지노 시스템을 찾을 수 없습니다!"
-
-        return await casino_base.validate_game_start(
-            interaction, "tictactoe", bet, 10, 500
-        )
-
     @app_commands.command(name="틱택토", description="다른 플레이어와 틱택토 대전을 합니다")
     @app_commands.describe(
         opponent="대전할 상대방",
@@ -288,7 +279,6 @@ class TicTacToeCog(commands.Cog):
             opponent: discord.Member,
             bet: int = 50
     ):
-
         # Validate game using casino base
         casino_base = self.bot.get_cog('CasinoBaseCog')
         if casino_base:
@@ -318,13 +308,7 @@ class TicTacToeCog(commands.Cog):
             else:
                 del self.active_games[channel_id]
 
-        # Validate both players' bets
-        can_start, error_msg = await self.validate_game(interaction, bet)
-        if not can_start:
-            await interaction.response.send_message(error_msg, ephemeral=True)
-            return
-
-        # Check if opponent can afford bet (basic check)
+        # Check if opponent can afford bet
         coins_cog = self.bot.get_cog('CoinsCog')
         if not coins_cog:
             await interaction.response.send_message("❌ 코인 시스템을 찾을 수 없습니다!", ephemeral=True)

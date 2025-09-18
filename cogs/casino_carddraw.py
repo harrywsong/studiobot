@@ -1,4 +1,4 @@
-# cogs/casino_carddraw.py - Card Draw Battle game
+# cogs/casino_carddraw.py - Card Draw Battle game (FIXED)
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -266,7 +266,7 @@ class CardDrawView(discord.ui.View):
 
             embed.add_field(
                 name="📋 게임 규칙",
-                value="• 모든 플레이어가 한 장씩 카드를 뽑습니다\n• 가장 높은 카드를 뽑은 플레이어가 승리\n• A(에이스)가 가장 높은 카드\n• 동점시 상금을 나눠가짐\n• 승자가 모든 베팅금을 가져감",
+                value="• 모든 플레이어가 한 장씩 카드를 뽑습니다\n• 가장 높은 카드를 뽑은 플레이어가 승리\n• A(에이스)가 가장 높은 카드\n• 동점시 상금을 나눠 가짐\n• 승자가 모든 베팅금을 가져감",
                 inline=False
             )
 
@@ -444,16 +444,6 @@ class CardDrawCog(commands.Cog):
         self.active_games: Dict[int, CardDrawView] = {}  # channel_id -> game
         self.logger.info("카드 뽑기 대결 게임 시스템이 초기화되었습니다.")
 
-    async def validate_game(self, interaction: discord.Interaction, bet: int):
-        """Validate game using casino base"""
-        casino_base = self.bot.get_cog('CasinoBaseCog')
-        if not casino_base:
-            return False, "카지노 시스템을 찾을 수 없습니다!"
-
-        return await casino_base.validate_game_start(
-            interaction, "carddraw", bet, 20, 500
-        )
-
     @app_commands.command(name="카드뽑기", description="카드 뽑기 대결 게임을 시작합니다")
     @app_commands.describe(bet="베팅 금액 (20-500코인)")
     async def carddraw(self, interaction: discord.Interaction, bet: int = 50):
@@ -478,12 +468,6 @@ class CardDrawCog(commands.Cog):
             elif not existing.game_over:
                 await interaction.response.send_message("❌ 이 채널에서 카드 뽑기 대결이 진행 중입니다!", ephemeral=True)
                 return
-
-        # Validate bet
-        can_start, error_msg = await self.validate_game(interaction, bet)
-        if not can_start:
-            await interaction.response.send_message(error_msg, ephemeral=True)
-            return
 
         # Deduct creator's bet
         coins_cog = self.bot.get_cog('CoinsCog')
