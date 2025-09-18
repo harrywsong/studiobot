@@ -36,10 +36,8 @@ class CasinoBaseCog(commands.Cog):
             'minesweeper': 'minesweeper_channel',
             'bingo': 'bingo_channel',
             'crash': 'crash_channel',
-            'tictactoe': 'tictactoe_channel',
             'holdem': 'holdem_channel',
             'carddraw': 'carddraw_channel',
-            'numberguess': 'numberguess_channel',
             'rps': 'rps_channel'
         }
         self.logger.info("카지노 베이스 시스템이 초기화되었습니다.")
