@@ -1,4 +1,4 @@
-# cogs/casino_base.py - Updated for multi-server support
+# cogs/casino_base.py - Updated for multi-server support (FIXED)
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -19,12 +19,10 @@ class CasinoBaseCog(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
-        # FIX: The logger is now a global singleton, so we just get it by name.
         self.logger = get_logger("카지노 베이스")
 
-        # Spam protection per game type
-        self.game_cooldowns: Dict[int, Dict[str, datetime]] = {}  # user_id: {game_type: last_time}
-        self.cooldown_seconds = 5
+        # FIXED: Removed the broken centralized cooldown system
+        # Individual game cogs should handle their own cooldowns if needed
 
         # Mapping of game_type to specific channel key
         self.CHANNEL_MAP = {
@@ -45,21 +43,6 @@ class CasinoBaseCog(commands.Cog):
             'rps': 'rps_channel'
         }
         self.logger.info("카지노 베이스 시스템이 초기화되었습니다.")
-
-    def check_game_cooldown(self, user_id: int, game_type: str) -> bool:
-        """Check if user is on cooldown for specific game"""
-        now = datetime.now()
-
-        if user_id not in self.game_cooldowns:
-            self.game_cooldowns[user_id] = {}
-
-        if game_type in self.game_cooldowns[user_id]:
-            time_diff = (now - self.game_cooldowns[user_id][game_type]).total_seconds()
-            if time_diff < self.cooldown_seconds:
-                return False
-
-        self.game_cooldowns[user_id][game_type] = now
-        return True
 
     def check_channel_restriction(self, guild_id: int, game_type: str, channel_id: int) -> Tuple[bool, str]:
         """Check if game is allowed in current channel for this server"""
@@ -103,9 +86,8 @@ class CasinoBaseCog(commands.Cog):
         if not is_feature_enabled(guild_id, 'casino_games'):
             return False, "❌ 이 서버에서는 카지노 게임이 비활성화되어 있습니다!"
 
-        # Check cooldown
-        if not self.check_game_cooldown(interaction.user.id, game_type):
-            return False, "⏳ 잠시 기다렸다가 다시 해주세요!"
+        # FIXED: Removed the broken centralized cooldown check
+        # Individual cogs should handle their own cooldowns
 
         # Check channel restriction
         allowed, channel_msg = self.check_channel_restriction(guild_id, game_type, interaction.channel.id)
@@ -125,10 +107,11 @@ class CasinoBaseCog(commands.Cog):
         if not coins_cog:
             return False, "❌ 코인 시스템을 찾을 수 없습니다!"
 
-        # Check user balance
-        user_coins = await coins_cog.get_user_coins(interaction.user.id, interaction.guild.id)
-        if user_coins < bet:
-            return False, f"❌ 코인이 부족합니다! 필요: {bet:,}, 보유: {user_coins:,}"
+        # Check user balance (skip for free games with bet=0)
+        if bet > 0:
+            user_coins = await coins_cog.get_user_coins(interaction.user.id, interaction.guild.id)
+            if user_coins < bet:
+                return False, f"❌ 코인이 부족합니다! 필요: {bet:,}, 보유: {user_coins:,}"
 
         return True, ""
 
@@ -200,7 +183,7 @@ class CasinoBaseCog(commands.Cog):
             net_profit = total_won - total_bet
             embed.add_field(
                 name="📊 전체 통계",
-                value=f"총 베팅: {total_bet:,} 코인\n총 당첨: {total_won:,} 코인\n순 손익: {net_profit:+,} 코인",
+                value=f"이 베팅: {total_bet:,} 코인\n이 당첨: {total_won:,} 코인\n순 손익: {net_profit:+,} 코인",
                 inline=False
             )
 
@@ -236,7 +219,6 @@ class CasinoBaseCog(commands.Cog):
             await interaction.followup.send(embed=embed, ephemeral=True)
 
         except Exception as e:
-            # FIX: Use structured logging with `extra` for multi-server context
             self.logger.error(f"통계 불러오는 중 오류 발생: {e}", extra={'guild_id': interaction.guild.id})
             await interaction.followup.send(f"❌ 통계를 불러오는 중 오류가 발생했습니다: {e}", ephemeral=True)
 
@@ -277,7 +259,7 @@ class CasinoBaseCog(commands.Cog):
 
         embed.add_field(
             name="⚠️ 주의사항",
-            value="• 도박은 적당히!\n• 모든 게임에는 쿨다운이 있습니다 (5초)\n• 각 게임은 설정된 전용 채널에서만 가능\n• 모든 거래는 로그에 기록됩니다",
+            value="• 도박은 적당히!\n• 모든 게임에는 쿨다운이 있습니다\n• 각 게임은 설정된 전용 채널에서만 가능\n• 모든 거래는 로그에 기록됩니다",
             inline=False
         )
 

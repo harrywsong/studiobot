@@ -131,9 +131,28 @@ class CardDrawView(discord.ui.View):
         # Wait for all players to draw
         await self.wait_for_all_draws()
 
+    async def start_battle_direct(self):
+        """Start battle without interaction (for auto-start)"""
+        if len(self.players) < 2:
+            return
+
+        self.join_phase = False
+        self.battle_phase = True
+        self.clear_items()
+        self.add_item(DrawCardButton())
+
+        embed = self.create_battle_embed()
+        if self.message:
+            await self.message.edit(embed=embed, view=self)
+
+        await self.wait_for_all_draws()
+
     async def wait_for_all_draws(self):
         """Wait for all players to draw their cards"""
-        while self.battle_phase and not self.game_over:
+        timeout_counter = 0
+        max_timeout = 60  # 60 seconds timeout
+
+        while self.battle_phase and not self.game_over and timeout_counter < max_timeout:
             all_ready = True
             for player in self.players.values():
                 if not player.ready:
@@ -145,6 +164,7 @@ class CardDrawView(discord.ui.View):
                 break
 
             await asyncio.sleep(1)
+            timeout_counter += 1
 
         # Auto-resolve after timeout
         if self.battle_phase and not self.game_over:
@@ -155,12 +175,12 @@ class CardDrawView(discord.ui.View):
         await interaction.response.defer(ephemeral=True)
 
         if user_id not in self.players:
-            await interaction.followup.send_message("❌ 이 배틀에 참가하지 않으셨습니다!", ephemeral=True)
+            await interaction.followup.send("❌ 이 배틀에 참가하지 않으셨습니다!", ephemeral=True)
             return
 
         player = self.players[user_id]
         if player.ready:
-            await interaction.followup.send_message("❌ 이미 카드를 뽑으셨습니다!", ephemeral=True)
+            await interaction.followup.send("❌ 이미 카드를 뽑으셨습니다!", ephemeral=True)
             return
 
         # Draw card
@@ -174,11 +194,12 @@ class CardDrawView(discord.ui.View):
             color=discord.Color.blue()
         )
 
-        await interaction.followup.send_message(embed=embed, ephemeral=True)
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
         # Update main message
-        embed = self.create_battle_embed()
-        await self.message.edit(embed=embed, view=self)
+        if self.message:
+            embed = self.create_battle_embed()
+            await self.message.edit(embed=embed, view=self)
 
     async def resolve_battle(self):
         """Resolve the card draw battle"""
@@ -324,15 +345,15 @@ class CardDrawView(discord.ui.View):
         await interaction.response.defer()
 
         if not self.join_phase:
-            await interaction.followup.send_message("❌ 이미 게임이 시작되었습니다!", ephemeral=True)
+            await interaction.followup.send("❌ 이미 게임이 시작되었습니다!", ephemeral=True)
             return
 
         if interaction.user.id in self.players:
-            await interaction.followup.send_message("❌ 이미 참가하셨습니다!", ephemeral=True)
+            await interaction.followup.send("❌ 이미 참가하셨습니다!", ephemeral=True)
             return
 
         if len(self.players) >= 6:
-            await interaction.followup.send_message("❌ 게임이 가득 찼습니다! (최대 6명)", ephemeral=True)
+            await interaction.followup.send("❌ 게임이 가득 찼습니다! (최대 6명)", ephemeral=True)
             return
 
         # Validate bet
@@ -342,7 +363,7 @@ class CardDrawView(discord.ui.View):
                 interaction, "carddraw", self.bet, self.bet, self.bet
             )
             if not can_start:
-                await interaction.followup.send_message(error_msg, ephemeral=True)
+                await interaction.followup.send(error_msg, ephemeral=True)
                 return
 
         # Deduct bet
@@ -356,14 +377,15 @@ class CardDrawView(discord.ui.View):
         )
 
         if not success:
-            await interaction.followup.send_message("❌ 베팅 처리에 실패했습니다!", ephemeral=True)
+            await interaction.followup.send("❌ 베팅 처리에 실패했습니다!", ephemeral=True)
             return
 
         # Add player
         self.add_player(interaction.user.id, interaction.user.display_name, self.bet)
 
         embed = self.create_battle_embed()
-        await self.message.edit(embed=embed, view=self)
+        if self.message:
+            await self.message.edit(embed=embed, view=self)
 
     @discord.ui.button(label="❌ 나가기", style=discord.ButtonStyle.red)
     async def leave_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -397,7 +419,8 @@ class CardDrawView(discord.ui.View):
             self.clear_items()
 
         embed = self.create_battle_embed()
-        await self.message.edit(embed=embed, view=self)
+        if self.message:
+            await self.message.edit(embed=embed, view=self)
 
     @discord.ui.button(label="🚀 게임 시작", style=discord.ButtonStyle.primary)
     async def start_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -456,7 +479,7 @@ class CardDrawCog(commands.Cog):
                 interaction, "carddraw", bet, 20, 500
             )
             if not can_start:
-                await interaction.followup.send_message(error_msg, ephemeral=True)
+                await interaction.followup.send(error_msg, ephemeral=True)
                 return
 
         channel_id = interaction.channel.id
@@ -465,10 +488,10 @@ class CardDrawCog(commands.Cog):
         if channel_id in self.active_games:
             existing = self.active_games[channel_id]
             if existing.join_phase:
-                await interaction.followup.send_message("❌ 이 채널에서 이미 카드 뽑기 대결이 모집 중입니다!", ephemeral=True)
+                await interaction.followup.send("❌ 이 채널에서 이미 카드 뽑기 대결이 모집 중입니다!", ephemeral=True)
                 return
             elif not existing.game_over:
-                await interaction.followup.send_message("❌ 이 채널에서 카드 뽑기 대결이 진행 중입니다!", ephemeral=True)
+                await interaction.followup.send("❌ 이 채널에서 카드 뽑기 대결이 진행 중입니다!", ephemeral=True)
                 return
 
         # Deduct creator's bet
@@ -482,7 +505,7 @@ class CardDrawCog(commands.Cog):
         )
 
         if not success:
-            await interaction.followup.send_message("❌ 베팅 처리에 실패했습니다!", ephemeral=True)
+            await interaction.followup.send("❌ 베팅 처리에 실패했습니다!", ephemeral=True)
             return
 
         # Create game
@@ -516,25 +539,9 @@ class CardDrawCog(commands.Cog):
                 self.active_games[channel_id].join_phase and
                 len(self.active_games[channel_id].players) >= 2):
             try:
-                # Directly edit the message instead of creating a new interaction
-                await game_view.start_battle_direct()
+                await self.active_games[channel_id].start_battle_direct()
             except Exception as e:
                 self.logger.error(f"Auto-start failed: {e}")
-
-    # Add a new method to CardDrawView for direct start (for auto-start)
-    async def start_battle_direct(self):
-        if len(self.players) < 2:
-            return
-
-        self.join_phase = False
-        self.battle_phase = True
-        self.clear_items()
-        self.add_item(DrawCardButton())
-
-        embed = self.create_battle_embed()
-        await self.message.edit(embed=embed, view=self)
-
-        await self.wait_for_all_draws()
 
 
 async def setup(bot):
