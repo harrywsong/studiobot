@@ -388,7 +388,7 @@ class MinesweeperCog(commands.Cog):
         mines="지뢰 개수 (1-12, 많을수록 위험하지만 높은 수익)"
     )
     async def minesweeper(self, interaction: discord.Interaction, bet: int,
-                          mines: int = 5):  # Changed default from 3 to 5
+                          mines: int = 4):  # Changed default from 3 to 5
         # Check if casino games are enabled for this server
         if not interaction.guild or not is_feature_enabled(interaction.guild.id, 'casino_games'):
             await interaction.response.send_message("❌ 이 서버에서는 카지노 게임이 비활성화되어 있습니다!", ephemeral=True)
