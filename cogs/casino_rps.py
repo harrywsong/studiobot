@@ -232,7 +232,8 @@ class RPSCog(commands.Cog):
             return
 
         # Use the centralized validation method from CasinoBaseCog
-        can_start, error_msg = await casino_base.validate_game_start(interaction, "rps", bet=0)
+        # Explicitly set min_bet=0 to allow this free game to pass validation
+        can_start, error_msg = await casino_base.validate_game_start(interaction, "rps", bet=0, min_bet=0)
 
         if not can_start:
             await interaction.response.send_message(error_msg, ephemeral=True)
