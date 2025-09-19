@@ -264,6 +264,98 @@ class CounterOfferModal(discord.ui.Modal, title="역제안"):
             await interaction.followup.send("❌ 숫자 형식이 올바르지 않습니다.", ephemeral=True)
 
 
+class FinalizeNegotiationModal(discord.ui.Modal, title="최종 대출 조건 확정"):
+    """Modal for finalizing negotiated loan terms"""
+
+    def __init__(self, cog, request_id: int):
+        super().__init__()
+        self.cog = cog
+        self.request_id = request_id
+
+        self.amount = discord.ui.TextInput(
+            label="최종 대출 금액",
+            placeholder="협상으로 확정된 대출 금액",
+            min_length=1,
+            max_length=10,
+        )
+        self.add_item(self.amount)
+
+        self.interest = discord.ui.TextInput(
+            label="최종 이자율 (%)",
+            placeholder="협상으로 확정된 이자율",
+            min_length=1,
+            max_length=5,
+        )
+        self.add_item(self.interest)
+
+        self.days_due = discord.ui.TextInput(
+            label="최종 상환 기간 (일)",
+            placeholder="협상으로 확정된 상환 기간",
+            min_length=1,
+            max_length=3,
+        )
+        self.add_item(self.days_due)
+
+        self.summary = discord.ui.TextInput(
+            label="협상 결과 요약",
+            placeholder="협상 과정과 최종 합의 내용 요약",
+            style=discord.TextStyle.paragraph,
+            required=False,
+            max_length=500,
+        )
+        self.add_item(self.summary)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            amount = int(self.amount.value.strip())
+            interest_rate = float(self.interest.value.strip())
+            days = int(self.days_due.value.strip())
+
+            if amount <= 0 or interest_rate < 0 or days <= 0:
+                return await interaction.followup.send("❌ 유효하지 않은 입력값입니다.", ephemeral=True)
+
+            await self.cog.finalize_negotiated_loan(
+                interaction, self.request_id, amount, interest_rate, days, self.summary.value
+            )
+
+        except ValueError:
+            await interaction.followup.send("❌ 숫자 형식이 올바르지 않습니다.", ephemeral=True)
+
+
+class NegotiationChannelView(discord.ui.View):
+    """Persistent view for negotiation channels with finalize option"""
+
+    def __init__(self, cog, request_id: int):
+        super().__init__(timeout=None)
+        self.cog = cog
+        self.request_id = request_id
+
+    @discord.ui.button(
+        label="협상 완료 - 대출 승인",
+        style=discord.ButtonStyle.success,
+        emoji="✅"
+    )
+    async def finalize_negotiation(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not self.cog.has_admin_permissions(interaction.user):
+            return await interaction.response.send_message("❌ 권한이 없습니다.", ephemeral=True)
+
+        modal = FinalizeNegotiationModal(self.cog, self.request_id)
+        await interaction.response.send_modal(modal)
+
+    @discord.ui.button(
+        label="협상 중단",
+        style=discord.ButtonStyle.danger,
+        emoji="❌"
+    )
+    async def cancel_negotiation(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not self.cog.has_admin_permissions(interaction.user):
+            return await interaction.response.send_message("❌ 권한이 없습니다.", ephemeral=True)
+
+        await self.cog.cancel_negotiation(interaction, self.request_id)
+
+
 class LoanCog(commands.Cog):
     """Enhanced loan cog with request system"""
 
@@ -778,7 +870,9 @@ class LoanCog(commands.Cog):
 
             embed.set_footer(text=f"제안자: {interaction.user.display_name}")
 
-            await channel.send(f"{guild_member.mention} 관리자들", embed=embed)
+            # Add negotiation control buttons
+            view = NegotiationChannelView(self, request_id)
+            await channel.send(f"{guild_member.mention} 관리자들", embed=embed, view=view)
 
             # Update original message
             try:
@@ -812,6 +906,206 @@ class LoanCog(commands.Cog):
                 await interaction.followup.send(f"❌ 협상 채널 생성 중 오류가 발생했습니다: {str(e)}", ephemeral=True)
             except:
                 pass
+
+    async def finalize_negotiated_loan(self, interaction: discord.Interaction, request_id: int,
+                                       final_amount: int, final_interest: float, final_days: int, summary: str):
+        """Finalize negotiated loan terms and approve the loan"""
+        try:
+            # Get request details
+            request_query = "SELECT * FROM loan_requests WHERE request_id = $1 AND status = 'negotiating'"
+            request = await self.bot.pool.fetchrow(request_query, request_id)
+
+            if not request:
+                return await interaction.followup.send("❌ 유효하지 않은 협상 중인 대출 신청입니다.", ephemeral=True)
+
+            user = self.bot.get_user(request['user_id'])
+            if not user:
+                return await interaction.followup.send("❌ 사용자를 찾을 수 없습니다.", ephemeral=True)
+
+            guild_member = interaction.guild.get_member(request['user_id'])
+            if not guild_member:
+                return await interaction.followup.send("❌ 서버에서 사용자를 찾을 수 없습니다.", ephemeral=True)
+
+            # Get coins cog
+            coins_cog = self.bot.get_cog('CoinsCog')
+            if not coins_cog:
+                return await interaction.followup.send("❌ 코인 시스템을 찾을 수 없습니다.", ephemeral=True)
+
+            # Create loan channel
+            loan_channel = await self.create_loan_channel(interaction.guild, guild_member, final_amount, final_interest,
+                                                          final_days)
+            if not loan_channel:
+                return await interaction.followup.send("❌ 대출 채널 생성에 실패했습니다.", ephemeral=True)
+
+            # Calculate loan details
+            now_utc = datetime.now(timezone.utc)
+            due_date = now_utc + timedelta(days=final_days)
+            total_repayment = final_amount + int(final_amount * (final_interest / 100))
+
+            # Create loan record
+            loan_query = """
+                INSERT INTO user_loans (user_id, guild_id, principal_amount, remaining_amount, interest_rate, due_date, status, channel_id)
+                VALUES ($1, $2, $3, $4, $5, $6, 'active', $7)
+                RETURNING loan_id
+            """
+            loan_record = await self.bot.pool.fetchrow(
+                loan_query, request['user_id'], request['guild_id'],
+                final_amount, total_repayment, final_interest, due_date, loan_channel.id
+            )
+
+            # Give coins to user
+            success = await coins_cog.add_coins(
+                request['user_id'], request['guild_id'], final_amount,
+                "loan_issued", f"Negotiated loan approved by {interaction.user.display_name}"
+            )
+
+            if not success:
+                # Rollback
+                await self.bot.pool.execute("DELETE FROM user_loans WHERE loan_id = $1", loan_record['loan_id'])
+                try:
+                    await loan_channel.delete()
+                except:
+                    pass
+                return await interaction.followup.send("❌ 코인 지급에 실패했습니다.", ephemeral=True)
+
+            # Update request status with final terms
+            await self.bot.pool.execute(
+                """UPDATE loan_requests SET 
+                   status = 'approved_negotiated', 
+                   amount = $1, 
+                   interest_rate = $2, 
+                   days_due = $3 
+                   WHERE request_id = $4""",
+                final_amount, final_interest, final_days, request_id
+            )
+
+            # Update loan channel with loan info
+            await self.update_loan_channel(loan_channel, loan_record['loan_id'])
+
+            # Post completion message in negotiation channel
+            completion_embed = discord.Embed(
+                title="✅ 협상 완료 - 대출 승인됨",
+                description=f"협상이 성공적으로 완료되어 대출이 승인되었습니다!",
+                color=discord.Color.green(),
+                timestamp=datetime.now(timezone.utc)
+            )
+
+            completion_embed.add_field(
+                name="📋 최종 확정 조건",
+                value=f"**대출 금액:** {final_amount:,} 코인\n**이자율:** {final_interest}%\n**상환 기간:** {final_days}일\n**총 상환액:** {total_repayment:,} 코인",
+                inline=False
+            )
+
+            if summary:
+                completion_embed.add_field(name="📝 협상 요약", value=summary, inline=False)
+
+            completion_embed.add_field(name="🏦 대출 채널", value=loan_channel.mention, inline=False)
+            completion_embed.add_field(name="👤 승인자", value=interaction.user.display_name, inline=True)
+            completion_embed.add_field(name="💰 코인 지급됨", value=f"{final_amount:,} 코인", inline=True)
+
+            # Disable negotiation buttons
+            for item in interaction.message.components:
+                for component in item.children:
+                    component.disabled = True
+
+            await interaction.message.edit(view=None)
+            await interaction.channel.send(embed=completion_embed)
+
+            await interaction.followup.send(f"✅ 협상이 완료되어 대출이 승인되었습니다! 대출 채널: {loan_channel.mention}", ephemeral=True)
+
+            # Send success DM to user
+            try:
+                dm_embed = discord.Embed(
+                    title="🎉 대출 승인 (협상 완료)",
+                    description=f"협상을 통해 대출 신청이 승인되었습니다!",
+                    color=discord.Color.green(),
+                    timestamp=datetime.now(timezone.utc)
+                )
+                dm_embed.add_field(name="최종 대출 금액", value=f"{final_amount:,} 코인", inline=True)
+                dm_embed.add_field(name="총 상환액", value=f"{total_repayment:,} 코인", inline=True)
+                dm_embed.add_field(name="대출 관리 채널", value=loan_channel.mention, inline=False)
+
+                await user.send(embed=dm_embed)
+            except:
+                pass
+
+            # Clean up negotiation channel after delay
+            try:
+                await interaction.channel.send("📋 이 협상 채널은 60초 후 자동으로 삭제됩니다.")
+                import asyncio
+                await asyncio.sleep(60)
+                await interaction.channel.delete()
+            except:
+                pass
+
+        except Exception as e:
+            self.logger.error(f"협상 완료 처리 중 오류: {e}")
+            await interaction.followup.send(f"❌ 협상 완료 처리 중 오류가 발생했습니다: {e}", ephemeral=True)
+
+    async def cancel_negotiation(self, interaction: discord.Interaction, request_id: int):
+        """Cancel the negotiation and mark request as denied"""
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            # Get request details
+            request_query = "SELECT user_id FROM loan_requests WHERE request_id = $1 AND status = 'negotiating'"
+            request = await self.bot.pool.fetchrow(request_query, request_id)
+
+            if not request:
+                return await interaction.followup.send("❌ 유효하지 않은 협상 중인 대출 신청입니다.", ephemeral=True)
+
+            user = self.bot.get_user(request['user_id'])
+
+            # Update request status
+            await self.bot.pool.execute(
+                "UPDATE loan_requests SET status = 'denied_after_negotiation' WHERE request_id = $1", request_id)
+
+            # Post cancellation message
+            cancel_embed = discord.Embed(
+                title="❌ 협상 중단됨",
+                description=f"대출 신청에 대한 협상이 중단되었습니다.",
+                color=discord.Color.red(),
+                timestamp=datetime.now(timezone.utc)
+            )
+            cancel_embed.add_field(name="처리자", value=interaction.user.display_name, inline=True)
+            cancel_embed.add_field(name="처리 시간", value=f"<t:{int(datetime.now(timezone.utc).timestamp())}:f>",
+                                   inline=True)
+
+            # Disable negotiation buttons
+            for item in interaction.message.components:
+                for component in item.children:
+                    component.disabled = True
+
+            await interaction.message.edit(view=None)
+            await interaction.channel.send(embed=cancel_embed)
+
+            await interaction.followup.send("✅ 협상이 중단되었습니다.", ephemeral=True)
+
+            # Send notification DM to user
+            if user:
+                try:
+                    dm_embed = discord.Embed(
+                        title="❌ 대출 신청 협상 중단",
+                        description="죄송합니다. 대출 신청에 대한 협상이 중단되었습니다.",
+                        color=discord.Color.red(),
+                        timestamp=datetime.now(timezone.utc)
+                    )
+                    await user.send(embed=dm_embed)
+                except:
+                    pass
+
+            # Clean up negotiation channel after delay
+            try:
+                await interaction.channel.send("📋 이 협상 채널은 30초 후 자동으로 삭제됩니다.")
+                import asyncio
+                await asyncio.sleep(30)
+                await interaction.channel.delete()
+            except:
+                pass
+
+        except Exception as e:
+            self.logger.error(f"협상 중단 처리 중 오류: {e}")
+            await interaction.followup.send(f"❌ 협상 중단 처리 중 오류가 발생했습니다: {e}", ephemeral=True)
 
     async def process_repayment(self, interaction: discord.Interaction, loan_id: int, amount: int):
         """Process loan repayment"""
