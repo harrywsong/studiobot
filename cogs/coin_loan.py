@@ -777,7 +777,7 @@ class LoanCog(commands.Cog):
                 self.logger.warning(f"관리자 역할 추가 중 오류: {e}")
 
             # Create channel
-            channel_name = f"loan-{user.display_name}-{amount}".lower().replace(" ", "-")
+            channel_name = f"🚨┆{user.display_name}-{amount}".lower().replace(" ", "-")
 
             channel = await guild.create_text_channel(
                 name=channel_name,
@@ -894,7 +894,7 @@ class LoanCog(commands.Cog):
                 self.logger.warning(f"관리자 역할 추가 중 오류: {e}")
 
             # Create negotiation channel
-            channel_name = f"negotiation-{guild_member.display_name}-{request_id}".lower().replace(" ", "-")
+            channel_name = f"🚨┆{guild_member.display_name}-{request_id}".lower().replace(" ", "-")
 
             channel = await guild.create_text_channel(
                 name=channel_name,
