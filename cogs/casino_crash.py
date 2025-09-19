@@ -603,7 +603,7 @@ class CrashCog(commands.Cog):
         """
         gross_payout = int(bet * multiplier)  # Total winnings including original bet
         winnings_only = gross_payout - bet  # Just the profit portion
-        house_fee = int(winnings_only * (fee_percentage / 100))  # Fee only on profit
+        house_fee = round(winnings_only * (fee_percentage / 100))  # Use round() instead of int()
         net_payout = gross_payout - house_fee  # Return bet + (winnings - fee)
 
         return net_payout, house_fee
