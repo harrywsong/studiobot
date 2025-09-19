@@ -84,68 +84,114 @@ class LoanCog(commands.Cog):
     )
     async def issue_loan(self, interaction: discord.Interaction, user: discord.Member, amount: int, interest: float,
                          days_due: int):
+        # Check permissions first
         if not self.has_admin_permissions(interaction.user):
             return await interaction.response.send_message("❌ 이 명령어를 사용할 권한이 없습니다.", ephemeral=True)
 
+        # Validate inputs
         if amount <= 0 or interest < 0 or days_due <= 0:
             return await interaction.response.send_message("❌ 유효하지 않은 입력값입니다. 모든 값은 0보다 커야 합니다.", ephemeral=True)
 
+        # Defer the response immediately after validation
         await interaction.response.defer(ephemeral=True)
 
-        coins_cog = self.bot.get_cog('CoinsCog')
-        if not coins_cog:
-            return await interaction.followup.send("❌ 코인 시스템을 찾을 수 없습니다!", ephemeral=True)
-
-        due_date = datetime.now(timezone.utc) + timedelta(days=days_due)
-        total_repayment = amount + int(amount * (interest / 100))
-
-        query = """
-            INSERT INTO user_loans (user_id, guild_id, principal_amount, remaining_amount, interest_rate, due_date, status)
-            VALUES ($1, $2, $3, $4, $5, $6, 'active')
-        """
-        await self.bot.pool.execute(query, user.id, interaction.guild_id, amount, total_repayment, interest, due_date)
-
-        await coins_cog.add_coins(user.id, interaction.guild_id, amount, "loan_issued",
-                                  f"Loan issued by {interaction.user.display_name}")  #
-
-        await interaction.followup.send(
-            f"✅ {user.mention}님에게 {amount:,} 코인 대출을 발행했습니다. 상환할 총액은 {total_repayment:,} 코인이며, 기한은 {days_due}일입니다.")
-
         try:
-            embed = discord.Embed(
-                title=f"{interaction.guild.name} 대출 승인",
-                description=f"관리자에 의해 대출이 승인되었습니다.",
-                color=discord.Color.green(),
-                timestamp=datetime.now(timezone.utc)
-            )
-            embed.add_field(name="대출 원금", value=f"{amount:,} 코인", inline=False)
-            embed.add_field(name="총 상환액", value=f"{total_repayment:,} 코인 ({interest}% 이자 포함)", inline=False)
-            embed.add_field(name="상환 기한", value=f"<t:{int(due_date.timestamp())}:F>", inline=False)
-            await user.send(embed=embed)
-        except discord.Forbidden:
-            self.logger.warning(f"{user.id}님에게 대출 안내 DM을 보낼 수 없습니다.")
+            # Get coins cog
+            coins_cog = self.bot.get_cog('CoinsCog')
+            if not coins_cog:
+                return await interaction.followup.send("❌ 코인 시스템을 찾을 수 없습니다!", ephemeral=True)
+
+            # Check if user already has an active or defaulted loan
+            existing_loan_query = "SELECT loan_id FROM user_loans WHERE user_id = $1 AND guild_id = $2 AND status IN ('active', 'defaulted')"
+            existing_loan = await self.bot.pool.fetchrow(existing_loan_query, user.id, interaction.guild_id)
+
+            if existing_loan:
+                return await interaction.followup.send(f"❌ {user.display_name}님은 이미 활성 상태의 대출이 있습니다!", ephemeral=True)
+
+            # Calculate due date and total repayment
+            due_date = datetime.now(timezone.utc) + timedelta(days=days_due)
+            total_repayment = amount + int(amount * (interest / 100))
+
+            # Insert loan record
+            query = """
+                INSERT INTO user_loans (user_id, guild_id, principal_amount, remaining_amount, interest_rate, due_date, status)
+                VALUES ($1, $2, $3, $4, $5, $6, 'active')
+                RETURNING loan_id
+            """
+            loan_record = await self.bot.pool.fetchrow(query, user.id, interaction.guild_id, amount, total_repayment,
+                                                       interest, due_date)
+
+            if not loan_record:
+                return await interaction.followup.send("❌ 대출 기록 생성에 실패했습니다.", ephemeral=True)
+
+            # Add coins to user's balance
+            success = await coins_cog.add_coins(user.id, interaction.guild_id, amount, "loan_issued",
+                                                f"Loan issued by {interaction.user.display_name}")
+
+            if not success:
+                # Rollback the loan record if coin addition fails
+                await self.bot.pool.execute("DELETE FROM user_loans WHERE loan_id = $1", loan_record['loan_id'])
+                return await interaction.followup.send("❌ 코인 지급에 실패했습니다. 대출이 취소되었습니다.", ephemeral=True)
+
+            # Send confirmation message
+            await interaction.followup.send(
+                f"✅ {user.mention}님에게 {amount:,} 코인 대출을 발행했습니다. 상환할 총액은 {total_repayment:,} 코인이며, 기한은 {days_due}일입니다.")
+
+            # Try to send DM to user
+            try:
+                embed = discord.Embed(
+                    title=f"{interaction.guild.name} 대출 승인",
+                    description=f"관리자에 의해 대출이 승인되었습니다.",
+                    color=discord.Color.green(),
+                    timestamp=datetime.now(timezone.utc)
+                )
+                embed.add_field(name="대출 원금", value=f"{amount:,} 코인", inline=False)
+                embed.add_field(name="총 상환액", value=f"{total_repayment:,} 코인 ({interest}% 이자 포함)", inline=False)
+                embed.add_field(name="상환 기한", value=f"<t:{int(due_date.timestamp())}:F>", inline=False)
+                embed.add_field(name="대출 ID", value=f"{loan_record['loan_id']}", inline=False)
+                embed.set_footer(text="상환은 /loan-repay 명령어를 사용하세요.")
+
+                await user.send(embed=embed)
+                self.logger.info(f"대출 안내 DM을 {user.display_name}에게 전송했습니다.")
+            except discord.Forbidden:
+                self.logger.warning(f"{user.id}님에게 대출 안내 DM을 보낼 수 없습니다.")
+                await interaction.followup.send(f"⚠️ {user.display_name}님에게 DM을 보낼 수 없어 개인 메시지로 안내하지 못했습니다.",
+                                                ephemeral=True)
+
+        except Exception as e:
+            self.logger.error(f"대출 발행 중 오류 발생: {e}")
+            await interaction.followup.send(f"❌ 대출 발행 중 오류가 발생했습니다: {e}", ephemeral=True)
 
     @app_commands.command(name="loan-info", description="현재 대출 상태를 확인합니다.")
     async def loan_info(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        query = "SELECT * FROM user_loans WHERE user_id = $1 AND guild_id = $2 AND status IN ('active', 'defaulted')"
-        loan = await self.bot.pool.fetchrow(query, interaction.user.id, interaction.guild.id)
 
-        if not loan:
-            return await interaction.followup.send("현재 활성 상태의 대출이 없습니다.", ephemeral=True)
+        try:
+            query = "SELECT * FROM user_loans WHERE user_id = $1 AND guild_id = $2 AND status IN ('active', 'defaulted')"
+            loan = await self.bot.pool.fetchrow(query, interaction.user.id, interaction.guild.id)
 
-        status_emoji = "🟢 활성" if loan['status'] == 'active' else "🔴 연체"
-        embed = discord.Embed(
-            title=f"{interaction.user.display_name}님의 대출 정보",
-            color=discord.Color.blue(),
-            timestamp=datetime.now(timezone.utc)
-        )
-        embed.add_field(name="상태", value=status_emoji, inline=True)
-        embed.add_field(name="남은 상환액", value=f"{loan['remaining_amount']:,} 코인", inline=True)
-        embed.add_field(name="상환 기한", value=f"<t:{int(loan['due_date'].timestamp())}:R>", inline=True)
-        embed.set_footer(text=f"대출 ID: {loan['loan_id']}")
+            if not loan:
+                return await interaction.followup.send("현재 활성 상태의 대출이 없습니다.", ephemeral=True)
 
-        await interaction.followup.send(embed=embed, ephemeral=True)
+            status_emoji = "🟢 활성" if loan['status'] == 'active' else "🔴 연체"
+            embed = discord.Embed(
+                title=f"{interaction.user.display_name}님의 대출 정보",
+                color=discord.Color.blue() if loan['status'] == 'active' else discord.Color.red(),
+                timestamp=datetime.now(timezone.utc)
+            )
+            embed.add_field(name="상태", value=status_emoji, inline=True)
+            embed.add_field(name="원금", value=f"{loan['principal_amount']:,} 코인", inline=True)
+            embed.add_field(name="남은 상환액", value=f"{loan['remaining_amount']:,} 코인", inline=True)
+            embed.add_field(name="이자율", value=f"{loan['interest_rate']}%", inline=True)
+            embed.add_field(name="상환 기한", value=f"<t:{int(loan['due_date'].timestamp())}:R>", inline=True)
+            embed.add_field(name="발행일", value=f"<t:{int(loan['issued_at'].timestamp())}:f>", inline=True)
+            embed.set_footer(text=f"대출 ID: {loan['loan_id']}")
+
+            await interaction.followup.send(embed=embed, ephemeral=True)
+
+        except Exception as e:
+            self.logger.error(f"대출 정보 조회 중 오류 발생: {e}")
+            await interaction.followup.send(f"❌ 대출 정보 조회 중 오류가 발생했습니다: {e}", ephemeral=True)
 
     @app_commands.command(name="loan-repay", description="대출금을 상환합니다.")
     @app_commands.describe(amount="상환할 금액")
@@ -155,41 +201,91 @@ class LoanCog(commands.Cog):
 
         await interaction.response.defer(ephemeral=True)
 
-        coins_cog = self.bot.get_cog('CoinsCog')
-        if not coins_cog:
-            return await interaction.followup.send("❌ 코인 시스템을 찾을 수 없습니다!", ephemeral=True)
+        try:
+            coins_cog = self.bot.get_cog('CoinsCog')
+            if not coins_cog:
+                return await interaction.followup.send("❌ 코인 시스템을 찾을 수 없습니다!", ephemeral=True)
 
-        # Find the user's loan
-        query = "SELECT loan_id, remaining_amount FROM user_loans WHERE user_id = $1 AND guild_id = $2 AND status IN ('active', 'defaulted')"
-        loan = await self.bot.pool.fetchrow(query, interaction.user.id, interaction.guild.id)
-        if not loan:
-            return await interaction.followup.send("상환할 대출이 없습니다.", ephemeral=True)
+            # Find the user's loan
+            query = "SELECT loan_id, remaining_amount FROM user_loans WHERE user_id = $1 AND guild_id = $2 AND status IN ('active', 'defaulted')"
+            loan = await self.bot.pool.fetchrow(query, interaction.user.id, interaction.guild.id)
+            if not loan:
+                return await interaction.followup.send("상환할 대출이 없습니다.", ephemeral=True)
 
-        # Ensure they don't overpay
-        payment_amount = min(amount, loan['remaining_amount'])
+            # Ensure they don't overpay
+            payment_amount = min(amount, loan['remaining_amount'])
 
-        # Check balance
-        user_balance = await coins_cog.get_user_coins(interaction.user.id, interaction.guild.id)  #
-        if user_balance < payment_amount:
-            return await interaction.followup.send(f"❌ 코인이 부족합니다. 필요: {payment_amount:,}, 보유: {user_balance:,}",
-                                                   ephemeral=True)
+            # Check balance
+            user_balance = await coins_cog.get_user_coins(interaction.user.id, interaction.guild.id)
+            if user_balance < payment_amount:
+                return await interaction.followup.send(f"❌ 코인이 부족합니다. 필요: {payment_amount:,}, 보유: {user_balance:,}",
+                                                       ephemeral=True)
 
-        # Process payment
-        success = await coins_cog.remove_coins(interaction.user.id, interaction.guild.id, payment_amount,
-                                               "loan_repayment", f"Payment for loan ID {loan['loan_id']}")  #
-        if not success:
-            return await interaction.followup.send("❌ 상환 처리 중 오류가 발생했습니다.", ephemeral=True)
+            # Process payment
+            success = await coins_cog.remove_coins(interaction.user.id, interaction.guild.id, payment_amount,
+                                                   "loan_repayment", f"Payment for loan ID {loan['loan_id']}")
+            if not success:
+                return await interaction.followup.send("❌ 상환 처리 중 오류가 발생했습니다.", ephemeral=True)
 
-        new_remaining = loan['remaining_amount'] - payment_amount
-        if new_remaining <= 0:
-            update_query = "UPDATE user_loans SET remaining_amount = 0, status = 'paid' WHERE loan_id = $1"
-            await self.bot.pool.execute(update_query, loan['loan_id'])
-            await interaction.followup.send(f"🎉 **{payment_amount:,} 코인**을 상환하여 대출을 모두 갚았습니다! 축하합니다!", ephemeral=True)
-        else:
-            update_query = "UPDATE user_loans SET remaining_amount = $1 WHERE loan_id = $1"
-            await self.bot.pool.execute(update_query, new_remaining, loan['loan_id'])
-            await interaction.followup.send(f"✅ **{payment_amount:,} 코인**을 상환했습니다. 남은 금액: **{new_remaining:,} 코인**",
-                                            ephemeral=True)
+            new_remaining = loan['remaining_amount'] - payment_amount
+            if new_remaining <= 0:
+                update_query = "UPDATE user_loans SET remaining_amount = 0, status = 'paid' WHERE loan_id = $1"
+                await self.bot.pool.execute(update_query, loan['loan_id'])
+                await interaction.followup.send(f"🎉 **{payment_amount:,} 코인**을 상환하여 대출을 모두 갚았습니다! 축하합니다!",
+                                                ephemeral=True)
+            else:
+                update_query = "UPDATE user_loans SET remaining_amount = $1 WHERE loan_id = $2"
+                await self.bot.pool.execute(update_query, new_remaining, loan['loan_id'])
+                await interaction.followup.send(f"✅ **{payment_amount:,} 코인**을 상환했습니다. 남은 금액: **{new_remaining:,} 코인**",
+                                                ephemeral=True)
+
+        except Exception as e:
+            self.logger.error(f"대출 상환 중 오류 발생: {e}")
+            await interaction.followup.send(f"❌ 대출 상환 중 오류가 발생했습니다: {e}", ephemeral=True)
+
+    @app_commands.command(name="loan-list", description="모든 대출 목록을 확인합니다. (관리자 전용)")
+    async def list_loans(self, interaction: discord.Interaction):
+        if not self.has_admin_permissions(interaction.user):
+            return await interaction.response.send_message("❌ 이 명령어를 사용할 권한이 없습니다.", ephemeral=True)
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            query = """
+                SELECT loan_id, user_id, principal_amount, remaining_amount, interest_rate, status, due_date, issued_at
+                FROM user_loans 
+                WHERE guild_id = $1 AND status IN ('active', 'defaulted')
+                ORDER BY issued_at DESC
+                LIMIT 20
+            """
+            loans = await self.bot.pool.fetch(query, interaction.guild.id)
+
+            if not loans:
+                return await interaction.followup.send("현재 활성 상태의 대출이 없습니다.", ephemeral=True)
+
+            embed = discord.Embed(
+                title=f"📋 {interaction.guild.name} 대출 목록",
+                color=discord.Color.blue(),
+                timestamp=datetime.now(timezone.utc)
+            )
+
+            for loan in loans:
+                user = self.bot.get_user(loan['user_id'])
+                user_name = user.display_name if user else f"Unknown ({loan['user_id']})"
+                status_emoji = "🟢" if loan['status'] == 'active' else "🔴"
+
+                embed.add_field(
+                    name=f"{status_emoji} {user_name} (ID: {loan['loan_id']})",
+                    value=f"원금: {loan['principal_amount']:,}\n남은액: {loan['remaining_amount']:,}\n기한: <t:{int(loan['due_date'].timestamp())}:R>",
+                    inline=True
+                )
+
+            embed.set_footer(text="최근 20개의 대출만 표시됩니다.")
+            await interaction.followup.send(embed=embed, ephemeral=True)
+
+        except Exception as e:
+            self.logger.error(f"대출 목록 조회 중 오류 발생: {e}")
+            await interaction.followup.send(f"❌ 대출 목록 조회 중 오류가 발생했습니다: {e}", ephemeral=True)
 
 
 async def setup(bot: commands.Bot):
