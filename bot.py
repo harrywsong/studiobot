@@ -815,7 +815,8 @@ class MyBot(commands.Bot):
             # 'cogs.recording',
             'cogs.admin',
             'cogs.setup',
-            'cogs.scrim'
+            'cogs.scrim',
+            'cogs.coin_loan'
         ]
 
         # Casino extensions (depend on coins)
