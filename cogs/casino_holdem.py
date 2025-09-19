@@ -173,7 +173,7 @@ class HoldemPlayer:
 
 
 class RaiseModal(discord.ui.Modal):
-    """Modal for custom raise amounts"""
+    """Enhanced modal for custom raise amounts"""
 
     def __init__(self, view, player_idx: int):
         super().__init__(title="레이즈 금액 선택", timeout=30)
@@ -181,7 +181,6 @@ class RaiseModal(discord.ui.Modal):
         self.player_idx = player_idx
 
         player = view.game.players[player_idx]
-        to_call = view.game.current_bet - player.current_bet
         min_raise_total = view.game.current_bet + view.game.big_blind
         max_chips = player.chips
 
@@ -196,22 +195,38 @@ class RaiseModal(discord.ui.Modal):
     async def on_submit(self, interaction: discord.Interaction):
         try:
             total_bet = int(self.raise_input.value)
+
+            # ENHANCED: Validate game state first
+            if self.view.game.game_over or self.view.join_phase:
+                await interaction.response.send_message("⌚ 게임이 종료되었거나 아직 시작되지 않았습니다!", ephemeral=True)
+                return
+
+            if self.player_idx >= len(self.view.game.players):
+                await interaction.response.send_message("❌ 플레이어 정보를 찾을 수 없습니다!", ephemeral=True)
+                return
+
             player = self.view.game.players[self.player_idx]
+
+            # Double-check it's still this player's turn
+            if self.player_idx != self.view.game.current_player:
+                await interaction.response.send_message("⌚ 더 이상 당신의 차례가 아닙니다!", ephemeral=True)
+                return
+
+            if not self.view.waiting_for_action:
+                await interaction.response.send_message("❌ 이미 액션이 처리되었습니다!", ephemeral=True)
+                return
 
             # Validate raise amount
             min_raise_total = self.view.game.current_bet + self.view.game.big_blind
             max_total = player.current_bet + player.chips
 
             if total_bet < min_raise_total:
-                await interaction.response.send_message(f"❌ 최소 레이즈 금액은 {min_raise_total}칩입니다!", ephemeral=True)
+                await interaction.response.send_message(f"❌ 최소 레이즈 금액은 {min_raise_total:,}칩입니다!", ephemeral=True)
                 return
 
             if total_bet > max_total:
-                await interaction.response.send_message(f"❌ 보유 칩이 부족합니다! 최대: {max_total}칩", ephemeral=True)
+                await interaction.response.send_message(f"❌ 보유 칩이 부족합니다! 최대: {max_total:,}칩", ephemeral=True)
                 return
-
-            # Calculate actual raise amount needed
-            raise_amount = total_bet - player.current_bet
 
             # Make the raise
             success = self.view.game.make_raise(self.player_idx, total_bet)
@@ -219,14 +234,19 @@ class RaiseModal(discord.ui.Modal):
                 await interaction.response.send_message("❌ 레이즈 처리에 실패했습니다!", ephemeral=True)
                 return
 
+            # FIXED: Atomic state update
             self.view.waiting_for_action = False
-            self.view.game.current_player = self.view.game.get_next_active_player(self.view.game.current_player)
+            next_player = self.view.game.get_next_active_player(self.view.game.current_player)
+            self.view.game.current_player = next_player
 
             embed = self.view.create_game_embed()
             await interaction.response.edit_message(embed=embed, view=self.view)
 
         except ValueError:
             await interaction.response.send_message("❌ 유효한 숫자를 입력해주세요!", ephemeral=True)
+        except Exception as e:
+            self.view.logger.error(f"Error in raise modal: {e}")
+            await interaction.response.send_message("❌ 처리 중 오류가 발생했습니다!", ephemeral=True)
 
 
 class HoldemGame:
@@ -249,6 +269,156 @@ class HoldemGame:
         self.winners = []
         self.small_blind = max(1, buy_in // 100)  # 1% of buy-in
         self.big_blind = self.small_blind * 2
+        self.logger = get_logger("텍사스홀덤")
+
+    def validate_game_state(self) -> bool:
+        """Validate current game state consistency"""
+        try:
+            # Basic bounds checking
+            if self.current_player < -1 or self.current_player >= len(self.players):
+                self.logger.warning(f"Invalid current_player: {self.current_player}, players: {len(self.players)}")
+                return False
+
+            # If current_player is valid, they should be able to act
+            if self.current_player >= 0 and not self.can_act(self.current_player):
+                self.logger.warning(f"Current player {self.current_player} cannot act")
+                return False
+
+            # Betting round should be valid
+            if self.betting_round < 0 or self.betting_round > 3:
+                self.logger.warning(f"Invalid betting_round: {self.betting_round}")
+                return False
+
+            # Community cards should match betting round
+            expected_cards = [0, 3, 4, 5][self.betting_round]
+            if len(self.community_cards) != expected_cards:
+                self.logger.warning(
+                    f"Card count mismatch: round {self.betting_round}, cards {len(self.community_cards)}")
+                return False
+
+            # Validate pot consistency
+            total_bets = sum(player.total_bet for player in self.players)
+            if total_bets != self.pot:
+                self.logger.warning(f"Pot inconsistency: calculated {total_bets}, actual {self.pot}")
+                return False
+
+            # Validate current bet consistency
+            active_players = [p for p in self.players if not p.folded and not p.all_in]
+            if active_players:
+                max_current_bet = max(p.current_bet for p in active_players)
+                if self.current_bet != max_current_bet:
+                    self.logger.warning(
+                        f"Current bet inconsistency: game {self.current_bet}, max player {max_current_bet}")
+                    return False
+
+            return True
+        except Exception as e:
+            self.logger.error(f"Game state validation error: {e}")
+            return False
+
+    def get_action_summary(self, player_idx: int) -> str:
+        """Get a summary of available actions for display"""
+        if player_idx < 0 or player_idx >= len(self.players):
+            return "액션 없음"
+
+        actions = self.get_valid_actions(player_idx)
+        if not actions:
+            return "액션 없음"
+
+        player = self.players[player_idx]
+        to_call = self.current_bet - player.current_bet
+
+        summary_parts = []
+        if "fold" in actions:
+            summary_parts.append("폴드")
+        if "check" in actions:
+            summary_parts.append("체크")
+        if "call" in actions:
+            summary_parts.append(f"콜 ({to_call:,}칩)")
+        if "raise" in actions:
+            min_raise = self.current_bet + self.big_blind
+            summary_parts.append(f"레이즈 (최소 {min_raise:,}칩)")
+        if "allin" in actions:
+            summary_parts.append(f"올인 ({player.chips:,}칩)")
+
+        return " | ".join(summary_parts) if summary_parts else "액션 없음"
+
+    def recover_from_invalid_state(self):
+        """Attempt to recover from an invalid game state"""
+        try:
+            self.logger.warning("Attempting to recover from invalid game state")
+
+            # Fix current_player if invalid
+            if self.current_player < 0 or self.current_player >= len(self.players):
+                # Find next active player starting from dealer
+                self.current_player = self.get_next_active_player(self.dealer_pos)
+                if self.current_player == -1:
+                    # No active players, end game
+                    self.game_over = True
+                    return True
+
+            # If current player can't act, find next one
+            if self.current_player >= 0 and not self.can_act(self.current_player):
+                next_player = self.get_next_active_player(self.current_player)
+                if next_player == -1:
+                    # No more active players
+                    self.game_over = True
+                    return True
+                self.current_player = next_player
+
+            # Validate pot consistency and fix if needed
+            total_bets = sum(player.total_bet for player in self.players)
+            if total_bets != self.pot:
+                self.logger.warning(f"Fixing pot: was {self.pot}, should be {total_bets}")
+                self.pot = total_bets
+
+            # Recalculate current bet
+            active_players = [p for p in self.players if not p.folded]
+            if active_players:
+                self.current_bet = max(p.current_bet for p in active_players)
+
+            return True
+        except Exception as e:
+            self.logger.error(f"Recovery failed: {e}")
+            return False
+
+    def log_game_state(self, context: str = ""):
+        """Log current game state for debugging"""
+        try:
+            active_count = len([p for p in self.players if not p.folded])
+            all_in_count = len([p for p in self.players if p.all_in])
+
+            state_info = {
+                'context': context,
+                'game_over': self.game_over,
+                'betting_round': self.betting_round,
+                'current_player': self.current_player,
+                'pot': self.pot,
+                'current_bet': self.current_bet,
+                'total_players': len(self.players),
+                'active_players': active_count,
+                'all_in_players': all_in_count,
+                'community_cards': len(self.community_cards)
+            }
+
+            self.logger.debug(f"Game state {context}: {state_info}")
+
+            # Log each player's state
+            for i, player in enumerate(self.players):
+                player_info = {
+                    'index': i,
+                    'username': player.username,
+                    'chips': player.chips,
+                    'current_bet': player.current_bet,
+                    'total_bet': player.total_bet,
+                    'folded': player.folded,
+                    'all_in': player.all_in,
+                    'acted': player.acted_this_round
+                }
+                self.logger.debug(f"Player {i}: {player_info}")
+
+        except Exception as e:
+            self.logger.error(f"Error logging game state: {e}")
 
     def add_player(self, user_id: int, username: str) -> bool:
         """Add player to game"""
@@ -304,6 +474,7 @@ class HoldemGame:
         if len(self.players) == 2:
             self.current_player = self.dealer_pos  # Heads up: dealer acts first preflop
 
+        self.log_game_state("after_hand_start")
         return True
 
     def post_blinds(self):
@@ -412,6 +583,7 @@ class HoldemGame:
             player.all_in = True
 
         player.acted_this_round = True
+        self.log_game_state(f"after_{action}_by_player_{player_idx}")
         return True
 
     def make_raise(self, player_idx: int, total_bet_amount: int) -> bool:
@@ -449,6 +621,7 @@ class HoldemGame:
             if other_player != player and not other_player.folded and not other_player.all_in:
                 other_player.acted_this_round = False
 
+        self.log_game_state(f"after_raise_to_{total_bet_amount}_by_player_{player_idx}")
         return True
 
     def is_betting_round_complete(self) -> bool:
@@ -486,13 +659,23 @@ class HoldemGame:
 
         # Set first active player to act (starting from dealer+1)
         self.current_player = self.get_next_active_player(self.dealer_pos)
+        self.log_game_state(f"advanced_to_round_{self.betting_round}")
 
     def get_next_active_player(self, start_pos: int) -> int:
-        """Get next player who can act"""
+        """Get next player who can act, with better error handling"""
+        if not self.players:
+            return -1
+
+        # Ensure start_pos is valid
+        start_pos = max(0, min(start_pos, len(self.players) - 1))
+
         for i in range(1, len(self.players) + 1):
             pos = (start_pos + i) % len(self.players)
-            if self.can_act(pos):
+            if pos < len(self.players) and self.can_act(pos):
                 return pos
+
+        # No active players found
+        self.logger.warning("No active players found")
         return -1
 
     def determine_winners(self):
@@ -504,6 +687,7 @@ class HoldemGame:
             winner = active_players[0]
             winner.chips += self.pot
             self.winners = [winner]
+            self.log_game_state("winner_by_elimination")
             return
 
         # Evaluate hands
@@ -536,6 +720,7 @@ class HoldemGame:
             winner.chips += share
 
         self.winners = winners
+        self.log_game_state("winner_by_showdown")
 
 
 class HoldemView(discord.ui.View):
@@ -626,12 +811,28 @@ class HoldemView(discord.ui.View):
 
         if current_player and not self.game.game_over:
             display += f"\n\n🎯 **현재 차례:** {current_player.username}"
+            action_summary = self.game.get_action_summary(self.game.current_player)
+            if action_summary != "액션 없음":
+                display += f"\n🎮 **가능한 액션:** {action_summary}"
 
         return display
 
     async def handle_player_turn(self):
-        """Handle current player's turn with timer"""
+        """Enhanced player turn handling with atomic state updates and validation"""
         while not self.game.game_over and not self.join_phase:
+            # ENHANCED: Validate game state before each turn
+            if not self.game.validate_game_state():
+                self.logger.error("Invalid game state detected, attempting recovery")
+                self.game.log_game_state("before_recovery")
+
+                if not self.game.recover_from_invalid_state():
+                    self.logger.error("Could not recover from invalid state, ending game")
+                    self.game.game_over = True
+                    await self.show_results()
+                    return
+
+                self.game.log_game_state("after_recovery")
+
             # Check if betting round is complete
             if self.game.is_betting_round_complete():
                 if self.game.betting_round >= 3:  # River completed
@@ -642,12 +843,12 @@ class HoldemView(discord.ui.View):
                 else:
                     self.game.advance_betting_round()
                     # Update display after advancing round
-                    embed = self.create_game_embed()
                     try:
                         if self.current_message:
+                            embed = self.create_game_embed()
                             await self.current_message.edit(embed=embed, view=self)
-                    except:
-                        pass
+                    except Exception as e:
+                        self.logger.error(f"Error updating embed after round advance: {e}")
 
             # Check if only one player left
             active_players = [p for p in self.game.players if not p.folded]
@@ -659,27 +860,46 @@ class HoldemView(discord.ui.View):
                 await self.show_results()
                 return
 
-            if self.game.current_player == -1:
-                break
+            # ENHANCED: Better validation of current player
+            if (self.game.current_player == -1 or
+                    self.game.current_player >= len(self.game.players) or
+                    not self.game.can_act(self.game.current_player)):
 
-            # Wait for current player action (30 seconds)
+                # Try to find next valid player
+                next_player = self.game.get_next_active_player(self.game.current_player)
+                if next_player == -1:
+                    # No valid players, end game
+                    self.game.game_over = True
+                    await self.show_results()
+                    return
+                self.game.current_player = next_player
+
+            # ENHANCED: Atomic state update before waiting
             self.waiting_for_action = True
 
+            try:
+                if self.current_message:
+                    embed = self.create_game_embed()
+                    await self.current_message.edit(embed=embed, view=self)
+            except Exception as e:
+                self.logger.error(f"Error updating embed before player turn: {e}")
+
+            # Wait for action with timeout
             for _ in range(30):  # 30 second timer
                 if not self.waiting_for_action or self.game.game_over:
                     break
                 await asyncio.sleep(1)
 
-            # Auto-fold if no action taken
+            # Auto-fold if no action taken and game still active
             if self.waiting_for_action and not self.game.game_over:
+                self.logger.info(
+                    f"Player {self.game.players[self.game.current_player].username} auto-folded due to timeout")
                 self.game.make_action(self.game.current_player, "fold")
                 self.waiting_for_action = False
-
-                # Move to next player
                 self.game.current_player = self.game.get_next_active_player(self.game.current_player)
 
     async def show_results(self):
-        """Show final results with clear winner info and payouts"""
+        """Fixed results display with proper cleanup"""
         self.clear_items()
 
         # Calculate results for each player
@@ -786,7 +1006,7 @@ class HoldemView(discord.ui.View):
                     HandRank.FULL_HOUSE: "풀하우스",
                     HandRank.FOUR_KIND: "포오브어카인드",
                     HandRank.STRAIGHT_FLUSH: "스트레이트 플러시",
-                    HandRank.ROYAL_FLUSH: "로열 플러시"
+                    HandRank.ROYAL_FLUSH: "로얄 플러시"
                 }
 
                 embed.add_field(
@@ -804,6 +1024,12 @@ class HoldemView(discord.ui.View):
                 await self.current_message.edit(embed=embed, view=self)
             except:
                 pass
+
+        # FIXED: Clean up the game from active games (proper indentation)
+        if hasattr(self.bot, 'get_cog'):
+            holdem_cog = self.bot.get_cog('HoldemCog')
+            if holdem_cog and self.game.channel_id in holdem_cog.active_games:
+                del holdem_cog.active_games[self.game.channel_id]
 
     def create_game_embed(self) -> discord.Embed:
         """Create game status embed with standardized format"""
@@ -990,9 +1216,32 @@ class HoldemView(discord.ui.View):
     async def start_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.start_game(interaction)
 
+    async def on_timeout(self):
+        """Clean up when view times out"""
+        # Clean up the game from active games
+        if hasattr(self.bot, 'get_cog'):
+            holdem_cog = self.bot.get_cog('HoldemCog')
+            if holdem_cog and self.game.channel_id in holdem_cog.active_games:
+                del holdem_cog.active_games[self.game.channel_id]
+
+        # Disable all buttons
+        self.clear_items()
+
+        # Try to update message to show timeout
+        if self.current_message:
+            try:
+                embed = discord.Embed(
+                    title="⏰ 게임 시간 초과",
+                    description="게임이 비활성으로 인해 종료되었습니다.",
+                    color=discord.Color.red()
+                )
+                await self.current_message.edit(embed=embed, view=self)
+            except:
+                pass
+
 
 class ActionButton(discord.ui.Button):
-    """Updated poker action button with modal for raises"""
+    """Enhanced poker action button with better validation"""
 
     def __init__(self, action: str, label: str, style: discord.ButtonStyle, emoji: str = None):
         super().__init__(label=label, style=style, emoji=emoji)
@@ -1013,14 +1262,36 @@ class ActionButton(discord.ui.Button):
             await interaction.response.send_message("❌ 이 게임에 참가하지 않았습니다!", ephemeral=True)
             return
 
-        if player_idx != game.current_player:
-            await interaction.response.send_message("❌ 지금은 당신의 차례가 아닙니다!", ephemeral=True)
+        # Check if game is over
+        if game.game_over or view.join_phase:
+            await interaction.response.send_message("❌ 게임이 종료되었거나 아직 시작되지 않았습니다!", ephemeral=True)
             return
 
-        # Check if action is valid
+        # ENHANCED: Check current player with better error messages
+        if player_idx != game.current_player:
+            if 0 <= game.current_player < len(game.players):
+                current_player_name = game.players[game.current_player].username
+                await interaction.response.send_message(f"❌ 지금은 **{current_player_name}**님의 차례입니다!", ephemeral=True)
+            else:
+                await interaction.response.send_message("❌ 현재 액션할 수 있는 플레이어가 없습니다!", ephemeral=True)
+            return
+
+        # Check if we're still waiting for this player's action
+        if not view.waiting_for_action:
+            await interaction.response.send_message("❌ 이미 액션이 처리되었습니다!", ephemeral=True)
+            return
+
+        # ENHANCED: Better action validation with specific error messages
         valid_actions = game.get_valid_actions(player_idx)
         if self.action not in valid_actions:
-            await interaction.response.send_message("❌ 유효하지 않은 액션입니다!", ephemeral=True)
+            error_messages = {
+                "fold": "❌ 폴드할 수 없습니다!",
+                "check": "❌ 체크할 수 없습니다! (베팅이 있습니다)",
+                "call": "❌ 콜할 수 없습니다! (베팅 금액이 부족하거나 베팅이 없습니다)",
+                "raise": "❌ 레이즈할 수 없습니다! (칩이 부족합니다)",
+                "allin": "❌ 올인할 수 없습니다!"
+            }
+            await interaction.response.send_message(error_messages.get(self.action, "❌ 유효하지 않은 액션입니다!"), ephemeral=True)
             return
 
         # Handle raise action with modal
@@ -1030,14 +1301,15 @@ class ActionButton(discord.ui.Button):
             return
 
         # Handle other actions
-        amount = 0
-        success = game.make_action(player_idx, self.action, amount)
+        success = game.make_action(player_idx, self.action)
         if not success:
             await interaction.response.send_message("❌ 액션 처리에 실패했습니다!", ephemeral=True)
             return
 
+        # FIXED: Update state atomically
         view.waiting_for_action = False
-        game.current_player = game.get_next_active_player(game.current_player)
+        next_player = game.get_next_active_player(game.current_player)
+        game.current_player = next_player
 
         embed = view.create_game_embed()
         await interaction.response.edit_message(embed=embed, view=view)
