@@ -214,7 +214,7 @@ class SlotMachineCog(commands.Cog):
         new_balance = await coins_cog.get_user_coins(interaction.user.id, interaction.guild.id)
 
         embed.add_field(
-            name="💳 잔액",
+            name="",
             value=f"🏦 **현재 잔액:** {new_balance:,} 코인",
             inline=False
         )
