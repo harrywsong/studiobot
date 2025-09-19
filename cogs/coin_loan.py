@@ -324,6 +324,66 @@ class FinalizeNegotiationModal(discord.ui.Modal, title="최종 대출 조건 확
             await interaction.followup.send("❌ 숫자 형식이 올바르지 않습니다.", ephemeral=True)
 
 
+class RevisedCounterOfferModal(discord.ui.Modal, title="수정 역제안"):
+    """Modal for proposing revised terms during negotiation"""
+
+    def __init__(self, cog, request_id: int):
+        super().__init__()
+        self.cog = cog
+        self.request_id = request_id
+
+        self.amount = discord.ui.TextInput(
+            label="수정된 대출 금액",
+            placeholder="새로 제안할 대출 금액",
+            min_length=1,
+            max_length=10,
+        )
+        self.add_item(self.amount)
+
+        self.interest = discord.ui.TextInput(
+            label="수정된 이자율 (%)",
+            placeholder="새로 제안할 이자율",
+            min_length=1,
+            max_length=5,
+        )
+        self.add_item(self.interest)
+
+        self.days_due = discord.ui.TextInput(
+            label="수정된 상환 기간 (일)",
+            placeholder="새로 제안할 상환 기간",
+            min_length=1,
+            max_length=3,
+        )
+        self.add_item(self.days_due)
+
+        self.reasoning = discord.ui.TextInput(
+            label="수정 사유",
+            placeholder="조건 변경 이유나 추가 설명",
+            style=discord.TextStyle.paragraph,
+            required=False,
+            max_length=500,
+        )
+        self.add_item(self.reasoning)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            amount = int(self.amount.value.strip())
+            interest_rate = float(self.interest.value.strip())
+            days = int(self.days_due.value.strip())
+
+            if amount <= 0 or interest_rate < 0 or days <= 0:
+                return await interaction.followup.send("❌ 유효하지 않은 입력값입니다.", ephemeral=True)
+
+            await self.cog.post_revised_counter_offer(
+                interaction, self.request_id, amount, interest_rate, days, self.reasoning.value
+            )
+
+        except ValueError:
+            await interaction.followup.send("❌ 숫자 형식이 올바르지 않습니다.", ephemeral=True)
+
+
 class NegotiationChannelView(discord.ui.View):
     """Persistent view for negotiation channels with finalize option"""
 
@@ -331,6 +391,18 @@ class NegotiationChannelView(discord.ui.View):
         super().__init__(timeout=None)
         self.cog = cog
         self.request_id = request_id
+
+    @discord.ui.button(
+        label="수정 역제안",
+        style=discord.ButtonStyle.secondary,
+        emoji="📝"
+    )
+    async def revised_counter_offer(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not self.cog.has_admin_permissions(interaction.user):
+            return await interaction.response.send_message("❌ 권한이 없습니다.", ephemeral=True)
+
+        modal = RevisedCounterOfferModal(self.cog, self.request_id)
+        await interaction.response.send_modal(modal)
 
     @discord.ui.button(
         label="협상 완료 - 대출 승인",
@@ -1106,6 +1178,119 @@ class LoanCog(commands.Cog):
         except Exception as e:
             self.logger.error(f"협상 중단 처리 중 오류: {e}")
             await interaction.followup.send(f"❌ 협상 중단 처리 중 오류가 발생했습니다: {e}", ephemeral=True)
+
+    async def post_revised_counter_offer(self, interaction: discord.Interaction, request_id: int,
+                                         revised_amount: int, revised_interest: float, revised_days: int,
+                                         reasoning: str):
+        """Post a revised counter-offer in the negotiation channel"""
+        try:
+            # Get original request details
+            request_query = "SELECT * FROM loan_requests WHERE request_id = $1"
+            request = await self.bot.pool.fetchrow(request_query, request_id)
+
+            if not request:
+                return await interaction.followup.send("❌ 유효하지 않은 대출 신청입니다.", ephemeral=True)
+
+            user = self.bot.get_user(request['user_id'])
+            if not user:
+                return await interaction.followup.send("❌ 사용자를 찾을 수 없습니다.", ephemeral=True)
+
+            # Calculate totals
+            original_total = request['amount'] + int(request['amount'] * (request['interest_rate'] / 100))
+            revised_total = revised_amount + int(revised_amount * (revised_interest / 100))
+
+            # Create comparison embed
+            comparison_embed = discord.Embed(
+                title="📝 수정된 역제안",
+                description=f"{interaction.user.display_name}님이 새로운 조건을 제안했습니다.",
+                color=discord.Color.gold(),
+                timestamp=datetime.now(timezone.utc)
+            )
+
+            # Original request terms
+            comparison_embed.add_field(
+                name="📋 원래 신청 조건",
+                value=f"**금액:** {request['amount']:,} 코인\n**이자율:** {request['interest_rate']}%\n**기간:** {request['days_due']}일\n**총 상환액:** {original_total:,} 코인",
+                inline=True
+            )
+
+            # New proposed terms
+            comparison_embed.add_field(
+                name="💡 수정 제안 조건",
+                value=f"**금액:** {revised_amount:,} 코인\n**이자율:** {revised_interest}%\n**기간:** {revised_days}일\n**총 상환액:** {revised_total:,} 코인",
+                inline=True
+            )
+
+            # Show changes
+            amount_change = revised_amount - request['amount']
+            interest_change = revised_interest - request['interest_rate']
+            days_change = revised_days - request['days_due']
+            total_change = revised_total - original_total
+
+            change_symbols = {
+                True: "📈 +",
+                False: "📉 "
+            }
+
+            changes_text = f"""
+            **금액 변화:** {change_symbols[amount_change >= 0]}{amount_change:+,} 코인
+            **이자율 변화:** {change_symbols[interest_change >= 0]}{interest_change:+.1f}%
+            **기간 변화:** {change_symbols[days_change >= 0]}{days_change:+} 일
+            **총 상환액 변화:** {change_symbols[total_change >= 0]}{total_change:+,} 코인
+            """
+
+            comparison_embed.add_field(
+                name="📊 변경 사항",
+                value=changes_text,
+                inline=False
+            )
+
+            if reasoning:
+                comparison_embed.add_field(
+                    name="💭 수정 사유",
+                    value=reasoning,
+                    inline=False
+                )
+
+            comparison_embed.add_field(
+                name="❓ 다음 단계",
+                value=f"{user.mention}님, 위 수정된 조건에 대해 어떻게 생각하시나요? 자유롭게 의견을 남겨주세요.\n\n관리자들은 추가 수정이나 최종 승인을 결정할 수 있습니다.",
+                inline=False
+            )
+
+            comparison_embed.set_footer(text=f"제안자: {interaction.user.display_name}")
+
+            # Post the revised offer
+            await interaction.channel.send(f"🔄 **수정 제안 알림** {user.mention}", embed=comparison_embed)
+
+            await interaction.followup.send("✅ 수정된 역제안이 협상 채널에 게시되었습니다.", ephemeral=True)
+
+            # Send notification DM to user
+            try:
+                dm_embed = discord.Embed(
+                    title="📝 대출 조건 수정 제안",
+                    description=f"협상 중인 대출에 대해 관리자가 수정된 조건을 제안했습니다.",
+                    color=discord.Color.gold(),
+                    timestamp=datetime.now(timezone.utc)
+                )
+                dm_embed.add_field(
+                    name="수정 제안 조건",
+                    value=f"**금액:** {revised_amount:,} 코인\n**이자율:** {revised_interest}%\n**기간:** {revised_days}일",
+                    inline=False
+                )
+                dm_embed.add_field(
+                    name="협상 채널",
+                    value=f"자세한 내용은 {interaction.channel.mention}에서 확인해주세요.",
+                    inline=False
+                )
+
+                await user.send(embed=dm_embed)
+            except Exception as e:
+                self.logger.warning(f"수정 제안 DM 전송 실패: {e}")
+
+        except Exception as e:
+            self.logger.error(f"수정 역제안 게시 중 오류: {e}")
+            await interaction.followup.send(f"❌ 수정 역제안 게시 중 오류가 발생했습니다: {e}", ephemeral=True)
 
     async def process_repayment(self, interaction: discord.Interaction, loan_id: int, amount: int):
         """Process loan repayment"""
