@@ -413,15 +413,20 @@ class CrashView(discord.ui.View):
 
         if cashout_success:
             player_data = self.game.players[interaction.user.id]
-            payout = int(player_data['bet'] * player_data['cash_out_multiplier'])
+            bet = player_data['bet']
+            multiplier = player_data['cash_out_multiplier']
+
+            # Calculate payout with 5% fee
+            net_payout, house_fee = self.cog.calculate_payout_with_fee(bet, multiplier)
+            profit = net_payout - bet  # Actual profit after fee
 
             coins_cog = self.cog.bot.get_cog('CoinsCog')
             if coins_cog:
-                await coins_cog.add_coins(interaction.user.id, interaction.guild.id, payout, "crash_win",
-                                          f"Crash cashout at {player_data['cash_out_multiplier']:.2f}x")
+                await coins_cog.add_coins(interaction.user.id, interaction.guild.id, net_payout, "crash_win",
+                                          f"Crash cashout at {multiplier:.2f}x (after 5% fee)")
 
             await interaction.followup.send(
-                f"{interaction.user.mention}님이 **{player_data['cash_out_multiplier']:.2f}x**에서 캐시아웃! {payout:,} 코인 획득!",
+                f"{interaction.user.mention}님이 **{multiplier:.2f}x**에서 캐시아웃!\n💰 받은 금액: {net_payout:,} 코인 (수수료 {house_fee:,} 코인 차감)\n📈 순이익: +{profit:,} 코인",
                 ephemeral=False
             )
         else:
@@ -496,6 +501,9 @@ class CrashCog(commands.Cog):
             current_game.game_started = True
             game_view.update_button_states()
 
+            # ADD THIS LINE - Send debug info when game starts
+            await self.send_debug_info(guild_id, current_game.crash_point)
+
             # Create initial game interaction for embed
             initial_interaction = type('MockInteraction', (), {
                 'guild': type('MockGuild', (), {
@@ -513,7 +521,6 @@ class CrashCog(commands.Cog):
 
         except Exception as e:
             self.logger.error(f"Game lifecycle error: {e}", exc_info=True)
-
     async def run_crash_game(self, guild_id: int):
         """Run the crash game with slower, more controlled progression"""
         current_game = self.server_games.get(guild_id)
@@ -588,6 +595,36 @@ class CrashCog(commands.Cog):
             del self.server_views[guild_id]
         if guild_id in self.start_events:
             del self.start_events[guild_id]
+
+    def calculate_payout_with_fee(self, bet: int, multiplier: float, fee_percentage: float = 5.0) -> tuple[int, int]:
+        """
+        Calculate payout with house fee deduction - fee only applies to winnings/profit
+        Returns: (net_payout, house_fee)
+        """
+        gross_payout = int(bet * multiplier)  # Total winnings including original bet
+        winnings_only = gross_payout - bet  # Just the profit portion
+        house_fee = int(winnings_only * (fee_percentage / 100))  # Fee only on profit
+        net_payout = gross_payout - house_fee  # Return bet + (winnings - fee)
+
+        return net_payout, house_fee
+
+    async def send_debug_info(self, guild_id: int, crash_point: float):
+        """Send crash point to debug channel for admin monitoring"""
+        debug_channel_id = 1417714557295792229
+
+        try:
+            debug_channel = self.bot.get_channel(debug_channel_id)
+            if debug_channel:
+                embed = discord.Embed(
+                    title="🔧 Crash Game Debug Info",
+                    description=f"**Server:** {self.bot.get_guild(guild_id).name if self.bot.get_guild(guild_id) else 'Unknown'}\n**Crash Point:** {crash_point:.2f}x",
+                    color=discord.Color.yellow(),
+                    timestamp=discord.utils.utcnow()
+                )
+                embed.set_footer(text=f"Guild ID: {guild_id}")
+                await debug_channel.send(embed=embed)
+        except Exception as e:
+            self.logger.error(f"Failed to send debug info: {e}")
 
     @app_commands.command(name="크래시", description="로켓이 추락하기 전에 캐시아웃하는 게임 (주의: 중독성이 높을 수 있음)")
     @app_commands.describe(bet="베팅 금액")
