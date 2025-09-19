@@ -108,21 +108,6 @@ class SlotMachineCog(commands.Cog):
         else:
             return f"🎰 **[ {reel1} | {reel2} | {reel3} ]** 🎰\n\n🎊 **결과 확정!**"
 
-    def create_payout_table(self, guild_id: int) -> str:
-        """Create simple single-column payout table with server-specific multipliers"""
-        lines = []
-        sorted_symbols = sorted(self.symbols.items(), key=lambda x: x[1]['payout'], reverse=True)
-
-        # Get server multipliers
-        payout_multiplier = get_server_setting(guild_id, 'slots_payout_multiplier', 1.0)
-        pair_multiplier = get_server_setting(guild_id, 'slots_pair_multiplier', 1.0)
-
-        for symbol, data in sorted_symbols:
-            adjusted_payout = int(data['payout'] * payout_multiplier)
-            lines.append(f"{symbol} = ×{adjusted_payout}")
-
-        return "\n".join(lines) + f"\n\n💡 **페어는 더 낮은 배당** (×{pair_multiplier:.1f})"
-
     @app_commands.command(name="슬롯", description="클래식 슬롯머신 게임")
     @app_commands.describe(bet="베팅 금액")
     async def slot_machine(self, interaction: discord.Interaction, bet: int):
@@ -225,14 +210,12 @@ class SlotMachineCog(commands.Cog):
             inline=False
         )
 
-        # Balance and server-specific payout info
+        # Balance info only (removed payout table)
         new_balance = await coins_cog.get_user_coins(interaction.user.id, interaction.guild.id)
 
-        balance_payout = f"🏦 **잔액:** {new_balance:,} 코인\n\n**배당표 (트리플):**\n{self.create_payout_table(interaction.guild.id)}"
-
         embed.add_field(
-            name="💳 정보",
-            value=balance_payout,
+            name="💳 잔액",
+            value=f"🏦 **현재 잔액:** {new_balance:,} 코인",
             inline=False
         )
 

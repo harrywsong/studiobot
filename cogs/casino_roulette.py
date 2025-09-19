@@ -1,4 +1,4 @@
-# cogs/casino_roulette.py - Updated for multi-server support
+# cogs/casino_roulette.py - Updated with consistent embed layout
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -13,17 +13,25 @@ from utils.config import (
 
 
 class RouletteSimpleCog(commands.Cog):
-    """Simple roulette game with single command - Multi-server aware"""
+    """Simple roulette game with single command - Multi-server aware with standardized embeds"""
 
     def __init__(self, bot):
         self.bot = bot
-        # FIX: The logger is now a global singleton, so we just get it by name.
         self.logger = get_logger("룰렛")
 
         # Roulette setup
         self.red_numbers = {1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36}
 
         self.logger.info("룰렛 게임 시스템이 초기화되었습니다.")
+
+    def create_roulette_display(self, number, color, spinning=False):
+        """Create standardized roulette display"""
+        color_emoji = {"red": "🔴", "black": "⚫", "green": "🟢"}[color]
+
+        if spinning:
+            return f"🎡 **{color_emoji} {number}** 🎡\n\n🔄 **스피닝 중...**"
+        else:
+            return f"🎡 **{color_emoji} {number}** 🎡\n\n🎊 **결과 확정!**"
 
     async def validate_game(self, interaction: discord.Interaction, bet: int, min_bet: int, max_bet: int):
         """Validate game using casino base"""
@@ -78,31 +86,67 @@ class RouletteSimpleCog(commands.Cog):
             return
 
         coins_cog = self.bot.get_cog('CoinsCog')
-        if not await coins_cog.remove_coins(interaction.user.id, interaction.guild.id, bet, "roulette_bet", "Roulette bet"):
+        if not await coins_cog.remove_coins(interaction.user.id, interaction.guild.id, bet, "roulette_bet",
+                                            "Roulette bet"):
             await interaction.response.send_message("베팅 처리 실패!", ephemeral=True)
             return
 
         await interaction.response.defer()
 
+        # Display bet type nicely
+        bet_display = f"🔴 **Red**" if value.lower() == "red" else f"⚫ **Black**" if value.lower() == "black" else f"🔢 **{value}**"
+        multiplier_text = "2배 배당" if bet_type == "color" else "36배 배당"
+
+        # Initial embed with betting info
+        embed = discord.Embed(
+            title="🎡 룰렛",
+            color=discord.Color.blue(),
+            timestamp=discord.utils.utcnow()
+        )
+
+        # STANDARDIZED FIELD 2: Betting Info (shown during setup)
+        embed.add_field(
+            name="💳 베팅 정보",
+            value=f"💰 **베팅 금액:** {bet:,} 코인\n🎯 **예상:** {bet_display} ({multiplier_text})",
+            inline=False
+        )
+
+        embed.set_footer(text=f"Server: {interaction.guild.name}")
+        await interaction.edit_original_response(embed=embed)
+        await asyncio.sleep(1)
+
         # Spinning animation
-        for i in range(8):
+        for i in range(4):
             temp_num = random.randint(0, 36)
             temp_color = "green" if temp_num == 0 else ("red" if temp_num in self.red_numbers else "black")
-            color_emoji = {"red": "🔴", "black": "⚫", "green": "🟢"}[temp_color]
 
             embed = discord.Embed(
-                title="🎡 룰렛 스핀 중...",
-                description=f"{color_emoji} **{temp_num}** 🎡\n\n{'⚪' * (i % 4 + 1)} 스피닝... {'⚪' * (3 - i % 4)}",
-                color=discord.Color.blue()
+                title="🎡 룰렛",
+                color=discord.Color.blue(),
+                timestamp=discord.utils.utcnow()
             )
+
+            # STANDARDIZED FIELD 1: Game Display (during spinning)
+            embed.add_field(
+                name="🎯 룰렛 결과",
+                value=self.create_roulette_display(temp_num, temp_color, spinning=True),
+                inline=False
+            )
+
+            # STANDARDIZED FIELD 2: Betting Info
+            embed.add_field(
+                name="💳 베팅 정보",
+                value=f"💰 **베팅 금액:** {bet:,} 코인\n🎡 **상태:** 스피닝 중... `{i + 1}/4`",
+                inline=False
+            )
+
             embed.set_footer(text=f"Server: {interaction.guild.name}")
             await interaction.edit_original_response(embed=embed)
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.6)
 
         # Final result
         winning_number = random.randint(0, 36)
         winning_color = "green" if winning_number == 0 else ("red" if winning_number in self.red_numbers else "black")
-        color_emoji = {"red": "🔴", "black": "⚫", "green": "🟢"}[winning_color]
 
         won = False
         payout = 0
@@ -119,29 +163,63 @@ class RouletteSimpleCog(commands.Cog):
             payout = bet * number_multiplier
 
         if won:
-            await coins_cog.add_coins(interaction.user.id, interaction.guild.id, payout, "roulette_win", f"Roulette win: {winning_number}")
+            await coins_cog.add_coins(interaction.user.id, interaction.guild.id, payout, "roulette_win",
+                                      f"Roulette win: {winning_number}")
 
+        # Standardized title and color logic
         if won:
-            embed = discord.Embed(
-                title="🎉 승리!",
-                description=f"{color_emoji} **{winning_number}** ({winning_color})\n\n{payout:,} 코인 획득!",
-                color=discord.Color.green()
-            )
+            if bet_type == "number":
+                title = "🎡 룰렛 - 🔥 잭팟!"
+                color = discord.Color.gold()
+            else:
+                title = "🎡 룰렛 - 🎉 승리!"
+                color = discord.Color.green()
         else:
-            embed = discord.Embed(
-                title="💸 패배!",
-                description=f"{color_emoji} **{winning_number}** ({winning_color})\n예상: {value}\n\n{bet:,} 코인 손실",
-                color=discord.Color.red()
-            )
+            title = "🎡 룰렛 - 😞 패배!"
+            color = discord.Color.red()
 
+        embed = discord.Embed(title=title, color=color, timestamp=discord.utils.utcnow())
+
+        # STANDARDIZED FIELD 1: Game Display
+        embed.add_field(
+            name="🎯 룰렛 결과",
+            value=self.create_roulette_display(winning_number, winning_color),
+            inline=False
+        )
+
+        # STANDARDIZED FIELD 2: Betting Info
+        embed.add_field(
+            name="💳 베팅 정보",
+            value=f"💰 **베팅 금액:** {bet:,} 코인\n🎯 **예상:** {bet_display}",
+            inline=False
+        )
+
+        # STANDARDIZED FIELD 3: Game Results
+        if won:
+            if bet_type == "color":
+                result_text = f"🎯 **색깔 적중!** {color_multiplier}배 배당"
+            else:
+                result_text = f"🔥 **숫자 적중!** {number_multiplier}배 배당"
+            profit = payout - bet
+            result_info = f"{result_text}\n\n💰 **수익:** {payout:,} 코인\n📈 **순이익:** +{profit:,} 코인"
+        else:
+            winning_display = f"🟢 **{winning_number}**" if winning_color == "green" else f"🔴 **{winning_number}**" if winning_color == "red" else f"⚫ **{winning_number}**"
+            result_text = f"❌ **예상 실패!** (결과: {winning_display})"
+            result_info = f"{result_text}\n\n💸 **손실:** {bet:,} 코인"
+
+        embed.add_field(name="📊 게임 결과", value=result_info, inline=False)
+
+        # STANDARDIZED FIELD 4: Balance Info
         new_balance = await coins_cog.get_user_coins(interaction.user.id, interaction.guild.id)
-        embed.add_field(name="현재 잔액", value=f"{new_balance:,} 코인", inline=False)
-        embed.set_footer(text=f"Server: {interaction.guild.name}")
+        embed.add_field(name="💳 잔액", value=f"🏦 **현재 잔액:** {new_balance:,} 코인", inline=False)
+
+        # Standardized footer
+        embed.set_footer(text=f"플레이어: {interaction.user.display_name} | Server: {interaction.guild.name}")
 
         await interaction.edit_original_response(embed=embed)
-        # FIX: Add extra={'guild_id': ...} for multi-server logging context
+
         self.logger.info(
-            f"{interaction.user}가 룰렛에서 {bet} 코인 {'승리' if won else '패배'}",
+            f"{interaction.user}가 룰렛에서 {bet} 코인 {'승리' if won else '패배'} (베팅: {bet_type}={value}, 결과: {winning_number})",
             extra={'guild_id': interaction.guild.id}
         )
 

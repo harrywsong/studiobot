@@ -1,11 +1,9 @@
-# cogs/casino_minesweeper.py - Updated for multi-server support with balanced odds
+# cogs/casino_minesweeper.py - Updated with consistent embed layout and balanced odds
 import discord
 from discord.ext import commands
 from discord import app_commands
 import random
 from typing import List, Tuple
-
-from ipywidgets.widgets import interaction
 
 from utils.logger import get_logger
 from utils.config import (
@@ -15,7 +13,7 @@ from utils.config import (
 
 
 class MinesweeperView(discord.ui.View):
-    """Interactive Minesweeper game with dropdown selection"""
+    """Interactive Minesweeper game with dropdown selection and standardized embeds"""
 
     def __init__(self, bot, user_id: int, bet: int, mines: int, guild_id: int):
         super().__init__(timeout=300)  # 5 minutes timeout
@@ -120,11 +118,9 @@ class MinesweeperView(discord.ui.View):
             return 1.0
 
         # Get server-specific multiplier settings with much more conservative defaults
-        base_multiplier = get_server_setting(self.guild_id, 'minesweeper_base_multiplier',
-                                             0.95)  # Slightly less than 1x to account for house edge
-        multiplier_per_gem = get_server_setting(self.guild_id, 'minesweeper_gem_multiplier',
-                                                0.08)  # Reduced from 0.15 to 0.08
-        mine_bonus = get_server_setting(self.guild_id, 'minesweeper_mine_bonus', 0.01)  # Reduced from 0.03 to 0.01
+        base_multiplier = get_server_setting(self.guild_id, 'minesweeper_base_multiplier', 0.95)
+        multiplier_per_gem = get_server_setting(self.guild_id, 'minesweeper_gem_multiplier', 0.08)
+        mine_bonus = get_server_setting(self.guild_id, 'minesweeper_mine_bonus', 0.01)
 
         # Calculate remaining gems and total revealed cells
         remaining_gems = self.total_gems - self.revealed_gems
@@ -132,16 +128,13 @@ class MinesweeperView(discord.ui.View):
         remaining_cells = self.total_cells - total_revealed
 
         # Progressive multiplier with diminishing returns and risk consideration
-        # The multiplier should reflect the actual probability of success
         if remaining_cells <= self.mines_count:
-            # If only mines are left, this shouldn't happen, but handle it
             return base_multiplier + (self.revealed_gems * multiplier_per_gem * (1 + self.mines_count * mine_bonus))
 
         # Calculate risk factor: probability of hitting a mine on next reveal
         mine_risk_factor = self.mines_count / remaining_cells if remaining_cells > 0 else 1.0
 
         # Multiplier increases with each gem found, but with diminishing returns
-        # Higher mine counts give slightly better multipliers, but not excessively
         multiplier = base_multiplier + (
                 self.revealed_gems * multiplier_per_gem *
                 (1 + (self.mines_count * mine_bonus)) *
@@ -170,7 +163,7 @@ class MinesweeperView(discord.ui.View):
             if self.revealed_gems >= self.total_gems:
                 await self.end_game(interaction, True)
             else:
-                embed = await self.create_game_embed()
+                embed = await self.create_game_embed(interaction)
                 await interaction.edit_original_response(embed=embed, view=self)
 
     def format_grid(self) -> str:
@@ -194,89 +187,90 @@ class MinesweeperView(discord.ui.View):
         grid_lines.append("```")
         return "\n".join(grid_lines)
 
-    async def create_game_embed(self, game_ended: bool = False, won: bool = False) -> discord.Embed:
-        """Create the game status embed"""
+    def create_minesweeper_display(self, game_ended: bool = False) -> str:
+        """Create standardized minesweeper display"""
+        display = self.format_grid()
+
+        if self.selected_position and not game_ended:
+            row, col = self.selected_position
+            pos_name = f"{['A', 'B', 'C', 'D', 'E'][row]}{col + 1}"
+            display += f"\n\n📍 **선택된 위치:** {pos_name}"
+
+        return display
+
+    async def create_game_embed(self, interaction: discord.Interaction, game_ended: bool = False,
+                                won: bool = False) -> discord.Embed:
+        """Create standardized game status embed"""
+        # Standardized title and color logic
         if game_ended:
             if won:
-                title = "💎 승리! 성공적으로 캐시아웃!"
+                title = "💣 지뢰찾기 - 🎉 승리! 성공적으로 캐시아웃!"
                 color = discord.Color.green()
-                payout = int(self.bet * self.current_multiplier)
-                profit = payout - self.bet
-                description = f"🎯 **발견한 보석:** {self.revealed_gems}/{self.total_gems}개\n📈 **최종 배수:** {self.current_multiplier:.2f}x\n💰 **총 획득:** {payout:,}코인 (순익: +{profit:,})"
             else:
-                title = "💣 폭발! 지뢰를 밟았습니다!"
+                title = "💣 지뢰찾기 - 💥 폭발! 지뢰를 밟았습니다!"
                 color = discord.Color.red()
-                description = f"🎯 **발견한 보석:** {self.revealed_gems}/{self.total_gems}개\n📉 **도달 배수:** {self.current_multiplier:.2f}x\n💸 **손실:** -{self.bet:,}코인"
         else:
             title = "💣 지뢰찾기"
             color = discord.Color.blue()
-            remaining_gems = self.total_gems - self.revealed_gems
+
+        embed = discord.Embed(title=title, color=color, timestamp=discord.utils.utcnow())
+
+        # STANDARDIZED FIELD 1: Game Display
+        embed.add_field(
+            name="🎯 게임 보드",
+            value=self.create_minesweeper_display(game_ended),
+            inline=False
+        )
+
+        # STANDARDIZED FIELD 2: Betting Info
+        remaining_gems = self.total_gems - self.revealed_gems
+        embed.add_field(
+            name="💳 베팅 정보",
+            value=f"💰 **베팅 금액:** {self.bet:,} 코인\n💣 **지뢰:** {self.mines_count}개 | 💎 **남은 보석:** {remaining_gems}개\n🎯 **발견한 보석:** {self.revealed_gems}개",
+            inline=False
+        )
+
+        if game_ended:
+            # STANDARDIZED FIELD 3: Game Results (final)
+            if won:
+                payout = int(self.bet * self.current_multiplier)
+                profit = payout - self.bet
+                result_text = f"🎉 **성공적으로 캐시아웃!** {self.current_multiplier:.2f}배 배당"
+                result_info = f"{result_text}\n\n💰 **수익:** {payout:,} 코인\n📈 **순이익:** +{profit:,} 코인"
+            else:
+                result_text = f"💥 **지뢰 폭발!** (도달 배수: {self.current_multiplier:.2f}x)"
+                result_info = f"{result_text}\n\n💸 **손실:** {self.bet:,} 코인"
+
+            embed.add_field(name="📊 게임 결과", value=result_info, inline=False)
+
+            # STANDARDIZED FIELD 4: Balance Info
+            coins_cog = self.bot.get_cog('CoinsCog')
+            if coins_cog:
+                new_balance = await coins_cog.get_user_coins(self.user_id, interaction.guild.id)
+                embed.add_field(name="💳 잔액", value=f"🏦 **현재 잔액:** {new_balance:,} 코인", inline=False)
+        else:
+            # During gameplay - show current status
             potential_payout = int(self.bet * self.current_multiplier)
             potential_profit = potential_payout - self.bet
 
-            description = f"💣 **지뢰:** {self.mines_count}개 | 💎 **남은 보석:** {remaining_gems}개\n"
-            description += f"🎯 **발견한 보석:** {self.revealed_gems}개\n"
-            description += f"📈 **현재 배수:** {self.current_multiplier:.2f}x\n"
-            description += f"💰 **현재 캐시아웃:** {potential_payout:,}코인"
+            status_info = f"📈 **현재 배수:** {self.current_multiplier:.2f}x\n💰 **현재 캐시아웃:** {potential_payout:,} 코인"
 
             if potential_profit > 0:
-                description += f" (순익: +{potential_profit:,})"
+                status_info += f"\n📈 **순이익:** +{potential_profit:,} 코인"
             elif potential_profit < 0:
-                description += f" (손실: {potential_profit:,})"
+                status_info += f"\n📉 **손실:** {potential_profit:,} 코인"
 
-            if self.selected_position:
-                row, col = self.selected_position
-                pos_name = f"{['A', 'B', 'C', 'D', 'E'][row]}{col + 1}"
-                description += f"\n\n📍 **선택된 위치:** {pos_name}"
+            embed.add_field(name="📊 현재 상황", value=status_info, inline=False)
 
-        embed = discord.Embed(title=title, description=description, color=color)
-
-        # Add the game grid
-        embed.add_field(name="🎮 게임 보드", value=self.format_grid(), inline=False)
-
-        if not game_ended:
+            # Add gameplay instructions
             embed.add_field(
                 name="📋 게임 방법",
                 value="1️⃣ 드롭다운에서 위치 선택 (A1~E5)\n2️⃣ '🔍 선택한 위치 공개' 클릭\n3️⃣ 💎 보석을 찾으면 계속, 💣 지뢰를 밟으면 게임 종료\n4️⃣ 💰 언제든지 캐시아웃 가능",
                 inline=False
             )
 
-            # Calculate next reveal statistics
-            total_revealed = sum(sum(row) for row in self.revealed)
-            remaining_cells = self.total_cells - total_revealed
-
-            if remaining_cells > 0 and remaining_gems > 0:
-                # Calculate probability and next multiplier
-                success_rate = (remaining_gems / remaining_cells) * 100
-
-                # Simulate next multiplier
-                temp_gems = self.revealed_gems + 1
-                base_multiplier = get_server_setting(self.guild_id, 'minesweeper_base_multiplier', 0.95)
-                multiplier_per_gem = get_server_setting(self.guild_id, 'minesweeper_gem_multiplier', 0.08)
-                mine_bonus = get_server_setting(self.guild_id, 'minesweeper_mine_bonus', 0.01)
-
-                next_remaining_cells = remaining_cells - 1
-                next_mine_risk = self.mines_count / next_remaining_cells if next_remaining_cells > 0 else 1.0
-
-                next_multiplier = base_multiplier + (
-                        temp_gems * multiplier_per_gem *
-                        (1 + (self.mines_count * mine_bonus)) *
-                        (1.0 + next_mine_risk * 0.1)
-                )
-                max_multiplier = get_server_setting(self.guild_id, 'minesweeper_max_multiplier', 3.0)
-                next_multiplier = min(next_multiplier, max_multiplier)
-
-                next_payout = int(self.bet * next_multiplier)
-                next_profit = next_payout - self.bet
-
-                embed.add_field(
-                    name="📊 위험도 분석",
-                    value=f"🎯 **다음 보석 발견시:** {next_multiplier:.2f}x ({next_payout:,}코인, 순익: +{next_profit:,})\n⚡ **성공 확률:** {success_rate:.1f}%\n💣 **지뢰 확률:** {100 - success_rate:.1f}%",
-                    inline=False
-                )
-
-        embed.set_footer(
-            text=f"Server: {interaction.guild.name if hasattr(self, '_interaction') and self._interaction.guild else 'Unknown'}")
+        # Standardized footer
+        embed.set_footer(text=f"플레이어: {interaction.user.display_name} | Server: {interaction.guild.name}")
         return embed
 
     async def end_game(self, interaction: discord.Interaction, won: bool):
@@ -305,12 +299,7 @@ class MinesweeperView(discord.ui.View):
                 f"지뢰찾기 승리: {self.revealed_gems}개 보석, {self.current_multiplier:.2f}x 배수"
             )
 
-        embed = await self.create_game_embed(True, won)
-
-        if coins_cog:
-            new_balance = await coins_cog.get_user_coins(self.user_id, interaction.guild.id)
-            embed.add_field(name="💳 현재 잔액", value=f"{new_balance:,} 코인", inline=True)
-
+        embed = await self.create_game_embed(interaction, True, won)
         await interaction.edit_original_response(embed=embed, view=self)
 
 
@@ -354,16 +343,15 @@ class PositionSelect(discord.ui.Select):
         position_name = f"{['A', 'B', 'C', 'D', 'E'][row]}{col + 1}"
         self.placeholder = f"선택됨: {position_name}"
 
-        embed = await view.create_game_embed()
+        embed = await view.create_game_embed(interaction)
         await interaction.response.edit_message(embed=embed, view=view)
 
 
 class MinesweeperCog(commands.Cog):
-    """Casino Minesweeper game - Multi-server aware"""
+    """Casino Minesweeper game - Multi-server aware with standardized embeds"""
 
     def __init__(self, bot):
         self.bot = bot
-        # FIX: The logger is now a global singleton, so we just get it by name.
         self.logger = get_logger("지뢰찾기")
         self.logger.info("지뢰찾기 게임 시스템이 초기화되었습니다.")
 
@@ -375,8 +363,7 @@ class MinesweeperCog(commands.Cog):
 
         # Get server-specific limits
         min_bet = get_server_setting(interaction.guild.id, 'minesweeper_min_bet', 10)
-        max_bet = get_server_setting(interaction.guild.id, 'minesweeper_max_bet',
-                                     500)  # Increased max bet since payouts are now balanced
+        max_bet = get_server_setting(interaction.guild.id, 'minesweeper_max_bet', 500)
 
         return await casino_base.validate_game_start(
             interaction, "minesweeper", bet, min_bet, max_bet
@@ -385,16 +372,15 @@ class MinesweeperCog(commands.Cog):
     @app_commands.command(name="지뢰찾기", description="지뢰를 피해 보석을 찾는 게임")
     @app_commands.describe(
         bet="베팅 금액",
-        mines="지뢰 개수 (1-12, 많을수록 위험하지만 높은 수익)"
+        mines="지뢰 개수 (4-12, 많을수록 위험하지만 높은 수익)"
     )
-    async def minesweeper(self, interaction: discord.Interaction, bet: int,
-                          mines: int = 4):  # Changed default from 3 to 5
+    async def minesweeper(self, interaction: discord.Interaction, bet: int, mines: int = 4):
         # Check if casino games are enabled for this server
         if not interaction.guild or not is_feature_enabled(interaction.guild.id, 'casino_games'):
             await interaction.response.send_message("❌ 이 서버에서는 카지노 게임이 비활성화되어 있습니다!", ephemeral=True)
             return
 
-        # Get server-specific mine limits - reduced max mines since higher mine counts were too profitable
+        # Get server-specific mine limits
         max_mines = get_server_setting(interaction.guild.id, 'minesweeper_max_mines', 12)
 
         if not (4 <= mines <= max_mines):
@@ -418,10 +404,10 @@ class MinesweeperCog(commands.Cog):
 
         # Create game view
         view = MinesweeperView(self.bot, interaction.user.id, bet, mines, interaction.guild.id)
-        embed = await view.create_game_embed()
+        embed = await view.create_game_embed(interaction)
 
         await interaction.response.send_message(embed=embed, view=view)
-        # FIX: Add extra={'guild_id': ...} for multi-server logging context
+
         self.logger.info(
             f"{interaction.user}가 {bet}코인, {mines}개 지뢰로 지뢰찾기 시작",
             extra={'guild_id': interaction.guild.id}

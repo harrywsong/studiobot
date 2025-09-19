@@ -1,4 +1,4 @@
-# cogs/casino_carddraw.py - Card Draw Battle game (FIXED)
+# cogs/casino_carddraw.py - Card Draw Battle game with standardized embeds
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -78,9 +78,9 @@ class CardDrawPlayer:
 
 
 class CardDrawView(discord.ui.View):
-    """Interactive Card Draw Battle view"""
+    """Interactive Card Draw Battle view with standardized embeds"""
 
-    def __init__(self, bot, guild_id: int, channel_id: int, creator_id: int, bet: int):
+    def __init__(self, bot, guild_id: int, channel_id: int, creator_id: int, creator_name: str, bet: int):
         super().__init__(timeout=180)  # 3 minutes
         self.bot = bot
         self.guild_id = guild_id
@@ -94,9 +94,10 @@ class CardDrawView(discord.ui.View):
         self.winner = None
         self.is_tie = False
         self.message = None
+        self.logger = get_logger("카드뽑기대결")
 
         # Add creator as first player
-        self.add_player(creator_id, "플레이어", bet)
+        self.add_player(creator_id, creator_name, bet)
 
     def add_player(self, user_id: int, username: str, bet: int) -> bool:
         """Add player to the battle"""
@@ -111,6 +112,22 @@ class CardDrawView(discord.ui.View):
             del self.players[user_id]
             return True
         return False
+
+    def create_battle_display(self):
+        """Create standardized battle display"""
+        if self.battle_phase:
+            ready_count = sum(1 for p in self.players.values() if p.ready)
+            total_count = len(self.players)
+
+            return f"🎲 **카드 뽑기 진행 중**\n\n📊 **진행 상황:** {ready_count}/{total_count}명 완료\n\n아래 버튼을 눌러 카드를 뽑으세요!"
+        elif self.game_over:
+            if not self.is_tie and self.winner:
+                return f"🏆 **{self.winner.username} 승리!**\n\n🎯 **승리 카드:** {self.winner.card}"
+            elif self.is_tie and isinstance(self.winner, list):
+                winner_names = [w.username for w in self.winner]
+                return f"🤝 **무승부!** ({len(self.winner)}명)\n\n🎯 **동점자:** {', '.join(winner_names)}"
+        else:
+            return f"🔄 **플레이어 모집 중**\n\n👥 **참가자:** {len(self.players)}/6명"
 
     async def start_battle(self, interaction: discord.Interaction):
         """Start the card drawing battle"""
@@ -267,19 +284,47 @@ class CardDrawView(discord.ui.View):
                 )
 
     def create_battle_embed(self) -> discord.Embed:
-        """Create battle status embed"""
+        """Create battle status embed with standardized format"""
         if self.join_phase:
-            title = "🃏 카드 뽑기 대결 - 플레이어 모집"
+            title = "🃏 카드 뽑기 대결"
             color = discord.Color.blue()
-            description = f"**베팅금:** {self.bet:,}코인\n**플레이어:** {len(self.players)}/6\n\n'참가하기' 버튼을 눌러 참여하세요!"
+        elif self.battle_phase:
+            title = "🃏 카드 뽑기 대결 - 카드 뽑는 중"
+            color = discord.Color.orange()
+        elif self.game_over:
+            if not self.is_tie and self.winner:
+                title = f"🃏 카드 뽑기 대결 - 🎉 {self.winner.username} 승리!"
+                color = discord.Color.green()
+            elif self.is_tie:
+                title = f"🃏 카드 뽑기 대결 - 🤝 무승부!"
+                color = discord.Color.yellow()
+            else:
+                title = "🃏 카드 뽑기 대결 - ❌ 오류"
+                color = discord.Color.red()
 
-            embed = discord.Embed(title=title, description=description, color=color)
+        embed = discord.Embed(title=title, color=color, timestamp=discord.utils.utcnow())
 
+        # STANDARDIZED FIELD 1: Game Display
+        embed.add_field(
+            name="🎯 대결 현황",
+            value=self.create_battle_display(),
+            inline=False
+        )
+
+        # STANDARDIZED FIELD 2: Betting Info
+        embed.add_field(
+            name="💳 베팅 정보",
+            value=f"💰 **베팅 금액:** {self.bet:,}코인\n🎲 **상태:** {'게임 완료' if self.game_over else '카드 뽑는 중' if self.battle_phase else '플레이어 모집 중'}",
+            inline=False
+        )
+
+        if self.join_phase:
+            # Show participant list during join phase
             if self.players:
                 player_names = []
                 for player in self.players.values():
                     player_names.append(f"🎲 {player.username}")
-                embed.add_field(name="👥 참가자", value="\n".join(player_names), inline=False)
+                embed.add_field(name="👥 참가자 목록", value="\n".join(player_names), inline=False)
 
             embed.add_field(
                 name="📋 게임 규칙",
@@ -288,57 +333,45 @@ class CardDrawView(discord.ui.View):
             )
 
         elif self.battle_phase:
-            title = "🃏 카드 뽑기 대결 - 카드 뽑는 중"
-            color = discord.Color.orange()
-
-            ready_count = sum(1 for p in self.players.values() if p.ready)
-            total_count = len(self.players)
-
-            description = f"**진행 상황:** {ready_count}/{total_count} 플레이어가 카드를 뽑았습니다\n\n아래 버튼을 눌러 카드를 뽑으세요!"
-
-            embed = discord.Embed(title=title, description=description, color=color)
-
-            # Show who's ready
+            # Show player status during battle
             status_list = []
             for player in self.players.values():
                 status = "✅ 완료" if player.ready else "⏳ 대기 중"
-                status_list.append(f"{player.username}: {status}")
-
+                status_list.append(f"**{player.username}:** {status}")
             embed.add_field(name="👥 플레이어 상태", value="\n".join(status_list), inline=False)
 
+        elif self.game_over:
+            # STANDARDIZED FIELD 3: Game Results
+            if not self.is_tie and self.winner:
+                total_pot = sum(player.bet for player in self.players.values())
+                result_info = f"🏆 **승자:** {self.winner.username}\n🎯 **승리 카드:** {self.winner.card}\n\n💰 **획득 상금:** {total_pot:,}코인"
+            elif self.is_tie and isinstance(self.winner, list):
+                winners = self.winner
+                winner_names = [w.username for w in winners]
+                pot_share = sum(player.bet for player in self.players.values()) // len(winners)
+                result_info = f"🤝 **동점자:** {', '.join(winner_names)}\n🎯 **동점 카드:** {winners[0].card}\n\n💰 **분할 상금:** {pot_share:,}코인 (각자)"
+            else:
+                result_info = "❌ 결과 처리 중 오류가 발생했습니다"
+
+            embed.add_field(name="📊 게임 결과", value=result_info, inline=False)
+
+            # Show all cards
+            card_results = []
+            sorted_players = sorted(self.players.values(), key=lambda p: p.card.value, reverse=True)
+
+            for i, player in enumerate(sorted_players):
+                rank_emoji = "🥇" if i == 0 else "🥈" if i == 1 else "🥉" if i == 2 else "🎴"
+                card_results.append(f"{rank_emoji} **{player.username}:** {player.card}")
+
+            embed.add_field(name="🃏 모든 카드 결과", value="\n".join(card_results), inline=False)
+
+        # Standardized footer
+        embed.set_footer(text=f"Server: {self.bot.get_guild(self.guild_id).name}")
         return embed
 
     def create_results_embed(self) -> discord.Embed:
-        """Create results embed"""
-        if not self.is_tie and self.winner:
-            title = f"🏆 {self.winner.username} 승리!"
-            color = discord.Color.gold()
-            total_pot = sum(player.bet for player in self.players.values())
-            description = f"**승리 카드:** {self.winner.card}\n**획득 상금:** {total_pot:,}코인"
-        elif self.is_tie and isinstance(self.winner, list):
-            winners = self.winner
-            winner_names = [w.username for w in winners]
-            title = f"🤝 무승부! ({len(winners)}명)"
-            color = discord.Color.yellow()
-            description = f"**동점자:** {', '.join(winner_names)}\n**상금을 분할합니다**"
-        else:
-            title = "❓ 결과 오류"
-            color = discord.Color.red()
-            description = "결과 처리 중 오류가 발생했습니다."
-
-        embed = discord.Embed(title=title, description=description, color=color)
-
-        # Show all cards
-        card_results = []
-        sorted_players = sorted(self.players.values(), key=lambda p: p.card.value, reverse=True)
-
-        for i, player in enumerate(sorted_players):
-            rank_emoji = "🥇" if i == 0 else "🥈" if i == 1 else "🥉" if i == 2 else "🎴"
-            card_results.append(f"{rank_emoji} {player.username}: {player.card}")
-
-        embed.add_field(name="🃏 모든 카드 결과", value="\n".join(card_results), inline=False)
-
-        return embed
+        """Create results embed - delegates to create_battle_embed"""
+        return self.create_battle_embed()
 
     @discord.ui.button(label="🎲 참가하기", style=discord.ButtonStyle.green)
     async def join_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -414,9 +447,17 @@ class CardDrawView(discord.ui.View):
         # Remove player
         self.remove_player(interaction.user.id)
 
-        # Disable if no players
+        # Check if no players left - close game
         if not self.players:
             self.clear_items()
+            embed = discord.Embed(
+                title="🃏 카드 뽑기 대결 종료",
+                description="모든 플레이어가 나가서 게임이 종료되었습니다.",
+                color=discord.Color.red()
+            )
+            if self.message:
+                await self.message.edit(embed=embed, view=self)
+            return
 
         embed = self.create_battle_embed()
         if self.message:
@@ -459,7 +500,7 @@ class DrawCardButton(discord.ui.Button):
 
 
 class CardDrawCog(commands.Cog):
-    """Card Draw Battle game"""
+    """Card Draw Battle game with standardized embeds"""
 
     def __init__(self, bot):
         self.bot = bot
@@ -470,6 +511,11 @@ class CardDrawCog(commands.Cog):
     @app_commands.command(name="카드뽑기", description="카드 뽑기 대결 게임을 시작합니다")
     @app_commands.describe(bet="베팅 금액 (20-500코인)")
     async def carddraw(self, interaction: discord.Interaction, bet: int = 50):
+        # Check if casino games are enabled for this server
+        if not interaction.guild or not is_feature_enabled(interaction.guild.id, 'casino_games'):
+            await interaction.response.send_message("❌ 이 서버에서는 카지노 게임이 비활성화되어 있습니다!", ephemeral=True)
+            return
+
         await interaction.response.defer()
 
         # Validate game using casino base
@@ -508,17 +554,15 @@ class CardDrawCog(commands.Cog):
             await interaction.followup.send("❌ 베팅 처리에 실패했습니다!", ephemeral=True)
             return
 
-        # Create game
+        # Create game with creator already included
         game_view = CardDrawView(
             self.bot,
             interaction.guild.id,
             channel_id,
             interaction.user.id,
+            interaction.user.display_name,
             bet
         )
-
-        # Set creator's name
-        game_view.players[interaction.user.id].username = interaction.user.display_name
 
         self.active_games[channel_id] = game_view
 

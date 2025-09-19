@@ -1,4 +1,4 @@
-# cogs/casino_coinflip.py - Updated for multi-server support
+# cogs/casino_coinflip.py - Updated with consistent embed layout and fixed coin handling
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -13,13 +13,36 @@ from utils.config import (
 
 
 class CoinflipCog(commands.Cog):
-    """Coinflip casino game - Multi-server aware"""
+    """Coinflip casino game - Multi-server aware with standardized embeds"""
 
     def __init__(self, bot):
         self.bot = bot
-        # FIX: The logger is now a global singleton, so we just get it by name.
         self.logger = get_logger("동전던지기")
         self.logger.info("동전던지기 게임 시스템이 초기화되었습니다.")
+
+    def create_coin_display(self, result=None, flipping=False, choice=None):
+        """Create standardized coin display"""
+        if flipping:
+            return "🪙 **동전이 공중에서 빙글빙글...**\n\n🔄 **던지는 중...**"
+        elif result:
+            choice_korean = {"heads": "앞면", "tails": "뒷면"}
+            result_korean = choice_korean[result]
+            chosen_korean = choice_korean[choice] if choice else "?"
+
+            result_emoji = "👑" if result == "heads" else "⚫"
+            choice_emoji = "👑" if choice == "heads" else "⚫"
+
+            display = f"🪙 **결과: {result_emoji} {result_korean}**\n"
+            display += f"🎯 **예상: {choice_emoji} {chosen_korean}**\n\n"
+
+            if result == choice:
+                display += "✅ **적중!**"
+            else:
+                display += "❌ **빗나감!**"
+
+            return display
+        else:
+            return "🪙 **동전 던지기 준비**"
 
     async def validate_game(self, interaction: discord.Interaction, bet: int):
         """Validate game using casino base"""
@@ -41,8 +64,8 @@ class CoinflipCog(commands.Cog):
         choice="앞면(heads) 또는 뒷면(tails)"
     )
     @app_commands.choices(choice=[
-        app_commands.Choice(name="앞면 (Heads)", value="heads"),
-        app_commands.Choice(name="뒷면 (Tails)", value="tails")
+        app_commands.Choice(name="👑 앞면 (Heads)", value="heads"),
+        app_commands.Choice(name="⚫ 뒷면 (Tails)", value="tails")
     ])
     async def coinflip(self, interaction: discord.Interaction, bet: int, choice: str):
         # Check if casino games are enabled for this server
@@ -50,66 +73,183 @@ class CoinflipCog(commands.Cog):
             await interaction.response.send_message("❌ 이 서버에서는 카지노 게임이 비활성화되어 있습니다!", ephemeral=True)
             return
 
-        # Validate game start
+        # Validate game start (but don't deduct coins yet)
         can_start, error_msg = await self.validate_game(interaction, bet)
         if not can_start:
             await interaction.response.send_message(error_msg, ephemeral=True)
             return
 
         coins_cog = self.bot.get_cog('CoinsCog')
-        if not await coins_cog.remove_coins(interaction.user.id, interaction.guild.id, bet, "coinflip_bet", "Coinflip bet"):
-            await interaction.response.send_message("베팅 처리 실패!", ephemeral=True)
-            return
+
+        # Log initial balance for debugging
+        initial_balance = await coins_cog.get_user_coins(interaction.user.id, interaction.guild.id)
+        self.logger.info(
+            f"{interaction.user} starting coinflip - bet: {bet}, initial balance: {initial_balance}",
+            extra={'guild_id': interaction.guild.id}
+        )
 
         await interaction.response.defer()
 
-        # Flip animation
+        # Initial embed with choice display
+        choice_display = "👑 **앞면 (Heads)**" if choice == "heads" else "⚫ **뒷면 (Tails)**"
+        payout_multiplier = get_server_setting(interaction.guild.id, 'coinflip_payout', 2.0)
+
+        embed = discord.Embed(
+            title="🪙 동전던지기",
+            color=discord.Color.blue(),
+            timestamp=discord.utils.utcnow()
+        )
+
+        # STANDARDIZED FIELD 2: Betting Info (shown during setup)
+        embed.add_field(
+            name="💳 베팅 정보",
+            value=f"💰 **베팅 금액:** {bet:,} 코인\n🎯 **예상:** {choice_display} ({payout_multiplier}배 배당)",
+            inline=False
+        )
+
+        embed.set_footer(text=f"Server: {interaction.guild.name}")
+        await interaction.edit_original_response(embed=embed)
+        await asyncio.sleep(1)
+
+        # Flipping animation
         flip_emojis = ["🪙", "⚪", "🟡", "⚫"]
         for i in range(4):
             embed = discord.Embed(
-                title="🪙 동전 던지는 중...",
-                description=f"{flip_emojis[i % len(flip_emojis)]} 빙글빙글...",
-                color=discord.Color.blue()
+                title="🪙 동전던지기",
+                color=discord.Color.blue(),
+                timestamp=discord.utils.utcnow()
             )
+
+            # STANDARDIZED FIELD 1: Game Display (during flipping)
+            embed.add_field(
+                name="🎯 동전 결과",
+                value=self.create_coin_display(flipping=True),
+                inline=False
+            )
+
+            # STANDARDIZED FIELD 2: Betting Info
+            embed.add_field(
+                name="💳 베팅 정보",
+                value=f"💰 **베팅 금액:** {bet:,} 코인\n🪙 **상태:** 던지는 중... `{i + 1}/4`",
+                inline=False
+            )
+
             embed.set_footer(text=f"Server: {interaction.guild.name}")
             await interaction.edit_original_response(embed=embed)
             await asyncio.sleep(0.5)
 
-        # Final result
+        # Determine result first
         result = random.choice(["heads", "tails"])
         won = result == choice
 
+        # Calculate net change and apply atomically
         if won:
-            # Get server-specific payout multiplier
-            payout_multiplier = get_server_setting(interaction.guild.id, 'coinflip_payout', 2.0)
             payout = int(bet * payout_multiplier)
-            await coins_cog.add_coins(interaction.user.id, interaction.guild.id, payout, "coinflip_win", f"Coinflip win: {result}")
+            net_change = payout - bet  # This is the profit (could be 0 if payout = bet)
 
-        choice_korean = {"heads": "앞면", "tails": "뒷면"}
-        result_korean = choice_korean[result]
-        chosen_korean = choice_korean[choice]
-
-        if won:
-            embed = discord.Embed(
-                title="🎉 승리!",
-                description=f"결과: {result_korean}\n당신의 선택: {chosen_korean}\n\n{payout:,} 코인 획득!",
-                color=discord.Color.green()
-            )
+            if net_change > 0:
+                # User gains money
+                success = await coins_cog.add_coins(
+                    interaction.user.id,
+                    interaction.guild.id,
+                    net_change,
+                    "coinflip_win",
+                    f"Coinflip win profit: {result} (bet: {bet}, payout: {payout})"
+                )
+            elif net_change == 0:
+                # Break even - no coin change needed
+                success = True
+            else:
+                # This shouldn't happen (payout < bet), but handle it
+                success = await coins_cog.remove_coins(
+                    interaction.user.id,
+                    interaction.guild.id,
+                    abs(net_change),
+                    "coinflip_loss",
+                    f"Coinflip loss: {result} (bet: {bet}, payout: {payout})"
+                )
         else:
-            embed = discord.Embed(
-                title="💸 패배!",
-                description=f"결과: {result_korean}\n당신의 선택: {chosen_korean}\n\n{bet:,} 코인 손실",
-                color=discord.Color.red()
+            # User loses - deduct the bet
+            success = await coins_cog.remove_coins(
+                interaction.user.id,
+                interaction.guild.id,
+                bet,
+                "coinflip_loss",
+                f"Coinflip loss: {result} vs {choice}"
             )
+            payout = 0
+            net_change = -bet
 
-        new_balance = await coins_cog.get_user_coins(interaction.user.id, interaction.guild.id)
-        embed.add_field(name="현재 잔액", value=f"{new_balance:,} 코인", inline=False)
-        embed.set_footer(text=f"Server: {interaction.guild.name}")
+        # Check if coin operation succeeded
+        if not success:
+            embed = discord.Embed(
+                title="❌ 오류",
+                description="코인 처리 중 오류가 발생했습니다. 관리자에게 문의하세요.",
+                color=discord.Color.red(),
+                timestamp=discord.utils.utcnow()
+            )
+            embed.set_footer(text=f"Server: {interaction.guild.name}")
+            await interaction.edit_original_response(embed=embed)
+
+            self.logger.error(
+                f"Coin operation failed for {interaction.user} in coinflip - bet: {bet}, result: {result}, won: {won}",
+                extra={'guild_id': interaction.guild.id}
+            )
+            return
+
+        # Get final balance for display and logging
+        final_balance = await coins_cog.get_user_coins(interaction.user.id, interaction.guild.id)
+
+        # Standardized title and color logic
+        if won:
+            title = "🪙 동전던지기 - 🎉 승리!"
+            color = discord.Color.green()
+        else:
+            title = "🪙 동전던지기 - 😞 패배!"
+            color = discord.Color.red()
+
+        embed = discord.Embed(title=title, color=color, timestamp=discord.utils.utcnow())
+
+        # STANDARDIZED FIELD 1: Game Display
+        embed.add_field(
+            name="🎯 동전 결과",
+            value=self.create_coin_display(result, choice=choice),
+            inline=False
+        )
+
+        # STANDARDIZED FIELD 2: Betting Info
+        choice_display = "👑 **앞면 (Heads)**" if choice == "heads" else "⚫ **뒷면 (Tails)**"
+        embed.add_field(
+            name="💳 베팅 정보",
+            value=f"💰 **베팅 금액:** {bet:,} 코인\n🎯 **예상:** {choice_display}",
+            inline=False
+        )
+
+        # STANDARDIZED FIELD 3: Game Results
+        if won:
+            result_text = f"🎯 **적중!** {payout_multiplier}배 배당"
+            if net_change > 0:
+                result_info = f"{result_text}\n\n💰 **수익:** {payout:,} 코인\n📈 **순이익:** +{net_change:,} 코인"
+            else:
+                result_info = f"{result_text}\n\n🤝 **무승부** (손익 없음)"
+        else:
+            result_text = f"❌ **빗나감!**"
+            result_info = f"{result_text}\n\n💸 **손실:** {bet:,} 코인"
+
+        embed.add_field(name="📊 게임 결과", value=result_info, inline=False)
+
+        # STANDARDIZED FIELD 4: Balance Info
+        embed.add_field(name="💳 잔액", value=f"🏦 **현재 잔액:** {final_balance:,} 코인", inline=False)
+
+        # Standardized footer
+        embed.set_footer(text=f"플레이어: {interaction.user.display_name} | Server: {interaction.guild.name}")
 
         await interaction.edit_original_response(embed=embed)
-        # FIX: Add extra={'guild_id': ...} for multi-server logging context
+
+        # Enhanced logging with balance tracking
         self.logger.info(
-            f"{interaction.user}가 동전던지기에서 {bet} 코인 {'승리' if won else '패배'}",
+            f"{interaction.user} coinflip result - bet: {bet}, choice: {choice}, result: {result}, won: {won}, "
+            f"balance: {initial_balance} -> {final_balance} (change: {final_balance - initial_balance})",
             extra={'guild_id': interaction.guild.id}
         )
 

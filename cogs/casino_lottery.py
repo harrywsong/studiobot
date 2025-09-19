@@ -1,4 +1,4 @@
-# cogs/casino_lottery.py - Updated for multi-server support
+# cogs/casino_lottery.py - Updated with consistent embed layout
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -13,11 +13,10 @@ from utils.config import (
 
 
 class LotteryCog(commands.Cog):
-    """Lottery number matching game - Multi-server aware"""
+    """Lottery number matching game - Multi-server aware with standardized embeds"""
 
     def __init__(self, bot):
         self.bot = bot
-        # FIX: The logger is now a global singleton, so we just get it by name.
         self.logger = get_logger("복권")
         self.logger.info("복권 게임 시스템이 초기화되었습니다.")
 
@@ -39,6 +38,25 @@ class LotteryCog(commands.Cog):
             else:
                 ball_display += f"{emoji} "
         return ball_display.strip()
+
+    def create_lottery_display(self, chosen_numbers, winning_numbers=None, matches=None, drawing=False):
+        """Create standardized lottery display"""
+        if drawing:
+            # Show temporary numbers during drawing
+            temp_display = self.create_lottery_balls_display(winning_numbers if winning_numbers else [])
+            return f"🎰 **추첨 번호**\n{temp_display}\n\n🔄 **번호를 뽑는 중...**"
+        elif winning_numbers:
+            # Final result display
+            result_display = f"🏆 **당첨번호**\n{self.create_lottery_balls_display(winning_numbers, matches)}\n\n"
+            result_display += f"🎯 **선택번호**\n{self.create_lottery_balls_display(chosen_numbers, matches)}\n\n"
+            if matches:
+                result_display += f"✨ **일치:** {self.create_lottery_balls_display(list(matches))}"
+            else:
+                result_display += "❌ **일치 없음**"
+            return result_display
+        else:
+            # Initial selection display
+            return f"🎯 **선택한 번호**\n{self.create_lottery_balls_display(chosen_numbers)}"
 
     async def validate_game(self, interaction: discord.Interaction, bet: int):
         """Validate game using casino base"""
@@ -86,30 +104,62 @@ class LotteryCog(commands.Cog):
             return
 
         coins_cog = self.bot.get_cog('CoinsCog')
-        if not await coins_cog.remove_coins(interaction.user.id, interaction.guild.id, bet, "lottery_bet", "Lottery bet"):
+        if not await coins_cog.remove_coins(interaction.user.id, interaction.guild.id, bet, "lottery_bet",
+                                            "Lottery bet"):
             await interaction.response.send_message("베팅 처리 실패!", ephemeral=True)
             return
 
         await interaction.response.defer()
 
-        # Show selected numbers
+        # Initial embed with selected numbers
         embed = discord.Embed(
-            title="🎫 복권 게임",
-            description=f"선택한 번호:\n{self.create_lottery_balls_display(chosen_numbers)}",
-            color=discord.Color.blue()
+            title="🎫 복권",
+            color=discord.Color.blue(),
+            timestamp=discord.utils.utcnow()
         )
+
+        # STANDARDIZED FIELD 1: Game Display (initial selection)
+        embed.add_field(
+            name="🎯 복권 번호",
+            value=self.create_lottery_display(chosen_numbers),
+            inline=False
+        )
+
+        # STANDARDIZED FIELD 2: Betting Info
+        embed.add_field(
+            name="💳 베팅 정보",
+            value=f"💰 **베팅 금액:** {bet:,} 코인\n🎲 **선택한 번호:** {len(chosen_numbers)}개",
+            inline=False
+        )
+
         embed.set_footer(text=f"Server: {interaction.guild.name}")
         await interaction.edit_original_response(embed=embed)
         await asyncio.sleep(1.5)
 
-        # Draw animation with spinning effect
+        # Drawing animation
         for i in range(4):
             temp_numbers = random.sample(range(1, 11), 3)
+
             embed = discord.Embed(
-                title="🎫 복권 추첨 중...",
-                description=f"🎰 번호를 뽑는 중입니다...\n\n{self.create_lottery_balls_display(temp_numbers)}",
-                color=discord.Color.blue()
+                title="🎫 복권",
+                color=discord.Color.blue(),
+                timestamp=discord.utils.utcnow()
             )
+
+            # STANDARDIZED FIELD 1: Game Display (during drawing)
+            embed.add_field(
+                name="🎯 복권 번호",
+                value=self.create_lottery_display(chosen_numbers, temp_numbers, drawing=True),
+                inline=False
+            )
+
+            # STANDARDIZED FIELD 2: Betting Info
+            embed.add_field(
+                name="💳 베팅 정보",
+                value=f"💰 **베팅 금액:** {bet:,} 코인\n🎰 **상태:** 추첨 중... `{i + 1}/4`",
+                inline=False
+            )
+
             embed.set_footer(text=f"Server: {interaction.guild.name}")
             await interaction.edit_original_response(embed=embed)
             await asyncio.sleep(0.8)
@@ -127,57 +177,65 @@ class LotteryCog(commands.Cog):
         payout = payouts[match_count]
 
         if payout > 0:
-            await coins_cog.add_coins(interaction.user.id, interaction.guild.id, payout, "lottery_win", f"Lottery win: {match_count} matches")
+            await coins_cog.add_coins(interaction.user.id, interaction.guild.id, payout, "lottery_win",
+                                      f"Lottery win: {match_count} matches")
 
+        # Standardized title and color logic
         if match_count == 3:
-            title = "🎉 대박! 전체 일치!"
+            title = "🎫 복권 - 🔥 대박! 전체 일치!"
             color = discord.Color.gold()
         elif match_count == 2:
-            title = "🎉 축하합니다! 2개 일치!"
+            title = "🎫 복권 - 🎉 축하합니다! 2개 일치!"
             color = discord.Color.green()
         else:
-            title = "💸 아쉽네요!"
+            title = "🎫 복권 - 😞 아쉽네요!"
             color = discord.Color.red()
 
-        embed = discord.Embed(title=title, color=color)
+        embed = discord.Embed(title=title, color=color, timestamp=discord.utils.utcnow())
 
-        # Create visual result display
-        result_text = f"**🏆 당첨번호:**\n{self.create_lottery_balls_display(winning_numbers, matches)}\n\n"
-        result_text += f"**🎯 선택번호:**\n{self.create_lottery_balls_display(chosen_numbers, matches)}\n\n"
-
-        if matches:
-            result_text += f"**✨ 일치하는 번호:** {self.create_lottery_balls_display(list(matches))}\n"
-
-        result_text += f"**📊 일치 개수:** {match_count}개"
-
+        # STANDARDIZED FIELD 1: Game Display (final result)
         embed.add_field(
-            name="🎲 추첨 결과",
-            value=result_text,
+            name="🎯 복권 번호",
+            value=self.create_lottery_display(chosen_numbers, winning_numbers, matches),
             inline=False
         )
+
+        # STANDARDIZED FIELD 2: Betting Info
+        embed.add_field(
+            name="💳 베팅 정보",
+            value=f"💰 **베팅 금액:** {bet:,} 코인\n🎯 **일치 개수:** {match_count}개",
+            inline=False
+        )
+
+        # STANDARDIZED FIELD 3: Game Results
+        if match_count == 3:
+            multiplier = int(50 * multiplier_modifier)
+            result_text = f"🔥 **전체 일치!** {multiplier}배 배당"
+        elif match_count == 2:
+            multiplier = int(3 * multiplier_modifier)
+            result_text = f"🎉 **2개 일치!** {multiplier}배 배당"
+        else:
+            result_text = f"❌ **{match_count}개 일치** (배당 없음)"
 
         if payout > 0:
-            embed.add_field(name="💰 상금", value=f"{payout:,} 코인", inline=True)
+            profit = payout - bet
+            result_info = f"{result_text}\n\n💰 **수익:** {payout:,} 코인\n📈 **순이익:** +{profit:,} 코인"
         else:
-            embed.add_field(name="💸 손실", value=f"{bet:,} 코인", inline=True)
+            result_info = f"{result_text}\n\n💸 **손실:** {bet:,} 코인"
 
+        embed.add_field(name="📊 게임 결과", value=result_info, inline=False)
+
+        # STANDARDIZED FIELD 4: Balance Info
         new_balance = await coins_cog.get_user_coins(interaction.user.id, interaction.guild.id)
-        embed.add_field(name="💳 현재 잔액", value=f"{new_balance:,} 코인", inline=True)
+        embed.add_field(name="💳 잔액", value=f"🏦 **현재 잔액:** {new_balance:,} 코인", inline=False)
 
-        # Add payout table with server-specific multipliers
-        payout_3 = int(50 * multiplier_modifier)
-        payout_2 = int(3 * multiplier_modifier)
-        embed.add_field(
-            name="📋 배당표",
-            value=f"3개 일치: {payout_3}배 💎\n2개 일치: {payout_2}배 💚\n1개 이하: 0배 💸",
-            inline=False
-        )
+        # Standardized footer
+        embed.set_footer(text=f"플레이어: {interaction.user.display_name} | Server: {interaction.guild.name}")
 
-        embed.set_footer(text=f"Server: {interaction.guild.name}")
         await interaction.edit_original_response(embed=embed)
-        # FIX: Add extra={'guild_id': ...} for multi-server logging context
+
         self.logger.info(
-            f"{interaction.user}가 복권에서 {match_count}개 일치 ({bet} 코인)",
+            f"{interaction.user}가 복권에서 {match_count}개 일치 ({bet} 코인, 선택: {chosen_numbers}, 당첨: {winning_numbers})",
             extra={'guild_id': interaction.guild.id}
         )
 

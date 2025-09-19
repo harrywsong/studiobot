@@ -1,4 +1,4 @@
-# cogs/casino_holdem.py - Texas Hold'em Poker game (FIXED)
+# cogs/casino_holdem.py - Texas Hold'em Poker game with standardized embeds
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -458,15 +458,19 @@ class HoldemGame:
 
 
 class HoldemView(discord.ui.View):
-    """Interactive Texas Hold'em game view"""
+    """Interactive Texas Hold'em game view with standardized embeds"""
 
-    def __init__(self, bot, guild_id: int, channel_id: int, buy_in: int):
+    def __init__(self, bot, guild_id: int, channel_id: int, buy_in: int, creator_id: int, creator_name: str):
         super().__init__(timeout=300)  # 5 minutes
         self.bot = bot
         self.game = HoldemGame(bot, guild_id, channel_id, buy_in)
         self.join_phase = True
         self.waiting_for_action = False
         self.current_message = None
+        self.logger = get_logger("텍사스홀덤")
+
+        # Add creator as first player
+        self.game.add_player(creator_id, creator_name)
 
     async def show_hole_cards(self):
         """Send hole cards privately to each player"""
@@ -525,6 +529,24 @@ class HoldemView(discord.ui.View):
         self.add_item(ActionButton("call", "콜", discord.ButtonStyle.green, "📞"))
         self.add_item(ActionButton("raise", "레이즈", discord.ButtonStyle.primary, "⬆️"))
         self.add_item(ActionButton("allin", "올인", discord.ButtonStyle.danger, "💰"))
+
+    def create_poker_display(self) -> str:
+        """Create standardized poker display"""
+        round_names = ["프리플롭", "플롭", "턴", "리버"]
+        round_name = round_names[min(self.game.betting_round, 3)]
+
+        current_player = None
+        if 0 <= self.game.current_player < len(self.game.players):
+            current_player = self.game.players[self.game.current_player]
+
+        display = f"🎲 **라운드:** {round_name}\n"
+        display += f"💰 **팟:** {self.game.pot:,}칩\n"
+        display += f"📊 **현재 베팅:** {self.game.current_bet}칩"
+
+        if current_player and not self.game.game_over:
+            display += f"\n\n🎯 **현재 차례:** {current_player.username}"
+
+        return display
 
     async def handle_player_turn(self):
         """Handle current player's turn with timer"""
@@ -593,7 +615,8 @@ class HoldemView(discord.ui.View):
                         f"텍사스 홀덤 정산 ({player.chips}칩)"
                     )
 
-        embed = self.create_results_embed()
+        # Create final results embed using the existing create_game_embed method
+        embed = self.create_game_embed()
         if self.current_message:
             try:
                 await self.current_message.edit(embed=embed, view=self)
@@ -601,13 +624,33 @@ class HoldemView(discord.ui.View):
                 pass
 
     def create_game_embed(self) -> discord.Embed:
-        """Create game status embed"""
+        """Create game status embed with standardized format"""
         if self.join_phase:
-            title = "🃏 텍사스 홀덤 - 플레이어 모집"
+            title = "🃏 텍사스 홀덤"
             color = discord.Color.blue()
-            description = f"**바이인:** {self.game.buy_in:,}코인\n**플레이어:** {len(self.game.players)}/8\n\n'게임 참가' 버튼을 눌러 참여하세요!"
+        elif self.game.game_over:
+            title = "🃏 텍사스 홀덤 - 🎉 게임 완료!"
+            color = discord.Color.gold()
+        else:
+            title = "🃏 텍사스 홀덤 - 진행 중"
+            color = discord.Color.green()
 
-            embed = discord.Embed(title=title, description=description, color=color)
+        embed = discord.Embed(title=title, color=color, timestamp=discord.utils.utcnow())
+
+        if self.join_phase:
+            # STANDARDIZED FIELD 1: Game Display (during join phase)
+            embed.add_field(
+                name="🎯 게임 상태",
+                value=f"🔄 **플레이어 모집 중**\n\n👥 **참가자:** {len(self.game.players)}/8명\n💰 **바이인:** {self.game.buy_in:,}코인",
+                inline=False
+            )
+
+            # STANDARDIZED FIELD 2: Betting Info
+            embed.add_field(
+                name="💳 베팅 정보",
+                value=f"💰 **바이인:** {self.game.buy_in:,}코인\n🎲 **상태:** 플레이어 모집 중\n🔸 **스몰블라인드:** {self.game.small_blind}칩\n🔹 **빅블라인드:** {self.game.big_blind}칩",
+                inline=False
+            )
 
             if self.game.players:
                 player_list = []
@@ -617,27 +660,24 @@ class HoldemView(discord.ui.View):
 
             embed.add_field(
                 name="📋 게임 규칙",
-                value=f"• 바이인: {self.game.buy_in:,}코인\n• 스몰블라인드: {self.game.small_blind}칩\n• 빅블라인드: {self.game.big_blind}칩\n• 최고 핸드가 팟을 가져감\n• 칩이 떨어지면 탈락\n• 홀카드는 개인 메시지로 전송됩니다",
+                value="• 바이인으로 칩을 받아 게임 시작\n• 최고 핸드가 팟을 가져감\n• 칩이 떨어지면 탈락\n• 홀카드는 개인 메시지로 전송됩니다\n• 30초 내 액션하지 않으면 자동 폴드",
                 inline=False
             )
+
         else:
-            title = "🃏 텍사스 홀덤 - 진행 중"
-            color = discord.Color.green()
+            # STANDARDIZED FIELD 1: Game Display
+            embed.add_field(
+                name="🎯 홀덤 현황",
+                value=self.create_poker_display(),
+                inline=False
+            )
 
-            # Game state info
-            round_names = ["프리플롭", "플롭", "턴", "리버"]
-            round_name = round_names[min(self.game.betting_round, 3)]
-
-            current_player = None
-            if 0 <= self.game.current_player < len(self.game.players):
-                current_player = self.game.players[self.game.current_player]
-
-            description = f"**라운드:** {round_name}\n**팟:** {self.game.pot:,}칩\n**현재 베팅:** {self.game.current_bet}칩"
-
-            if current_player and not self.game.game_over:
-                description += f"\n\n🎯 **현재 차례:** {current_player.username}"
-
-            embed = discord.Embed(title=title, description=description, color=color)
+            # STANDARDIZED FIELD 2: Betting Info
+            embed.add_field(
+                name="💳 베팅 정보",
+                value=f"💰 **바이인:** {self.game.buy_in:,}코인\n🎲 **상태:** 게임 진행 중",
+                inline=False
+            )
 
             # Community cards
             if self.game.community_cards:
@@ -649,13 +689,13 @@ class HoldemView(discord.ui.View):
             for i, player in enumerate(self.game.players):
                 status = ""
                 if player.folded:
-                    status = "폴드"
+                    status = " (폴드)"
                 elif player.all_in:
-                    status = "올인"
+                    status = " (올인)"
                 elif i == self.game.current_player:
-                    status = "👈"
+                    status = " 👈"
 
-                player_info.append(f"{player.username}: {player.chips}칩 (베팅:{player.current_bet}) {status}")
+                player_info.append(f"**{player.username}:** {player.chips}칩 (베팅:{player.current_bet}){status}")
 
             embed.add_field(name="👥 플레이어 현황", value="\n".join(player_info), inline=False)
 
@@ -666,49 +706,19 @@ class HoldemView(discord.ui.View):
                 inline=False
             )
 
-        return embed
-
-    def create_results_embed(self) -> discord.Embed:
-        """Create results embed"""
-        title = "🏆 텍사스 홀덤 결과"
-        color = discord.Color.gold()
-
-        description = f"**팟 크기:** {self.game.pot:,}칩"
-
-        embed = discord.Embed(title=title, description=description, color=color)
-
-        # Winners
-        if self.game.winners:
-            winner_names = [w.username for w in self.game.winners]
-            embed.add_field(name="🥇 승자", value="\n".join(winner_names), inline=False)
-
-        # Final community cards
-        if self.game.community_cards:
-            cards_str = " ".join(str(card) for card in self.game.community_cards)
-            embed.add_field(name="🃏 최종 커뮤니티 카드", value=cards_str, inline=False)
-
-        # Show all players' hole cards in results
-        hole_cards_info = []
-        for player in self.game.players:
-            if player.hole_cards:
-                cards_str = " ".join(str(card) for card in player.hole_cards)
-                hole_cards_info.append(f"{player.username}: {cards_str}")
-
-        if hole_cards_info:
-            embed.add_field(name="🔍 모든 플레이어 홀카드", value="\n".join(hole_cards_info), inline=False)
-
-        # Final chip counts
-        chip_info = []
-        for player in self.game.players:
-            chip_info.append(f"{player.username}: {player.chips}칩")
-        embed.add_field(name="💰 최종 칩 현황", value="\n".join(chip_info), inline=False)
-
+        # Standardized footer
+        embed.set_footer(text=f"Server: {self.bot.get_guild(self.game.guild_id).name}")
         return embed
 
     @discord.ui.button(label="🎰 게임 참가", style=discord.ButtonStyle.green)
     async def join_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not self.join_phase:
             await interaction.response.send_message("❌ 게임이 이미 시작되었습니다!", ephemeral=True)
+            return
+
+        # Check if already joined
+        if any(p.user_id == interaction.user.id for p in self.game.players):
+            await interaction.response.send_message("❌ 이미 게임에 참가하셨습니다!", ephemeral=True)
             return
 
         # Validate player can afford buy-in
@@ -720,11 +730,6 @@ class HoldemView(discord.ui.View):
             if not can_start:
                 await interaction.response.send_message(error_msg, ephemeral=True)
                 return
-
-        # Check if already joined
-        if any(p.user_id == interaction.user.id for p in self.game.players):
-            await interaction.response.send_message("❌ 이미 게임에 참가하셨습니다!", ephemeral=True)
-            return
 
         # Add player
         if not self.game.add_player(interaction.user.id, interaction.user.display_name):
@@ -748,6 +753,56 @@ class HoldemView(discord.ui.View):
 
         embed = self.create_game_embed()
         await interaction.response.edit_message(embed=embed, view=self)
+
+    @discord.ui.button(label="❌ 나가기", style=discord.ButtonStyle.red)
+    async def leave_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not self.join_phase:
+            await interaction.response.send_message("❌ 게임이 시작된 후에는 나갈 수 없습니다!", ephemeral=True)
+            return
+
+        if not any(p.user_id == interaction.user.id for p in self.game.players):
+            await interaction.response.send_message("❌ 참가하지 않으셨습니다!", ephemeral=True)
+            return
+
+        await interaction.response.defer()
+
+        # Find and refund player
+        player_to_remove = None
+        for player in self.game.players:
+            if player.user_id == interaction.user.id:
+                player_to_remove = player
+                break
+
+        if player_to_remove:
+            # Refund buy-in
+            coins_cog = self.bot.get_cog('CoinsCog')
+            if coins_cog:
+                await coins_cog.add_coins(
+                    interaction.user.id,
+                    interaction.guild.id,
+                    self.game.buy_in,
+                    "holdem_refund",
+                    "텍사스 홀덤 나가기 환불"
+                )
+
+            # Remove player
+            self.game.remove_player(interaction.user.id)
+
+        # Check if no players left - close game
+        if not self.game.players:
+            self.clear_items()
+            embed = discord.Embed(
+                title="🃏 텍사스 홀덤 종료",
+                description="모든 플레이어가 나가서 게임이 종료되었습니다.",
+                color=discord.Color.red()
+            )
+            if self.current_message:
+                await self.current_message.edit(embed=embed, view=self)
+            return
+
+        embed = self.create_game_embed()
+        if self.current_message:
+            await self.current_message.edit(embed=embed, view=self)
 
     @discord.ui.button(label="🚀 게임 시작", style=discord.ButtonStyle.primary)
     async def start_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -811,7 +866,7 @@ class ActionButton(discord.ui.Button):
 
 
 class HoldemCog(commands.Cog):
-    """Texas Hold'em Poker game"""
+    """Texas Hold'em Poker game with standardized embeds"""
 
     def __init__(self, bot):
         self.bot = bot
@@ -823,6 +878,11 @@ class HoldemCog(commands.Cog):
     @app_commands.describe(buy_in="바이인 금액 (100-1000코인)")
     async def holdem(self, interaction: discord.Interaction, buy_in: int = 100):
         try:
+            # Check if casino games are enabled for this server
+            if not interaction.guild or not is_feature_enabled(interaction.guild.id, 'casino_games'):
+                await interaction.response.send_message("❌ 이 서버에서는 카지노 게임이 비활성화되어 있습니다!", ephemeral=True)
+                return
+
             # Validate game using casino base
             casino_base = self.bot.get_cog('CasinoBaseCog')
             if casino_base:
@@ -845,8 +905,29 @@ class HoldemCog(commands.Cog):
                     await interaction.response.send_message("❌ 이 채널에서 홀덤 게임이 진행 중입니다!", ephemeral=True)
                     return
 
-            # Create new game
-            game_view = HoldemView(self.bot, interaction.guild.id, channel_id, buy_in)
+            # Deduct creator's buy-in
+            coins_cog = self.bot.get_cog('CoinsCog')
+            success = await coins_cog.remove_coins(
+                interaction.user.id,
+                interaction.guild.id,
+                buy_in,
+                "holdem_buyin",
+                f"텍사스 홀덤 바이인 ({buy_in}코인)"
+            )
+
+            if not success:
+                await interaction.response.send_message("❌ 바이인 처리에 실패했습니다!", ephemeral=True)
+                return
+
+            # Create new game with creator already included
+            game_view = HoldemView(
+                self.bot,
+                interaction.guild.id,
+                channel_id,
+                buy_in,
+                interaction.user.id,
+                interaction.user.display_name
+            )
             self.active_games[channel_id] = game_view
 
             embed = game_view.create_game_embed()

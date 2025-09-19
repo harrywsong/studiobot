@@ -1,4 +1,4 @@
-# cogs/casino_bingo.py - Updated for multi-server support
+# cogs/casino_bingo.py - Updated for multi-server support with standardized embeds
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -128,9 +128,10 @@ class MultiBingoView(discord.ui.View):
         self.max_calls = 75  # All possible numbers
         self.join_phase = True
         self.game_message = None
+        self.logger = get_logger("빙고")
 
         # Add the initial player
-        self.add_player(initial_user_id, "플레이어", initial_bet)
+        self.add_player(initial_user_id, "Unknown", initial_bet)
 
     def add_player(self, user_id: int, username: str, bet: int):
         """Add a player to the game"""
@@ -145,6 +146,37 @@ class MultiBingoView(discord.ui.View):
             del self.players[user_id]
             return True
         return False
+
+    def create_bingo_display(self, last_called=None):
+        """Create standardized bingo display"""
+        if last_called:
+            # Determine letter based on number range
+            if 1 <= last_called <= 15:
+                letter = "B"
+            elif 16 <= last_called <= 30:
+                letter = "I"
+            elif 31 <= last_called <= 45:
+                letter = "N"
+            elif 46 <= last_called <= 60:
+                letter = "G"
+            else:
+                letter = "O"
+
+            display = f"📢 **방금 호출: {letter}-{last_called}**\n\n"
+        else:
+            display = "🎲 **게임 진행 중**\n\n"
+
+        # Show recently called numbers
+        if self.called_numbers:
+            recent = self.called_numbers[-8:]  # Last 8 numbers
+            recent_str = " • ".join(str(n) for n in recent)
+            if len(self.called_numbers) > 8:
+                recent_str = "... • " + recent_str
+            display += f"🔢 **최근 호출:** `{recent_str}`"
+        else:
+            display += "🎯 **호출된 번호가 없습니다**"
+
+        return display
 
     async def start_game(self, interaction: discord.Interaction):
         """Start the bingo game"""
@@ -214,69 +246,45 @@ class MultiBingoView(discord.ui.View):
             print(f"Failed to update bingo display: {e}")
 
     def create_game_embed(self, last_called=None):
-        """Create the game display embed with ALL player cards visible publicly"""
+        """Create the game display embed with standardized format"""
         if self.join_phase:
-            title = "🎱 빙고 게임 - 플레이어 대기 중"
+            title = "🎱 빙고 게임"
             color = discord.Color.blue()
-            description = f"**플레이어: {len(self.players)}/4**\n\n'게임 참가' 버튼을 눌러 참여하세요!\n30초 후 자동 시작되거나 수동으로 시작할 수 있습니다."
         elif self.game_over:
             if self.winners:
-                title = "🎉 빙고! 축하합니다!"
+                title = "🎱 빙고 게임 - 🎉 게임 완료!"
                 color = discord.Color.green()
-                winner_names = [p.username for p in self.winners]
-                description = f"**🏆 승자:** {', '.join(winner_names)}\n**📞 호출된 번호:** {self.numbers_called}개"
             else:
-                title = "💸 게임 종료 - 승자 없음"
+                title = "🎱 빙고 게임 - 💸 게임 종료"
                 color = discord.Color.red()
-                description = f"{self.numbers_called}번의 호출에도 아무도 빙고를 달성하지 못했습니다."
         else:
             title = "🎱 빙고 게임 - 진행 중"
             color = discord.Color.blue()
-            description = f"**👥 플레이어: {len(self.players)}명** | **📞 호출: {len(self.called_numbers)}개**"
 
-            if last_called:
-                # Determine letter based on number range
-                if 1 <= last_called <= 15:
-                    letter = "B"
-                elif 16 <= last_called <= 30:
-                    letter = "I"
-                elif 31 <= last_called <= 45:
-                    letter = "N"
-                elif 46 <= last_called <= 60:
-                    letter = "G"
-                else:
-                    letter = "O"
-
-                description += f"\n\n🔊 **방금 호출: {letter}-{last_called}**"
-
-        embed = discord.Embed(title=title, description=description, color=color)
-
-        # Show ALL player cards publicly during game
-        if self.players and (self.game_started or self.game_over):
-            for player in self.players.values():
-                status_emoji = "🏆" if player.has_bingo else "🎲"
-                field_name = f"{status_emoji} {player.username} ({player.bet:,}코인)"
-
-                embed.add_field(
-                    name=field_name,
-                    value=player.card.format_card_compact(),
-                    inline=True
-                )
-
-        # Show recently called numbers
-        if self.called_numbers:
-            recent = self.called_numbers[-12:]  # Last 12 numbers
-            recent_str = " • ".join(str(n) for n in recent)
-            if len(self.called_numbers) > 12:
-                recent_str = "... • " + recent_str
-            embed.add_field(name="📢 최근 호출 번호", value=f"`{recent_str}`", inline=False)
+        embed = discord.Embed(title=title, color=color, timestamp=discord.utils.utcnow())
 
         if self.join_phase:
+            # STANDARDIZED FIELD 1: Game Display (during join phase)
+            embed.add_field(
+                name="🎯 게임 상태",
+                value=f"🔄 **플레이어 대기 중**\n\n👥 **참가자:** {len(self.players)}/4명\n⏰ **자동 시작:** 30초 후",
+                inline=False
+            )
+
+            # STANDARDIZED FIELD 2: Betting Info
+            if self.players:
+                required_bet = next(iter(self.players.values())).bet
+                embed.add_field(
+                    name="💳 베팅 정보",
+                    value=f"💰 **베팅 금액:** {required_bet:,} 코인\n🎲 **상태:** 플레이어 모집 중",
+                    inline=False
+                )
+
             # Show player list during join phase
             if self.players:
                 player_names = []
                 for player in self.players.values():
-                    player_names.append(f"🎲 {player.username} ({player.bet:,}코인)")
+                    player_names.append(f"🎲 {player.username}")
 
                 embed.add_field(
                     name="👥 참가자 목록",
@@ -284,11 +292,61 @@ class MultiBingoView(discord.ui.View):
                     inline=False
                 )
 
+            # Game rules
             embed.add_field(
                 name="📋 게임 규칙",
                 value="• 가로, 세로, 대각선 중 한 줄을 완성하면 승리\n• 빠른 빙고일수록 높은 배당금\n• 다수 승자시 상금 분배\n• 중앙 칸(★)은 무료 스페이스\n• `[숫자]`는 호출된 번호",
                 inline=False
             )
+
+        elif self.game_started or self.game_over:
+            # STANDARDIZED FIELD 1: Game Display
+            embed.add_field(
+                name="🎯 빙고 현황",
+                value=self.create_bingo_display(last_called),
+                inline=False
+            )
+
+            # STANDARDIZED FIELD 2: Betting Info
+            if self.players:
+                bet_amount = next(iter(self.players.values())).bet
+                status = "게임 완료" if self.game_over else f"진행 중 ({self.numbers_called}/75 호출)"
+                embed.add_field(
+                    name="💳 베팅 정보",
+                    value=f"💰 **베팅 금액:** {bet_amount:,} 코인\n🎲 **상태:** {status}",
+                    inline=False
+                )
+
+            # Show ALL player cards publicly during game
+            if self.players:
+                cards_display = ""
+                for i, player in enumerate(self.players.values()):
+                    status_emoji = "🏆" if player.has_bingo else "🎯"
+                    cards_display += f"{status_emoji} **{player.username}**\n{player.card.format_card_compact()}\n"
+
+                embed.add_field(name="🎲 플레이어 카드", value=cards_display, inline=False)
+
+            # STANDARDIZED FIELD 3: Game Results (if game over)
+            if self.game_over:
+                if self.winners:
+                    winner_names = [p.username for p in self.winners]
+                    result_text = f"🏆 **승자:** {', '.join(winner_names)}"
+                    calls_text = f"📞 **호출 수:** {self.numbers_called}번"
+
+                    # Show payouts
+                    payout_info = []
+                    for winner in self.winners:
+                        payout = self.calculate_payout(winner)
+                        payout_info.append(f"💰 {winner.username}: +{payout:,} 코인")
+
+                    result_info = f"{result_text}\n{calls_text}\n\n" + "\n".join(payout_info)
+                else:
+                    result_info = f"💸 **승자 없음**\n📞 **총 호출:** {self.numbers_called}번\n\n아무도 빙고를 달성하지 못했습니다."
+
+                embed.add_field(name="📊 게임 결과", value=result_info, inline=False)
+
+        # Standardized footer
+        embed.set_footer(text=f"Server: {self.bot.get_guild(self.guild_id).name}")
 
         return embed
 
@@ -327,17 +385,14 @@ class MultiBingoView(discord.ui.View):
             for winner in self.winners:
                 payout = self.calculate_payout(winner)
 
-                # FIX: The add_coins method likely requires guild_id parameter
-                # The original call was missing the guild_id parameter
                 success = await coins_cog.add_coins(
                     winner.user_id,
-                    interaction.guild.id,  # FIX: Added missing guild_id parameter
+                    interaction.guild.id,
                     payout,
                     "bingo_win",
                     f"멀티플레이어 빙고 승리 ({winner.bingo_achieved_at}번 호출)"
                 )
 
-                # FIX: Add error handling for failed coin transactions
                 if not success:
                     self.logger.error(
                         f"Failed to add {payout} coins to user {winner.user_id} for bingo win",
@@ -346,18 +401,11 @@ class MultiBingoView(discord.ui.View):
 
         embed = self.create_game_embed()
 
-        # Add payout information
-        if self.winners:
-            payout_info = []
-            for winner in self.winners:
-                payout = self.calculate_payout(winner)
-                payout_info.append(f"💰 {winner.username}: +{payout:,}코인")
-            embed.add_field(name="💰 상금 지급", value="\n".join(payout_info), inline=False)
-
         try:
             await interaction.edit_original_response(embed=embed, view=self)
         except discord.NotFound:
             pass
+
     @discord.ui.button(label="🎲 게임 참가", style=discord.ButtonStyle.green, custom_id="join_game")
     async def join_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not self.join_phase:
@@ -415,7 +463,6 @@ class MultiBingoView(discord.ui.View):
         player = self.players[interaction.user.id]
         coins_cog = self.bot.get_cog('CoinsCog')
         if coins_cog:
-            # FIX: Add error handling for refund
             success = await coins_cog.add_coins(
                 interaction.user.id,
                 interaction.guild.id,
@@ -454,11 +501,10 @@ class MultiBingoView(discord.ui.View):
 
 
 class BingoCog(commands.Cog):
-    """Casino Bingo game - Multi-server aware"""
+    """Casino Bingo game - Multi-server aware with standardized embeds"""
 
     def __init__(self, bot):
         self.bot = bot
-        # FIX: The logger is now a global singleton, so we just get it by name.
         self.logger = get_logger("빙고")
         self.active_games: Dict[int, MultiBingoView] = {}  # channel_id -> game
         self.logger.info("빙고 게임 시스템이 초기화되었습니다.")
@@ -537,7 +583,6 @@ class BingoCog(commands.Cog):
         if channel_id in self.active_games and self.active_games[channel_id].game_over:
             del self.active_games[channel_id]
 
-        # FIX: Add extra={'guild_id': ...} for multi-server logging context and remove the redundant info from the message.
         self.logger.info(
             f"{interaction.user}가 {bet}코인으로 멀티플레이어 빙고 게임을 시작했습니다",
             extra={'guild_id': interaction.guild.id}

@@ -1,4 +1,4 @@
-# cogs/casino_blackjack.py - Updated for multi-server support with fixed payout logic
+# cogs/casino_blackjack.py - Updated with consistent embed layout
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -101,86 +101,85 @@ class BlackjackView(discord.ui.View):
                 (card1['value'] == 10 and card2['value'] == 10))
 
     async def create_embed(self, final: bool = False) -> discord.Embed:
-        """Create game state embed"""
+        """Create standardized game state embed"""
         if self.is_split:
             return await self.create_split_embed(final)
 
         player_value = self.calculate_hand_value(self.player_hand)
         dealer_value = self.calculate_hand_value(self.dealer_hand)
 
+        # Standardized title and color logic
         if self.player_blackjack and self.dealer_blackjack:
-            title = "🤝 양쪽 블랙잭 - Push! (무승부)"
+            title = "🃏 블랙잭 - 🤝 Push (무승부)"
             color = discord.Color.blue()
         elif self.player_blackjack and not self.dealer_blackjack:
-            title = "🎊 블랙잭!"
+            title = "🃏 블랙잭 - 🎊 블랙잭!"
             color = discord.Color.gold()
         elif player_value > 21:
-            title = "💥 버스트!"
+            title = "🃏 블랙잭 - 💥 버스트!"
             color = discord.Color.red()
         elif final and dealer_value > 21:
-            title = "🎉 딜러 버스트 - 승리!"
+            title = "🃏 블랙잭 - 🎉 승리! (딜러 버스트)"
             color = discord.Color.green()
         elif final:
             if player_value > dealer_value:
-                title = "🏆 승리!"
+                title = "🃏 블랙잭 - 🏆 승리!"
                 color = discord.Color.green()
             elif player_value < dealer_value:
-                title = "😞 딜러 승리"
+                title = "🃏 블랙잭 - 😞 패배"
                 color = discord.Color.red()
             else:
-                title = "🤝 Push (무승부)"
+                title = "🃏 블랙잭 - 🤝 Push (무승부)"
                 color = discord.Color.blue()
         else:
             title = "🃏 블랙잭"
             color = discord.Color.blue()
 
-        embed = discord.Embed(title=title, color=color)
+        embed = discord.Embed(title=title, color=color, timestamp=discord.utils.utcnow())
 
-        # Dealer hand
-        dealer_display = self.hand_to_string(self.dealer_hand, not final and not self.game_over)
-        dealer_value_text = f"({dealer_value})" if final or self.game_over else "(?)"
-        embed.add_field(
-            name=f"🎩 딜러 {dealer_value_text}",
-            value=dealer_display,
-            inline=False
-        )
+        # STANDARDIZED FIELD 1: Game Display
+        game_display = f"**딜러 핸드:**\n{self.hand_to_string(self.dealer_hand, not final and not self.game_over)}"
+        if final or self.game_over:
+            game_display += f" `({dealer_value})`"
+        else:
+            game_display += " `(?)`"
 
-        # Player hand
-        player_display = self.hand_to_string(self.player_hand)
-        hand_type = " (Blackjack)" if self.player_blackjack else " (Soft)" if any(
-            c['rank'] == 'A' for c in self.player_hand) and player_value <= 21 else ""
-        embed.add_field(
-            name=f"👤 플레이어 ({player_value}){hand_type}",
-            value=player_display,
-            inline=False
-        )
+        game_display += f"\n\n**플레이어 핸드:**\n{self.hand_to_string(self.player_hand)} `({player_value})`"
 
-        # Game info
-        bet_info = f"베팅: {self.bet:,} 코인"
+        if self.player_blackjack:
+            game_display += " (Blackjack)"
+        elif any(c['rank'] == 'A' for c in self.player_hand) and player_value <= 21:
+            game_display += " (Soft)"
+
+        embed.add_field(name="🎯 게임 현황", value=game_display, inline=False)
+
+        # STANDARDIZED FIELD 2: Betting Info
+        bet_info = f"💰 **기본 베팅:** {self.bet:,} 코인"
         if self.doubled_down:
-            bet_info += f" (더블다운: {self.bet * 2:,})"
+            bet_info += f"\n⬆️ **더블다운:** {self.bet:,} 코인"
         if self.insurance_bet > 0:
-            bet_info += f" | 보험: {self.insurance_bet:,}"
+            bet_info += f"\n🛡️ **보험료:** {self.insurance_bet:,} 코인"
 
-        embed.add_field(name="💰 베팅 정보", value=bet_info, inline=False)
+        total_risk = self.bet * (2 if self.doubled_down else 1) + self.insurance_bet
+        bet_info += f"\n📊 **총 베팅:** {total_risk:,} 코인"
+
+        embed.add_field(name="💳 베팅 정보", value=bet_info, inline=False)
 
         return embed
 
     async def create_split_embed(self, final: bool = False) -> discord.Embed:
-        """Create embed for split hands"""
-        embed = discord.Embed(title="✂️ 스플릿 게임", color=discord.Color.purple())
+        """Create standardized embed for split hands"""
+        embed = discord.Embed(title="🃏 블랙잭 - ✂️ 스플릿", color=discord.Color.purple(), timestamp=discord.utils.utcnow())
 
-        # Dealer hand
+        # STANDARDIZED FIELD 1: Game Display
         dealer_value = self.calculate_hand_value(self.dealer_hand)
-        dealer_display = self.hand_to_string(self.dealer_hand, not final and not self.game_over)
-        dealer_value_text = f"({dealer_value})" if final or self.game_over else "(?)"
-        embed.add_field(
-            name=f"🎩 딜러 {dealer_value_text}",
-            value=dealer_display,
-            inline=False
-        )
+        game_display = f"**딜러 핸드:**\n{self.hand_to_string(self.dealer_hand, not final and not self.game_over)}"
+        if final or self.game_over:
+            game_display += f" `({dealer_value})`"
+        else:
+            game_display += " `(?)`"
 
-        # Split hands
+        game_display += "\n\n**플레이어 핸드:**"
         for i, hand in enumerate(self.split_hands):
             hand_value = self.calculate_hand_value(hand)
             hand_display = self.hand_to_string(hand)
@@ -191,20 +190,18 @@ class BlackjackView(discord.ui.View):
                 status = " (21)"
 
             current_indicator = " 👈" if i == self.current_hand and not final else ""
-            embed.add_field(
-                name=f"👤 핸드 {i + 1} ({hand_value}){status}{current_indicator}",
-                value=hand_display,
-                inline=False
-            )
+            game_display += f"\n핸드 {i + 1}: {hand_display} `({hand_value})`{status}{current_indicator}"
 
-        # Bet info
+        embed.add_field(name="🎯 게임 현황", value=game_display, inline=False)
+
+        # STANDARDIZED FIELD 2: Betting Info
         total_bet = self.bet * 2  # Split doubles the bet
-        embed.add_field(name="💰 베팅 정보", value=f"총 베팅: {total_bet:,} 코인", inline=False)
+        embed.add_field(name="💳 베팅 정보", value=f"💰 **총 베팅:** {total_bet:,} 코인", inline=False)
 
         return embed
 
     async def end_game(self, interaction: discord.Interaction):
-        """Handle game end and payouts - FIXED PAYOUT LOGIC"""
+        """Handle game end and payouts with standardized result display"""
         self.game_over = True
 
         # Disable all buttons
@@ -223,44 +220,36 @@ class BlackjackView(discord.ui.View):
         dealer_value = self.calculate_hand_value(self.dealer_hand)
         total_payout = 0
 
-        # FIXED: Calculate main bet payout - bet was already deducted, so we only add what should be returned
+        # Calculate main bet payout
         if self.player_blackjack and not self.dealer_blackjack:
-            # Blackjack pays 3:2 (return original bet + 1.5x bet as winnings)
-            total_payout = int(self.bet * 2.5)  # Return bet + 1.5x winnings
-            result = f"🎊 BLACKJACK! {total_payout} 코인 획득!"
+            total_payout = int(self.bet * 2.5)
+            result_text = f"🎊 **BLACKJACK!**"
         elif self.player_blackjack and self.dealer_blackjack:
-            # Push on both blackjacks - return only original bet
             total_payout = self.bet
-            result = f"🤝 양쪽 블랙잭! {self.bet} 코인 반환"
+            result_text = f"🤝 **양쪽 블랙잭!**"
         elif player_value > 21:
-            # Bust - lose bet (already deducted, so no payout)
             total_payout = 0
-            result = f"💥 버스트! {self.bet * (2 if self.doubled_down else 1)} 코인 손실"
+            result_text = f"💥 **버스트!**"
         elif dealer_value > 21 or player_value > dealer_value:
-            # Win - return bet + equal winnings
-            multiplier = 4 if self.doubled_down else 2  # 2x for normal win, 4x for doubled win
+            multiplier = 4 if self.doubled_down else 2
             total_payout = self.bet * multiplier
-            result = f"🎉 승리! {total_payout} 코인 획득!"
+            result_text = f"🎉 **승리!**"
         elif player_value == dealer_value:
-            # Push - return only original bet
-            multiplier = 2 if self.doubled_down else 1  # Return whatever was bet
+            multiplier = 2 if self.doubled_down else 1
             total_payout = self.bet * multiplier
-            result = f"🤝 무승부! {total_payout} 코인 반환"
+            result_text = f"🤝 **무승부!**"
         else:
-            # Lose - lose bet (already deducted, so no payout)
             total_payout = 0
-            result = f"😞 패배! {self.bet * (2 if self.doubled_down else 1)} 코인 손실"
+            result_text = f"😞 **패배!**"
 
         # Handle insurance bet
         if self.insurance_bet > 0:
             if self.dealer_blackjack:
-                # Insurance pays 2:1 (return insurance bet + 2x winnings)
                 insurance_payout = self.insurance_bet * 3
                 total_payout += insurance_payout
-                result += f"\n💡 보험 적중! +{insurance_payout} 코인"
+                result_text += f"\n💡 **보험 적중!**"
             else:
-                # Insurance lost (already deducted, so no additional payout)
-                result += f"\n❌ 보험 실패 -{self.insurance_bet} 코인"
+                result_text += f"\n❌ **보험 실패**"
 
         # Only add coins if there's actually a payout
         if total_payout > 0:
@@ -268,66 +257,81 @@ class BlackjackView(discord.ui.View):
                                       "Blackjack payout")
 
         embed = await self.create_embed(final=True)
-        embed.add_field(name="결과", value=result, inline=False)
 
+        # STANDARDIZED FIELD 3: Game Results (matching slots format)
+        total_bet = self.bet * (2 if self.doubled_down else 1) + self.insurance_bet
+        if total_payout > 0:
+            profit = total_payout - total_bet
+            result_info = f"{result_text}\n\n💰 **수익:** {total_payout:,} 코인\n"
+            if profit > 0:
+                result_info += f"📈 **순이익:** +{profit:,} 코인"
+            else:
+                result_info += f"📉 **순손실:** {profit:,} 코인"
+        else:
+            result_info = f"{result_text}\n\n💸 **손실:** {total_bet:,} 코인"
+
+        embed.add_field(name="📊 게임 결과", value=result_info, inline=False)
+
+        # STANDARDIZED FIELD 4: Balance Info
         new_balance = await coins_cog.get_user_coins(self.user_id, interaction.guild.id)
-        embed.add_field(name="현재 잔액", value=f"{new_balance:,} 코인", inline=False)
+        embed.add_field(name="💳 잔액", value=f"🏦 **현재 잔액:** {new_balance:,} 코인", inline=False)
+
+        # Standardized footer
+        embed.set_footer(text=f"플레이어: {interaction.user.display_name} | Server: {interaction.guild.name}")
 
         await interaction.edit_original_response(embed=embed, view=self)
 
     async def end_split_game(self, interaction: discord.Interaction):
-        """Handle split game end and payouts - FIXED PAYOUT LOGIC"""
+        """Handle split game end with standardized display"""
         coins_cog = self.bot.get_cog('CoinsCog')
         dealer_value = self.calculate_hand_value(self.dealer_hand)
         total_payout = 0
         results = []
 
-        # FIXED: Each hand bet was already deducted (total: bet * 2)
         for i, hand in enumerate(self.split_hands):
             hand_value = self.calculate_hand_value(hand)
 
             if hand_value > 21:
-                # Bust - lose this hand's bet (already deducted, so no payout)
-                results.append(f"핸드 {i + 1}: 버스트 (손실: {self.bet} 코인)")
+                results.append(f"핸드 {i + 1}: **버스트** (손실: {self.bet:,})")
             elif dealer_value > 21 or hand_value > dealer_value:
-                # Win - return bet + equal winnings (2x total)
                 payout = self.bet * 2
                 total_payout += payout
-                results.append(f"핸드 {i + 1}: 승리 (획득: {payout} 코인)")
+                results.append(f"핸드 {i + 1}: **승리** (획득: {payout:,})")
             elif hand_value == dealer_value:
-                # Push - return only the original bet (1x total)
                 payout = self.bet
                 total_payout += payout
-                results.append(f"핸드 {i + 1}: 무승부 (반환: {payout} 코인)")
+                results.append(f"핸드 {i + 1}: **무승부** (반환: {payout:,})")
             else:
-                # Lose - lose this hand's bet (already deducted, so no payout)
-                results.append(f"핸드 {i + 1}: 패배 (손실: {self.bet} 코인)")
+                results.append(f"핸드 {i + 1}: **패배** (손실: {self.bet:,})")
 
-        # Calculate net result for summary
-        total_bet = self.bet * 2  # We deducted bet for each hand
+        total_bet = self.bet * 2
         net_result = total_payout - total_bet
 
-        # Only add coins if there's actually a payout
         if total_payout > 0:
-            await coins_cog.add_coins(self.user_id, interaction.guild.id, total_payout, "blackjack_split_win", "Blackjack split payout")
+            await coins_cog.add_coins(self.user_id, interaction.guild.id, total_payout, "blackjack_split_win",
+                                      "Blackjack split payout")
 
         embed = await self.create_split_embed(final=True)
 
-        # Add individual hand results
-        embed.add_field(name="핸드별 결과", value="\n".join(results), inline=False)
+        # STANDARDIZED FIELD 3: Game Results
+        result_text = "✂️ **스플릿 결과**\n\n" + "\n".join(results)
 
-        # Add overall summary
         if net_result > 0:
-            summary = f"🎉 총 {net_result} 코인 획득!"
+            result_text += f"\n\n💰 **수익:** {total_payout:,} 코인"
+            result_text += f"\n📈 **순이익:** +{net_result:,} 코인"
         elif net_result == 0:
-            summary = f"🤝 무승부 (손익 없음)"
+            result_text += f"\n\n🤝 **무승부** (손익 없음)"
         else:
-            summary = f"😞 총 {abs(net_result)} 코인 손실"
+            result_text += f"\n\n💸 **손실:** {abs(net_result):,} 코인"
 
-        embed.add_field(name="최종 결과", value=summary, inline=False)
+        embed.add_field(name="📊 게임 결과", value=result_text, inline=False)
 
+        # STANDARDIZED FIELD 4: Balance Info
         new_balance = await coins_cog.get_user_coins(self.user_id, interaction.guild.id)
-        embed.add_field(name="현재 잔액", value=f"{new_balance:,} 코인", inline=False)
+        embed.add_field(name="💳 잔액", value=f"🏦 **현재 잔액:** {new_balance:,} 코인", inline=False)
+
+        # Standardized footer
+        embed.set_footer(text=f"플레이어: {interaction.user.display_name} | Server: {interaction.guild.name}")
 
         await interaction.edit_original_response(embed=embed, view=self)
 
@@ -416,7 +420,8 @@ class BlackjackView(discord.ui.View):
             return
 
         # Deduct additional bet
-        if not await coins_cog.remove_coins(self.user_id, interaction.guild.id, self.bet, "blackjack_double", "Blackjack double down"):
+        if not await coins_cog.remove_coins(self.user_id, interaction.guild.id, self.bet, "blackjack_double",
+                                            "Blackjack double down"):
             await interaction.followup.send("❌ 더블다운 처리 실패!", ephemeral=True)
             return
 
@@ -519,7 +524,6 @@ class BlackjackView(discord.ui.View):
             button.disabled = True
 
             embed = await self.create_embed()
-            embed.add_field(name="💡", value=f"보험료 {insurance_amount} 코인 지불완료", inline=False)
             await interaction.edit_original_response(embed=embed, view=self)
 
 
@@ -592,7 +596,7 @@ class BlackjackCog(commands.Cog):
             await view.end_game(interaction)
             return
 
-        # Add strategy hints for non-blackjack hands
+        # Add strategy hints as a separate field
         if not view.game_over:
             player_val = view.calculate_hand_value(view.player_hand)
             dealer_up = view.dealer_hand[0]['rank']
