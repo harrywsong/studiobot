@@ -106,7 +106,7 @@ class SlotMachineCog(commands.Cog):
         if is_spinning:
             return f"🎰 **[ {reel1} | {reel2} | {reel3} ]** 🎰\n\n🔄 **스피닝 중...**"
         else:
-            return f"🎰 **[ {reel1} | {reel2} | {reel3} ]** 🎰\n\n🎊 **결과 확정!**"
+            return f"🎰 **[ {reel1} | {reel2} | {reel3} ]** 🎰\n\n🎊 ****"
 
     @app_commands.command(name="슬롯", description="클래식 슬롯머신 게임")
     @app_commands.describe(bet="베팅 금액")

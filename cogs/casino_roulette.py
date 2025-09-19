@@ -211,7 +211,7 @@ class RouletteSimpleCog(commands.Cog):
 
         # STANDARDIZED FIELD 4: Balance Info
         new_balance = await coins_cog.get_user_coins(interaction.user.id, interaction.guild.id)
-        embed.add_field(name="💳 잔액", value=f"🏦 **현재 잔액:** {new_balance:,} 코인", inline=False)
+        embed.add_field(name="", value=f"🏦 **현재 잔액:** {new_balance:,} 코인", inline=False)
 
         # Standardized footer
         embed.set_footer(text=f"플레이어: {interaction.user.display_name} | Server: {interaction.guild.name}")

@@ -239,7 +239,7 @@ class CoinflipCog(commands.Cog):
         embed.add_field(name="📊 게임 결과", value=result_info, inline=False)
 
         # STANDARDIZED FIELD 4: Balance Info
-        embed.add_field(name="💳 잔액", value=f"🏦 **현재 잔액:** {final_balance:,} 코인", inline=False)
+        embed.add_field(name="", value=f"🏦 **현재 잔액:** {final_balance:,} 코인", inline=False)
 
         # Standardized footer
         embed.set_footer(text=f"플레이어: {interaction.user.display_name} | Server: {interaction.guild.name}")

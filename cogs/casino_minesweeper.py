@@ -247,7 +247,7 @@ class MinesweeperView(discord.ui.View):
             coins_cog = self.bot.get_cog('CoinsCog')
             if coins_cog:
                 new_balance = await coins_cog.get_user_coins(self.user_id, interaction.guild.id)
-                embed.add_field(name="💳 잔액", value=f"🏦 **현재 잔액:** {new_balance:,} 코인", inline=False)
+                embed.add_field(name="", value=f"🏦 **현재 잔액:** {new_balance:,} 코인", inline=False)
         else:
             # During gameplay - show current status
             potential_payout = int(self.bet * self.current_multiplier)

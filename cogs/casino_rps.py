@@ -68,8 +68,7 @@ class RPSView(discord.ui.View):
         player_emoji = RPSChoice.EMOJIS[self.player_choice]
         bot_emoji = RPSChoice.EMOJIS[self.bot_choice]
 
-        display = f"🎯 **대결 결과**\n\n"
-        display += f"**당신:** {player_emoji} {self.player_choice}\n"
+        display = f"**당신:** {player_emoji} {self.player_choice}\n"
         display += f"**봇:** {bot_emoji} {self.bot_choice}\n\n"
 
         if self.result == "player":
