@@ -653,42 +653,49 @@ class LoanCog(commands.Cog):
 
     async def create_negotiation_channel(self, interaction: discord.Interaction, request_id: int,
                                          counter_amount: int, counter_interest: float, counter_days: int, note: str):
-        """Create negotiation channel for counter offers"""
-        await interaction.response.defer(ephemeral=True)
-
+        """Create negotiation channel for counter offers - Enhanced Debug Version"""
         try:
-            self.logger.info(f"Starting negotiation channel creation for request_id: {request_id}")
+            await interaction.response.defer(ephemeral=True)
+            print(f"[DEBUG] Starting negotiation channel creation for request_id: {request_id}")
 
             # Get original request
             request_query = "SELECT * FROM loan_requests WHERE request_id = $1"
             request = await self.bot.pool.fetchrow(request_query, request_id)
+            print(f"[DEBUG] Database query result: {request}")
 
             if not request:
-                self.logger.error(f"Request not found: {request_id}")
+                print(f"[DEBUG] Request not found: {request_id}")
                 return await interaction.followup.send("❌ 유효하지 않은 대출 신청입니다.", ephemeral=True)
 
             user = self.bot.get_user(request['user_id'])
+            print(f"[DEBUG] Found user: {user}")
             if not user:
-                self.logger.error(f"User not found: {request['user_id']}")
+                print(f"[DEBUG] User not found: {request['user_id']}")
                 return await interaction.followup.send("❌ 사용자를 찾을 수 없습니다.", ephemeral=True)
 
             # Get guild and category
             guild = interaction.guild
+            print(f"[DEBUG] Guild: {guild}")
+
             category = guild.get_channel(self.LOAN_CATEGORY)
+            print(f"[DEBUG] Category lookup for ID {self.LOAN_CATEGORY}: {category}")
 
             if not category:
-                self.logger.error(f"Category not found: {self.LOAN_CATEGORY}")
+                print(f"[DEBUG] Category not found: {self.LOAN_CATEGORY}")
                 return await interaction.followup.send(f"❌ 대출 카테고리를 찾을 수 없습니다. (ID: {self.LOAN_CATEGORY})",
                                                        ephemeral=True)
 
             if not isinstance(category, discord.CategoryChannel):
-                self.logger.error(f"Channel {self.LOAN_CATEGORY} is not a category channel")
+                print(f"[DEBUG] Channel {self.LOAN_CATEGORY} is not a category channel, type: {type(category)}")
                 return await interaction.followup.send("❌ 지정된 채널이 카테고리가 아닙니다.", ephemeral=True)
 
             # Check bot permissions
             bot_perms = category.permissions_for(guild.me)
+            print(f"[DEBUG] Bot permissions in category: {bot_perms}")
+            print(f"[DEBUG] Can manage channels: {bot_perms.manage_channels}")
+
             if not bot_perms.manage_channels:
-                self.logger.error("Bot doesn't have manage_channels permission")
+                print(f"[DEBUG] Bot doesn't have manage_channels permission")
                 return await interaction.followup.send("❌ 봇이 채널을 생성할 권한이 없습니다.", ephemeral=True)
 
             # Create overwrites
@@ -697,41 +704,58 @@ class LoanCog(commands.Cog):
                 user: discord.PermissionOverwrite(read_messages=True, send_messages=True),
                 guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True)
             }
+            print(f"[DEBUG] Basic overwrites created")
 
             # Add admin permissions if roles exist
             try:
                 admin_role_id = config.get_role_id(guild.id, 'admin_role')
+                print(f"[DEBUG] Admin role ID: {admin_role_id}")
                 if admin_role_id:
                     admin_role = guild.get_role(admin_role_id)
+                    print(f"[DEBUG] Admin role: {admin_role}")
                     if admin_role:
                         overwrites[admin_role] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
 
                 staff_role_id = config.get_role_id(guild.id, 'staff_role')
+                print(f"[DEBUG] Staff role ID: {staff_role_id}")
                 if staff_role_id:
                     staff_role = guild.get_role(staff_role_id)
+                    print(f"[DEBUG] Staff role: {staff_role}")
                     if staff_role:
                         overwrites[staff_role] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
             except Exception as e:
+                print(f"[DEBUG] Error adding admin roles: {e}")
                 self.logger.warning(f"Error adding admin roles: {e}")
 
             # Create channel with simple name
             channel_name = f"negotiation-{user.id}"
+            print(f"[DEBUG] Attempting to create channel: {channel_name}")
 
-            channel = await guild.create_text_channel(
-                name=channel_name,
-                category=category,
-                overwrites=overwrites,
-                topic=f"Loan negotiation for {user.display_name}",
-                reason=f"Counter offer negotiation created by {interaction.user.display_name}"
-            )
-
-            self.logger.info(f"Successfully created channel: {channel.name} ({channel.id})")
+            try:
+                channel = await guild.create_text_channel(
+                    name=channel_name,
+                    category=category,
+                    overwrites=overwrites,
+                    topic=f"Loan negotiation for {user.display_name}",
+                    reason=f"Counter offer negotiation created by {interaction.user.display_name}"
+                )
+                print(f"[DEBUG] Successfully created channel: {channel.name} ({channel.id})")
+            except Exception as e:
+                print(f"[DEBUG] Channel creation failed: {e}")
+                print(f"[DEBUG] Exception type: {type(e).__name__}")
+                import traceback
+                print(f"[DEBUG] Traceback: {traceback.format_exc()}")
+                return await interaction.followup.send(f"❌ 채널 생성 실패: {str(e)}", ephemeral=True)
 
             # Update request status in database
-            await self.bot.pool.execute(
-                "UPDATE loan_requests SET status = 'negotiating', channel_id = $1 WHERE request_id = $2",
-                channel.id, request_id
-            )
+            try:
+                await self.bot.pool.execute(
+                    "UPDATE loan_requests SET status = 'negotiating', channel_id = $1 WHERE request_id = $2",
+                    channel.id, request_id
+                )
+                print(f"[DEBUG] Updated database for request {request_id}")
+            except Exception as e:
+                print(f"[DEBUG] Database update failed: {e}")
 
             # Create negotiation embed
             embed = discord.Embed(
@@ -768,17 +792,27 @@ class LoanCog(commands.Cog):
             embed.set_footer(text=f"제안자: {interaction.user.display_name}")
 
             # Send embed to channel
-            await channel.send(f"{user.mention} 관리자들", embed=embed)
+            try:
+                await channel.send(f"{user.mention} 관리자들", embed=embed)
+                print(f"[DEBUG] Sent embed to channel")
+            except Exception as e:
+                print(f"[DEBUG] Failed to send embed: {e}")
 
             # Update original message
-            orig_embed = interaction.message.embeds[0]
-            orig_embed.color = discord.Color.orange()
-            orig_embed.title = "📄 역제안 진행 중"
-            orig_embed.add_field(name="처리자", value=interaction.user.display_name, inline=True)
-            orig_embed.add_field(name="협상 채널", value=channel.mention, inline=True)
+            try:
+                orig_embed = interaction.message.embeds[0]
+                orig_embed.color = discord.Color.orange()
+                orig_embed.title = "📄 역제안 진행 중"
+                orig_embed.add_field(name="처리자", value=interaction.user.display_name, inline=True)
+                orig_embed.add_field(name="협상 채널", value=channel.mention, inline=True)
 
-            await interaction.message.edit(embed=orig_embed, view=None)
+                await interaction.message.edit(embed=orig_embed, view=None)
+                print(f"[DEBUG] Updated original message")
+            except Exception as e:
+                print(f"[DEBUG] Failed to update original message: {e}")
+
             await interaction.followup.send(f"✅ 역제안을 위한 협상 채널이 생성되었습니다: {channel.mention}", ephemeral=True)
+            print(f"[DEBUG] Sent success message")
 
             # Send DM to user
             try:
@@ -790,12 +824,19 @@ class LoanCog(commands.Cog):
                 )
                 dm_embed.add_field(name="협상 채널", value=channel.mention, inline=False)
                 await user.send(embed=dm_embed)
+                print(f"[DEBUG] Sent DM to user")
             except Exception as e:
-                self.logger.warning(f"Could not send DM to user: {e}")
+                print(f"[DEBUG] Failed to send DM: {e}")
 
         except Exception as e:
-            self.logger.error(f"협상 채널 생성 실패: {e}")
-            await interaction.followup.send(f"❌ 협상 채널 생성 중 오류가 발생했습니다: {e}", ephemeral=True)
+            print(f"[DEBUG] Overall function failed: {e}")
+            print(f"[DEBUG] Exception type: {type(e).__name__}")
+            import traceback
+            print(f"[DEBUG] Traceback: {traceback.format_exc()}")
+            try:
+                await interaction.followup.send(f"❌ 협상 채널 생성 중 오류가 발생했습니다: {str(e)}", ephemeral=True)
+            except:
+                pass
 
     async def process_repayment(self, interaction: discord.Interaction, loan_id: int, amount: int):
         """Process loan repayment"""
