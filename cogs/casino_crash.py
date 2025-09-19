@@ -49,7 +49,7 @@ class CrashGame:
         self.game_over = False
         self.start_time = None
         self.history: list[float] = [1.0]
-        self.min_cashout_multiplier = get_server_setting(guild_id, 'crash_min_cashout_multiplier', 1.0)
+        self.min_cashout_multiplier = get_server_setting(guild_id, 'crash_min_cashout_multiplier', 1.2)
 
     def add_player(self, user_id: int, bet: int):
         """Add a player to the game"""
