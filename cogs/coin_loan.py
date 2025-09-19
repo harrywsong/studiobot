@@ -75,7 +75,7 @@ class LoanCog(commands.Cog):
         except Exception as e:
             self.logger.error(f"연체된 대출 확인 중 오류 발생: {e}")
 
-    @app_commands.command(name="loan-issue", description="사용자에게 대출을 발행합니다. (관리자 전용)")
+    @app_commands.command(name="대출발행", description="사용자에게 대출을 발행합니다. (관리자 전용)")
     @app_commands.describe(
         user="대출을 받을 사용자",
         amount="대출 원금",
@@ -175,7 +175,7 @@ class LoanCog(commands.Cog):
             self.logger.error(f"대출 발행 중 오류 발생: {e}")
             await interaction.followup.send(f"❌ 대출 발행 중 오류가 발생했습니다: {e}", ephemeral=True)
 
-    @app_commands.command(name="loan-info", description="현재 대출 상태를 확인합니다.")
+    @app_commands.command(name="대출정보", description="현재 대출 상태를 확인합니다.")
     async def loan_info(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
 
@@ -206,7 +206,7 @@ class LoanCog(commands.Cog):
             self.logger.error(f"대출 정보 조회 중 오류 발생: {e}")
             await interaction.followup.send(f"❌ 대출 정보 조회 중 오류가 발생했습니다: {e}", ephemeral=True)
 
-    @app_commands.command(name="loan-repay", description="대출금을 상환합니다.")
+    @app_commands.command(name="대출상환", description="대출금을 상환합니다.")
     @app_commands.describe(amount="상환할 금액")
     async def repay_loan(self, interaction: discord.Interaction, amount: int):
         if amount <= 0:
@@ -256,7 +256,7 @@ class LoanCog(commands.Cog):
             self.logger.error(f"대출 상환 중 오류 발생: {e}")
             await interaction.followup.send(f"❌ 대출 상환 중 오류가 발생했습니다: {e}", ephemeral=True)
 
-    @app_commands.command(name="loan-list", description="모든 대출 목록을 확인합니다. (관리자 전용)")
+    @app_commands.command(name="대출목록", description="모든 대출 목록을 확인합니다. (관리자 전용)")
     async def list_loans(self, interaction: discord.Interaction):
         if not self.has_admin_permissions(interaction.user):
             return await interaction.response.send_message("❌ 이 명령어를 사용할 권한이 없습니다.", ephemeral=True)
@@ -287,9 +287,15 @@ class LoanCog(commands.Cog):
                 user_name = user.display_name if user else f"Unknown ({loan['user_id']})"
                 status_emoji = "🟢" if loan['status'] == 'active' else "🔴"
 
+                # Fix timezone handling for due_date
+                due_date = loan['due_date']
+                if due_date.tzinfo is None:
+                    # If naive, assume UTC
+                    due_date = due_date.replace(tzinfo=timezone.utc)
+
                 embed.add_field(
                     name=f"{status_emoji} {user_name} (ID: {loan['loan_id']})",
-                    value=f"원금: {loan['principal_amount']:,}\n남은액: {loan['remaining_amount']:,}\n기한: <t:{int(loan['due_date'].timestamp())}:R>",
+                    value=f"원금: {loan['principal_amount']:,}\n남은액: {loan['remaining_amount']:,}\n기한: <t:{int(due_date.timestamp())}:R>",
                     inline=True
                 )
 
