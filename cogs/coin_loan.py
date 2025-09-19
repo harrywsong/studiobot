@@ -60,7 +60,8 @@ class LoanCog(commands.Cog):
     @tasks.loop(hours=24)
     async def check_overdue_loans(self):
         """Daily check for loans that have passed their due date."""
-        current_time = datetime.now(timezone.utc)
+        # Use consistent timezone handling
+        current_time = datetime.utcnow().replace(tzinfo=timezone.utc)
         self.logger.info("연체된 대출을 확인하는 중...")
         try:
             query = "SELECT loan_id, user_id FROM user_loans WHERE status = 'active' AND due_date < $1"
@@ -106,16 +107,17 @@ class LoanCog(commands.Cog):
             if existing_loan:
                 return await interaction.followup.send(f"❌ {user.display_name}님은 이미 활성 상태의 대출이 있습니다!", ephemeral=True)
 
-            # FIXED: Simplified timezone handling - let PostgreSQL handle the timezone
-            due_date = datetime.now(timezone.utc) + timedelta(days=days_due)
+            # FINAL FIX: Use consistent timezone handling to prevent timezone arithmetic errors
+            now = datetime.utcnow().replace(tzinfo=timezone.utc)
+            due_date = now + timedelta(days=days_due)
             total_repayment = amount + int(amount * (interest / 100))
 
-            # Insert loan record - REMOVED explicit issued_at parameter
+            # Insert loan record - Let PostgreSQL handle issued_at with DEFAULT NOW()
             query = """
-                    INSERT INTO user_loans (user_id, guild_id, principal_amount, remaining_amount, interest_rate, due_date, status)
-                    VALUES ($1, $2, $3, $4, $5, $6, 'active')
-                    RETURNING loan_id
-                """
+                INSERT INTO user_loans (user_id, guild_id, principal_amount, remaining_amount, interest_rate, due_date, status)
+                VALUES ($1, $2, $3, $4, $5, $6, 'active')
+                RETURNING loan_id
+            """
             loan_record = await self.bot.pool.fetchrow(
                 query,
                 user.id,
@@ -148,7 +150,7 @@ class LoanCog(commands.Cog):
                     title=f"{interaction.guild.name} 대출 승인",
                     description=f"관리자에 의해 대출이 승인되었습니다.",
                     color=discord.Color.green(),
-                    timestamp=datetime.now(timezone.utc)
+                    timestamp=now
                 )
                 embed.add_field(name="대출 원금", value=f"{amount:,} 코인", inline=False)
                 embed.add_field(name="총 상환액", value=f"{total_repayment:,} 코인 ({interest}% 이자 포함)", inline=False)
