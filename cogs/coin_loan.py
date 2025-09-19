@@ -11,38 +11,43 @@ from utils import config
 
 class LoanRequestModal(discord.ui.Modal, title="대출 신청"):
     """Modal for users to request loans"""
-    amount = discord.ui.TextInput(
-        label="대출 금액",
-        placeholder="신청할 대출 금액을 입력하세요 (예: 10000)",
-        min_length=1,
-        max_length=10,
-    )
-
-    interest = discord.ui.TextInput(
-        label="희망 이자율 (%)",
-        placeholder="희망하는 이자율을 입력하세요 (예: 5.5)",
-        min_length=1,
-        max_length=5,
-    )
-
-    days_due = discord.ui.TextInput(
-        label="상환 기간 (일)",
-        placeholder="상환 기간을 일 단위로 입력하세요 (예: 30)",
-        min_length=1,
-        max_length=3,
-    )
-
-    reason = discord.ui.TextInput(
-        label="대출 사유",
-        placeholder="대출이 필요한 이유를 간단히 설명해주세요",
-        style=discord.TextStyle.paragraph,
-        min_length=10,
-        max_length=500,
-    )
 
     def __init__(self, cog):
         super().__init__()
         self.cog = cog
+
+        self.amount = discord.ui.TextInput(
+            label="대출 금액",
+            placeholder="신청할 대출 금액을 입력하세요 (예: 10000)",
+            min_length=1,
+            max_length=10,
+        )
+        self.add_item(self.amount)
+
+        self.interest = discord.ui.TextInput(
+            label="희망 이자율 (%)",
+            placeholder="희망하는 이자율을 입력하세요 (예: 5.5)",
+            min_length=1,
+            max_length=5,
+        )
+        self.add_item(self.interest)
+
+        self.days_due = discord.ui.TextInput(
+            label="상환 기간 (일)",
+            placeholder="상환 기간을 일 단위로 입력하세요 (예: 30)",
+            min_length=1,
+            max_length=3,
+        )
+        self.add_item(self.days_due)
+
+        self.reason = discord.ui.TextInput(
+            label="대출 사유",
+            placeholder="대출이 필요한 이유를 간단히 설명해주세요",
+            style=discord.TextStyle.paragraph,
+            min_length=10,
+            max_length=500,
+        )
+        self.add_item(self.reason)
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
@@ -123,8 +128,7 @@ class AdminReviewView(discord.ui.View):
     @discord.ui.button(
         label="승인",
         style=discord.ButtonStyle.success,
-        emoji="✅",
-        custom_id=f"loan_approve_{self.request_id}"  # Make custom_id unique
+        emoji="✅"
     )
     async def approve_loan(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not self.cog.has_admin_permissions(interaction.user):
@@ -135,8 +139,7 @@ class AdminReviewView(discord.ui.View):
     @discord.ui.button(
         label="역제안",
         style=discord.ButtonStyle.secondary,
-        emoji="📄",
-        custom_id=f"loan_counter_{self.request_id}"  # Make custom_id unique
+        emoji="📄"
     )
     async def counter_offer(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not self.cog.has_admin_permissions(interaction.user):
@@ -147,8 +150,7 @@ class AdminReviewView(discord.ui.View):
     @discord.ui.button(
         label="거부",
         style=discord.ButtonStyle.danger,
-        emoji="❌",
-        custom_id=f"loan_deny_{self.request_id}"  # Make custom_id unique
+        emoji="❌"
     )
     async def deny_loan(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not self.cog.has_admin_permissions(interaction.user):
@@ -168,8 +170,7 @@ class LoanChannelView(discord.ui.View):
     @discord.ui.button(
         label="대출 상환",
         style=discord.ButtonStyle.primary,
-        emoji="💳",
-        custom_id=f"loan_repay_{self.loan_id}"  # Make custom_id unique
+        emoji="💳"
     )
     async def repay_loan(self, interaction: discord.Interaction, button: discord.ui.Button):
         modal = RepaymentModal(self.cog, self.loan_id)
@@ -178,17 +179,19 @@ class LoanChannelView(discord.ui.View):
 
 class RepaymentModal(discord.ui.Modal, title="대출 상환"):
     """Modal for loan repayment"""
-    amount = discord.ui.TextInput(
-        label="상환 금액",
-        placeholder="상환할 금액을 입력하세요",
-        min_length=1,
-        max_length=10,
-    )
 
     def __init__(self, cog, loan_id: int):
         super().__init__()
         self.cog = cog
         self.loan_id = loan_id
+
+        self.amount = discord.ui.TextInput(
+            label="상환 금액",
+            placeholder="상환할 금액을 입력하세요",
+            min_length=1,
+            max_length=10,
+        )
+        self.add_item(self.amount)
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
@@ -206,39 +209,44 @@ class RepaymentModal(discord.ui.Modal, title="대출 상환"):
 
 class CounterOfferModal(discord.ui.Modal, title="역제안"):
     """Modal for counter offers"""
-    amount = discord.ui.TextInput(
-        label="대출 금액",
-        placeholder="제안할 대출 금액",
-        min_length=1,
-        max_length=10,
-    )
-
-    interest = discord.ui.TextInput(
-        label="이자율 (%)",
-        placeholder="제안할 이자율",
-        min_length=1,
-        max_length=5,
-    )
-
-    days_due = discord.ui.TextInput(
-        label="상환 기간 (일)",
-        placeholder="제안할 상환 기간",
-        min_length=1,
-        max_length=3,
-    )
-
-    note = discord.ui.TextInput(
-        label="추가 메모",
-        placeholder="역제안 사유나 추가 설명",
-        style=discord.TextStyle.paragraph,
-        required=False,
-        max_length=500,
-    )
 
     def __init__(self, cog, request_id: int):
         super().__init__()
         self.cog = cog
         self.request_id = request_id
+
+        self.amount = discord.ui.TextInput(
+            label="대출 금액",
+            placeholder="제안할 대출 금액",
+            min_length=1,
+            max_length=10,
+        )
+        self.add_item(self.amount)
+
+        self.interest = discord.ui.TextInput(
+            label="이자율 (%)",
+            placeholder="제안할 이자율",
+            min_length=1,
+            max_length=5,
+        )
+        self.add_item(self.interest)
+
+        self.days_due = discord.ui.TextInput(
+            label="상환 기간 (일)",
+            placeholder="제안할 상환 기간",
+            min_length=1,
+            max_length=3,
+        )
+        self.add_item(self.days_due)
+
+        self.note = discord.ui.TextInput(
+            label="추가 메모",
+            placeholder="역제안 사유나 추가 설명",
+            style=discord.TextStyle.paragraph,
+            required=False,
+            max_length=500,
+        )
+        self.add_item(self.note)
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
@@ -278,7 +286,8 @@ class LoanCog(commands.Cog):
         print("Bot is ready, setting up tables...")
         await self.setup_loan_tables()
         await self.setup_request_interface()
-        self.check_overdue_loans.start()
+        if not self.check_overdue_loans.is_running():
+            self.check_overdue_loans.start()
         self.logger.info("대출 시스템 Cog가 초기화되고 백그라운드 작업이 시작되었습니다.")
 
     async def setup_loan_tables(self):
@@ -365,7 +374,6 @@ class LoanCog(commands.Cog):
         if member.guild_permissions.administrator:
             return True
 
-        # Use the config system to check for admin/staff roles
         try:
             admin_role_id = config.get_role_id(member.guild.id, 'admin_role')
             if admin_role_id and discord.utils.get(member.roles, id=admin_role_id):
@@ -428,12 +436,11 @@ class LoanCog(commands.Cog):
             if not user:
                 return await interaction.followup.send("❌ 사용자를 찾을 수 없습니다.", ephemeral=True)
 
-            # Check if guild member (important for channel creation)
             guild_member = interaction.guild.get_member(request['user_id'])
             if not guild_member:
                 return await interaction.followup.send("❌ 서버에서 사용자를 찾을 수 없습니다.", ephemeral=True)
 
-            # Issue the loan
+            # Get coins cog
             coins_cog = self.bot.get_cog('CoinsCog')
             if not coins_cog:
                 return await interaction.followup.send("❌ 코인 시스템을 찾을 수 없습니다.", ephemeral=True)
@@ -571,8 +578,8 @@ class LoanCog(commands.Cog):
             self.logger.error(f"대출 거부 처리 중 오류: {e}")
             await interaction.followup.send(f"❌ 거부 처리 중 오류가 발생했습니다: {e}", ephemeral=True)
 
-    async def create_loan_channel(self, guild: discord.Guild, user: discord.Member, amount: int,
-                                  interest_rate: float, days: int) -> discord.TextChannel:
+    async def create_loan_channel(self, guild: discord.Guild, user: discord.Member, amount: int, interest_rate: float,
+                                  days: int) -> discord.TextChannel:
         """Create a private loan channel with comprehensive error handling"""
         try:
             # Get category safely
