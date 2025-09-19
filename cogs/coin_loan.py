@@ -425,7 +425,8 @@ class LoanCog(commands.Cog):
                 return await interaction.followup.send("❌ 코인 시스템을 찾을 수 없습니다.", ephemeral=True)
 
             # Create loan channel first
-            channel = await self.create_loan_channel(user, request['amount'], request['interest_rate'],
+            channel = await self.create_loan_channel(interaction.guild, user, request['amount'],
+                                                     request['interest_rate'],
                                                      request['days_due'])
             if not channel:
                 return await interaction.followup.send("❌ 대출 채널 생성에 실패했습니다.", ephemeral=True)
@@ -552,11 +553,10 @@ class LoanCog(commands.Cog):
             self.logger.error(f"대출 거부 처리 중 오류: {e}")
             await interaction.followup.send(f"❌ 거부 처리 중 오류가 발생했습니다: {e}", ephemeral=True)
 
-    async def create_loan_channel(self, user: discord.User, amount: int, interest_rate: float,
+    async def create_loan_channel(self, guild: discord.Guild, user: discord.User, amount: int, interest_rate: float,
                                   days: int) -> discord.TextChannel:
         """Create a private loan channel"""
         try:
-            guild = self.bot.guilds[0]  # Adjust as needed
             category = guild.get_channel(self.LOAN_CATEGORY)
 
             if not category:
@@ -898,7 +898,7 @@ class LoanCog(commands.Cog):
                 return await interaction.followup.send(f"❌ {user.display_name}님은 이미 활성 상태의 대출이 있습니다!", ephemeral=True)
 
             # Create loan channel
-            channel = await self.create_loan_channel(user, amount, interest, days_due)
+            channel = await self.create_loan_channel(interaction.guild, user, amount, interest, days_due)
             if not channel:
                 return await interaction.followup.send("❌ 대출 채널 생성에 실패했습니다.", ephemeral=True)
 
