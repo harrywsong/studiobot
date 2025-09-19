@@ -81,7 +81,7 @@ class CardDrawView(discord.ui.View):
     """Interactive Card Draw Battle view with standardized embeds"""
 
     def __init__(self, bot, guild_id: int, channel_id: int, creator_id: int, creator_name: str, bet: int):
-        super().__init__(timeout=180)  # 3 minutes
+        super().__init__(timeout=None)  # 3 minutes
         self.bot = bot
         self.guild_id = guild_id
         self.channel_id = channel_id

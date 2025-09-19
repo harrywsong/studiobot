@@ -18,7 +18,7 @@ class ScrimSetupModal(discord.ui.Modal):
     """Modal for setting up a new scrim/internal match"""
 
     def __init__(self, bot, guild_id: int):
-        super().__init__(title="내전 설정", timeout=300)
+        super().__init__(title="내전 설정", timeout=None)
         self.bot = bot
         self.guild_id = guild_id
         self.logger = get_logger("내전 시스템")
@@ -699,15 +699,6 @@ class ScrimCog(commands.Cog):
 
         # Time until start
         now = datetime.now(eastern)
-        time_until_start = start_time - now
-        if time_until_start.total_seconds() > 0:
-            hours, remainder = divmod(int(time_until_start.total_seconds()), 3600)
-            minutes, _ = divmod(remainder, 60)
-            if hours > 0:
-                time_text = f"{hours}시간 {minutes}분 후 시작"
-            else:
-                time_text = f"{minutes}분 후 시작"
-            embed.add_field(name="⏰ 시작까지", value=time_text, inline=True)
 
         # Organizer
         guild = self.bot.get_guild(scrim_data['guild_id'])

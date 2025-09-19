@@ -115,7 +115,7 @@ class MultiBingoView(discord.ui.View):
     """Interactive multiplayer bingo game view - Multi-server aware"""
 
     def __init__(self, bot, guild_id: int, channel_id: int, initial_user_id: int, initial_bet: int):
-        super().__init__(timeout=180)  # 3 minutes for joining
+        super().__init__(timeout=None)  # 3 minutes for joining
         self.bot = bot
         self.guild_id = guild_id
         self.channel_id = channel_id

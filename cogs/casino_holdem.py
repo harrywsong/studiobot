@@ -172,6 +172,63 @@ class HoldemPlayer:
         self.acted_this_round = False
 
 
+class RaiseModal(discord.ui.Modal):
+    """Modal for custom raise amounts"""
+
+    def __init__(self, view, player_idx: int):
+        super().__init__(title="레이즈 금액 선택", timeout=30)
+        self.view = view
+        self.player_idx = player_idx
+
+        player = view.game.players[player_idx]
+        to_call = view.game.current_bet - player.current_bet
+        min_raise_total = view.game.current_bet + view.game.big_blind
+        max_chips = player.chips
+
+        self.raise_input = discord.ui.TextInput(
+            label="레이즈 총 금액",
+            placeholder=f"최소: {min_raise_total}칩, 최대: {player.current_bet + max_chips}칩",
+            required=True,
+            max_length=10
+        )
+        self.add_item(self.raise_input)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            total_bet = int(self.raise_input.value)
+            player = self.view.game.players[self.player_idx]
+
+            # Validate raise amount
+            min_raise_total = self.view.game.current_bet + self.view.game.big_blind
+            max_total = player.current_bet + player.chips
+
+            if total_bet < min_raise_total:
+                await interaction.response.send_message(f"❌ 최소 레이즈 금액은 {min_raise_total}칩입니다!", ephemeral=True)
+                return
+
+            if total_bet > max_total:
+                await interaction.response.send_message(f"❌ 보유 칩이 부족합니다! 최대: {max_total}칩", ephemeral=True)
+                return
+
+            # Calculate actual raise amount needed
+            raise_amount = total_bet - player.current_bet
+
+            # Make the raise
+            success = self.view.game.make_raise(self.player_idx, total_bet)
+            if not success:
+                await interaction.response.send_message("❌ 레이즈 처리에 실패했습니다!", ephemeral=True)
+                return
+
+            self.view.waiting_for_action = False
+            self.view.game.current_player = self.view.game.get_next_active_player(self.view.game.current_player)
+
+            embed = self.view.create_game_embed()
+            await interaction.response.edit_message(embed=embed, view=self.view)
+
+        except ValueError:
+            await interaction.response.send_message("❌ 유효한 숫자를 입력해주세요!", ephemeral=True)
+
+
 class HoldemGame:
     """Texas Hold'em game logic"""
 
@@ -345,19 +402,6 @@ class HoldemGame:
             self.pot += to_call
             if player.chips == 0:
                 player.all_in = True
-        elif action == "raise":
-            # For simplicity, use minimum raise
-            min_raise_amount = max(self.big_blind, self.current_bet - player.current_bet + self.big_blind)
-            actual_raise = min(min_raise_amount, player.chips)
-
-            player.chips -= actual_raise
-            player.current_bet += actual_raise
-            player.total_bet += actual_raise
-            self.pot += actual_raise
-            self.current_bet = player.current_bet
-
-            if player.chips == 0:
-                player.all_in = True
         elif action == "allin":
             amount = player.chips
             player.chips = 0
@@ -368,6 +412,43 @@ class HoldemGame:
             player.all_in = True
 
         player.acted_this_round = True
+        return True
+
+    def make_raise(self, player_idx: int, total_bet_amount: int) -> bool:
+        """Process raise action with specific total bet amount"""
+        if not self.can_act(player_idx):
+            return False
+
+        player = self.players[player_idx]
+
+        # Calculate how much more the player needs to bet
+        additional_bet = total_bet_amount - player.current_bet
+
+        if additional_bet > player.chips:
+            return False
+
+        # Minimum raise check
+        min_raise_total = self.current_bet + self.big_blind
+        if total_bet_amount < min_raise_total:
+            return False
+
+        # Make the raise
+        player.chips -= additional_bet
+        player.current_bet = total_bet_amount
+        player.total_bet += additional_bet
+        self.pot += additional_bet
+        self.current_bet = total_bet_amount
+
+        if player.chips == 0:
+            player.all_in = True
+
+        player.acted_this_round = True
+
+        # Reset other players' action status for this round since bet increased
+        for other_player in self.players:
+            if other_player != player and not other_player.folded and not other_player.all_in:
+                other_player.acted_this_round = False
+
         return True
 
     def is_betting_round_complete(self) -> bool:
@@ -532,7 +613,7 @@ class HoldemView(discord.ui.View):
 
     def create_poker_display(self) -> str:
         """Create standardized poker display"""
-        round_names = ["프리플롭", "플롭", "턴", "리버"]
+        round_names = ["프리플랍", "플랍", "턴", "리버"]
         round_name = round_names[min(self.game.betting_round, 3)]
 
         current_player = None
@@ -598,25 +679,126 @@ class HoldemView(discord.ui.View):
                 self.game.current_player = self.game.get_next_active_player(self.game.current_player)
 
     async def show_results(self):
-        """Show final results"""
+        """Show final results with clear winner info and payouts"""
         self.clear_items()
+
+        # Calculate results for each player
+        player_results = []
+        for player in self.game.players:
+            net_result = player.chips - self.game.buy_in  # chips now - original buy-in
+            player_results.append({
+                'player': player,
+                'final_chips': player.chips,
+                'net': net_result,
+                'is_winner': player in self.game.winners if self.game.winners else False
+            })
 
         # Handle payouts
         coins_cog = self.bot.get_cog('CoinsCog')
         if coins_cog:
-            for player in self.game.players:
-                if player.chips > 0:
-                    # Return remaining chips
+            for result in player_results:
+                if result['final_chips'] > 0:
+                    # Return remaining chips as coins
                     await coins_cog.add_coins(
-                        player.user_id,
+                        result['player'].user_id,
                         self.game.guild_id,
-                        player.chips,
+                        result['final_chips'],
                         "holdem_payout",
-                        f"텍사스 홀덤 정산 ({player.chips}칩)"
+                        f"텍사스 홀덤 정산 ({result['final_chips']}칩)"
                     )
 
-        # Create final results embed using the existing create_game_embed method
-        embed = self.create_game_embed()
+        # Create results embed
+        embed = discord.Embed(
+            title="🎉 텍사스 홀덤 결과",
+            color=discord.Color.gold(),
+            timestamp=discord.utils.utcnow()
+        )
+
+        # Winner announcement
+        if self.game.winners:
+            if len(self.game.winners) == 1:
+                winner = self.game.winners[0]
+                embed.add_field(
+                    name="🏆 승리자",
+                    value=f"**{winner.username}**",
+                    inline=False
+                )
+            else:
+                winner_names = [w.username for w in self.game.winners]
+                embed.add_field(
+                    name="🏆 승리자들 (동점)",
+                    value=", ".join(f"**{name}**" for name in winner_names),
+                    inline=False
+                )
+
+        # Show final community cards
+        if self.game.community_cards:
+            cards_str = " ".join(str(card) for card in self.game.community_cards)
+            embed.add_field(name="🃏 최종 커뮤니티 카드", value=cards_str, inline=False)
+
+        # Player results breakdown
+        results_text = []
+        for result in player_results:
+            player = result['player']
+            status = "🏆" if result['is_winner'] else "💸" if result['net'] < 0 else "💰" if result['net'] > 0 else "➖"
+
+            # Net result display
+            if result['net'] > 0:
+                net_display = f"+{result['net']:,}코인"
+            elif result['net'] < 0:
+                net_display = f"{result['net']:,}코인"
+            else:
+                net_display = "±0코인"
+
+            results_text.append(
+                f"{status} **{player.username}**\n"
+                f"   최종: {result['final_chips']:,}칩 ({net_display})"
+            )
+
+        embed.add_field(
+            name="💳 플레이어 정산",
+            value="\n\n".join(results_text),
+            inline=False
+        )
+
+        # Game summary
+        total_pot = sum(p.total_bet for p in self.game.players)
+        embed.add_field(
+            name="🎯 게임 요약",
+            value=f"💰 총 팟: {total_pot:,}칩\n💳 바이인: {self.game.buy_in:,}코인\n👥 참가자: {len(self.game.players)}명",
+            inline=False
+        )
+
+        # Show winning hand if available
+        if self.game.winners and self.game.community_cards:
+            try:
+                winner = self.game.winners[0]
+                all_cards = winner.hole_cards + self.game.community_cards
+                hand_rank, _ = PokerHand.evaluate_hand(all_cards)
+
+                hand_names = {
+                    HandRank.HIGH_CARD: "하이카드",
+                    HandRank.PAIR: "원페어",
+                    HandRank.TWO_PAIR: "투페어",
+                    HandRank.THREE_KIND: "쓰리오브어카인드",
+                    HandRank.STRAIGHT: "스트레이트",
+                    HandRank.FLUSH: "플러시",
+                    HandRank.FULL_HOUSE: "풀하우스",
+                    HandRank.FOUR_KIND: "포오브어카인드",
+                    HandRank.STRAIGHT_FLUSH: "스트레이트 플러시",
+                    HandRank.ROYAL_FLUSH: "로열 플러시"
+                }
+
+                embed.add_field(
+                    name="🎯 승리 패",
+                    value=f"**{hand_names.get(hand_rank, '알 수 없음')}**",
+                    inline=False
+                )
+            except:
+                pass  # If hand evaluation fails, just skip this
+
+        embed.set_footer(text=f"Server: {self.bot.get_guild(self.game.guild_id).name}")
+
         if self.current_message:
             try:
                 await self.current_message.edit(embed=embed, view=self)
@@ -641,7 +823,7 @@ class HoldemView(discord.ui.View):
             # STANDARDIZED FIELD 1: Game Display (during join phase)
             embed.add_field(
                 name="🎯 게임 상태",
-                value=f"🔄 **플레이어 모집 중**\n\n👥 **참가자:** {len(self.game.players)}/8명\n💰 **바이인:** {self.game.buy_in:,}코인",
+                value=f"🔥 **플레이어 모집 중**\n\n👥 **참가자:** {len(self.game.players)}/8명\n💰 **바이인:** {self.game.buy_in:,}코인",
                 inline=False
             )
 
@@ -810,7 +992,7 @@ class HoldemView(discord.ui.View):
 
 
 class ActionButton(discord.ui.Button):
-    """Poker action button"""
+    """Updated poker action button with modal for raises"""
 
     def __init__(self, action: str, label: str, style: discord.ButtonStyle, emoji: str = None):
         super().__init__(label=label, style=style, emoji=emoji)
@@ -841,28 +1023,24 @@ class ActionButton(discord.ui.Button):
             await interaction.response.send_message("❌ 유효하지 않은 액션입니다!", ephemeral=True)
             return
 
-        # Handle raise action (need amount)
-        amount = 0
+        # Handle raise action with modal
         if self.action == "raise":
-            # For simplicity, use minimum raise
-            min_raise = max(game.big_blind, game.current_bet - game.players[player_idx].current_bet + game.big_blind)
-            amount = min_raise
+            modal = RaiseModal(view, player_idx)
+            await interaction.response.send_modal(modal)
+            return
 
-        # Make the action
+        # Handle other actions
+        amount = 0
         success = game.make_action(player_idx, self.action, amount)
         if not success:
             await interaction.response.send_message("❌ 액션 처리에 실패했습니다!", ephemeral=True)
             return
 
         view.waiting_for_action = False
-
-        # Move to next player
         game.current_player = game.get_next_active_player(game.current_player)
 
         embed = view.create_game_embed()
         await interaction.response.edit_message(embed=embed, view=view)
-
-        # The handle_player_turn loop will continue automatically
 
 
 class HoldemCog(commands.Cog):
