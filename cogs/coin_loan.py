@@ -80,7 +80,8 @@ class LoanCog(commands.Cog):
         interest="이자율 (%)",
         days_due="상환 기한 (일)"
     )
-    async def issue_loan(self, interaction: discord.Interaction, user: discord.Member, amount: int, interest: float, days_due: int):
+    async def issue_loan(self, interaction: discord.Interaction, user: discord.Member, amount: int, interest: float,
+                         days_due: int):
         # Check permissions first
         if not self.has_admin_permissions(interaction.user):
             return await interaction.response.send_message("❌ 이 명령어를 사용할 권한이 없습니다.", ephemeral=True)
@@ -105,17 +106,16 @@ class LoanCog(commands.Cog):
             if existing_loan:
                 return await interaction.followup.send(f"❌ {user.display_name}님은 이미 활성 상태의 대출이 있습니다!", ephemeral=True)
 
-            # Calculate due date and total repayment - FIXED TIMEZONE ISSUE
-            current_time = datetime.now(timezone.utc)
-            due_date = current_time + timedelta(days=days_due)
+            # FIXED: Simplified timezone handling - let PostgreSQL handle the timezone
+            due_date = datetime.now(timezone.utc) + timedelta(days=days_due)
             total_repayment = amount + int(amount * (interest / 100))
 
-            # Insert loan record
+            # Insert loan record - REMOVED explicit issued_at parameter
             query = """
-                INSERT INTO user_loans (user_id, guild_id, principal_amount, remaining_amount, interest_rate, due_date, status, issued_at)
-                VALUES ($1, $2, $3, $4, $5, $6, 'active', $7)
-                RETURNING loan_id
-            """
+                    INSERT INTO user_loans (user_id, guild_id, principal_amount, remaining_amount, interest_rate, due_date, status)
+                    VALUES ($1, $2, $3, $4, $5, $6, 'active')
+                    RETURNING loan_id
+                """
             loan_record = await self.bot.pool.fetchrow(
                 query,
                 user.id,
@@ -123,8 +123,7 @@ class LoanCog(commands.Cog):
                 amount,
                 total_repayment,
                 interest,
-                due_date,
-                current_time
+                due_date
             )
 
             if not loan_record:
@@ -149,7 +148,7 @@ class LoanCog(commands.Cog):
                     title=f"{interaction.guild.name} 대출 승인",
                     description=f"관리자에 의해 대출이 승인되었습니다.",
                     color=discord.Color.green(),
-                    timestamp=current_time
+                    timestamp=datetime.now(timezone.utc)
                 )
                 embed.add_field(name="대출 원금", value=f"{amount:,} 코인", inline=False)
                 embed.add_field(name="총 상환액", value=f"{total_repayment:,} 코인 ({interest}% 이자 포함)", inline=False)
@@ -161,7 +160,8 @@ class LoanCog(commands.Cog):
                 self.logger.info(f"대출 안내 DM을 {user.display_name}에게 전송했습니다.")
             except discord.Forbidden:
                 self.logger.warning(f"{user.id}님에게 대출 안내 DM을 보낼 수 없습니다.")
-                await interaction.followup.send(f"⚠️ {user.display_name}님에게 DM을 보낼 수 없어 개인 메시지로 안내하지 못했습니다.", ephemeral=True)
+                await interaction.followup.send(f"⚠️ {user.display_name}님에게 DM을 보낼 수 없어 개인 메시지로 안내하지 못했습니다.",
+                                                ephemeral=True)
 
         except Exception as e:
             self.logger.error(f"대출 발행 중 오류 발생: {e}")
