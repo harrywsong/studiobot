@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands, tasks
 from discord import app_commands
 from datetime import datetime, timezone, timedelta
+import pytz
 
 # Make sure to have these utility files or adjust the imports
 from utils.logger import get_logger
@@ -60,8 +61,8 @@ class LoanCog(commands.Cog):
     @tasks.loop(hours=24)
     async def check_overdue_loans(self):
         """Daily check for loans that have passed their due date."""
-        # Use consistent timezone handling
-        current_time = datetime.utcnow().replace(tzinfo=timezone.utc)
+        # Use naive datetime for PostgreSQL compatibility
+        current_time = datetime.utcnow()
         self.logger.info("연체된 대출을 확인하는 중...")
         try:
             query = "SELECT loan_id, user_id FROM user_loans WHERE status = 'active' AND due_date < $1"
@@ -107,12 +108,14 @@ class LoanCog(commands.Cog):
             if existing_loan:
                 return await interaction.followup.send(f"❌ {user.display_name}님은 이미 활성 상태의 대출이 있습니다!", ephemeral=True)
 
-            # FINAL FIX: Use consistent timezone handling to prevent timezone arithmetic errors
-            now = datetime.utcnow().replace(tzinfo=timezone.utc)
-            due_date = now + timedelta(days=days_due)
+            # DEFINITIVE FIX: Use naive datetime for PostgreSQL to avoid timezone arithmetic issues
+            utc = pytz.UTC
+            now_aware = datetime.now(utc)
+            now_naive = now_aware.replace(tzinfo=None)
+            due_date_naive = now_naive + timedelta(days=days_due)
             total_repayment = amount + int(amount * (interest / 100))
 
-            # Insert loan record - Let PostgreSQL handle issued_at with DEFAULT NOW()
+            # Insert loan record - Use naive datetime
             query = """
                 INSERT INTO user_loans (user_id, guild_id, principal_amount, remaining_amount, interest_rate, due_date, status)
                 VALUES ($1, $2, $3, $4, $5, $6, 'active')
@@ -125,7 +128,7 @@ class LoanCog(commands.Cog):
                 amount,
                 total_repayment,
                 interest,
-                due_date
+                due_date_naive  # Use naive datetime
             )
 
             if not loan_record:
@@ -146,15 +149,18 @@ class LoanCog(commands.Cog):
 
             # Try to send DM to user
             try:
+                # Convert back to timezone-aware for Discord timestamp
+                due_date_aware = due_date_naive.replace(tzinfo=utc)
+
                 embed = discord.Embed(
                     title=f"{interaction.guild.name} 대출 승인",
                     description=f"관리자에 의해 대출이 승인되었습니다.",
                     color=discord.Color.green(),
-                    timestamp=now
+                    timestamp=now_aware
                 )
                 embed.add_field(name="대출 원금", value=f"{amount:,} 코인", inline=False)
                 embed.add_field(name="총 상환액", value=f"{total_repayment:,} 코인 ({interest}% 이자 포함)", inline=False)
-                embed.add_field(name="상환 기한", value=f"<t:{int(due_date.timestamp())}:F>", inline=False)
+                embed.add_field(name="상환 기한", value=f"<t:{int(due_date_aware.timestamp())}:F>", inline=False)
                 embed.add_field(name="대출 ID", value=f"{loan_record['loan_id']}", inline=False)
                 embed.set_footer(text="상환은 /loan-repay 명령어를 사용하세요.")
 
@@ -225,7 +231,8 @@ class LoanCog(commands.Cog):
             # Check balance
             user_balance = await coins_cog.get_user_coins(interaction.user.id, interaction.guild.id)
             if user_balance < payment_amount:
-                return await interaction.followup.send(f"❌ 코인이 부족합니다. 필요: {payment_amount:,}, 보유: {user_balance:,}", ephemeral=True)
+                return await interaction.followup.send(f"❌ 코인이 부족합니다. 필요: {payment_amount:,}, 보유: {user_balance:,}",
+                                                       ephemeral=True)
 
             # Process payment
             success = await coins_cog.remove_coins(interaction.user.id, interaction.guild.id, payment_amount,
@@ -237,11 +244,13 @@ class LoanCog(commands.Cog):
             if new_remaining <= 0:
                 update_query = "UPDATE user_loans SET remaining_amount = 0, status = 'paid' WHERE loan_id = $1"
                 await self.bot.pool.execute(update_query, loan['loan_id'])
-                await interaction.followup.send(f"🎉 **{payment_amount:,} 코인**을 상환하여 대출을 모두 갚았습니다! 축하합니다!", ephemeral=True)
+                await interaction.followup.send(f"🎉 **{payment_amount:,} 코인**을 상환하여 대출을 모두 갚았습니다! 축하합니다!",
+                                                ephemeral=True)
             else:
                 update_query = "UPDATE user_loans SET remaining_amount = $1 WHERE loan_id = $2"
                 await self.bot.pool.execute(update_query, new_remaining, loan['loan_id'])
-                await interaction.followup.send(f"✅ **{payment_amount:,} 코인**을 상환했습니다. 남은 금액: **{new_remaining:,} 코인**", ephemeral=True)
+                await interaction.followup.send(f"✅ **{payment_amount:,} 코인**을 상환했습니다. 남은 금액: **{new_remaining:,} 코인**",
+                                                ephemeral=True)
 
         except Exception as e:
             self.logger.error(f"대출 상환 중 오류 발생: {e}")
