@@ -49,7 +49,7 @@ class CrashGame:
         self.game_over = False
         self.start_time = None
         self.history: list[float] = [1.0]
-        self.min_cashout_multiplier = get_server_setting(guild_id, 'crash_min_cashout_multiplier', 1.4)
+        self.min_cashout_multiplier = get_server_setting(guild_id, 'crash_min_cashout_multiplier', 1.0)
 
     def add_player(self, user_id: int, bet: int):
         """Add a player to the game"""
@@ -453,18 +453,16 @@ class CrashCog(commands.Cog):
         return await casino_base.validate_game_start(interaction, "crash", bet, min_bet, max_bet)
 
     def generate_crash_point(self) -> float:
-        """Generate crash point with more balanced distribution"""
         rand = random.random()
 
-        # More conservative distribution to reduce extreme wins/losses
-        if rand <= 0.60:  # 60% chance for 1.1x - 1.8x
-            return round(random.uniform(1.1, 1.8), 2)
-        elif rand <= 0.85:  # 25% chance for 1.8x - 2.5x
-            return round(random.uniform(1.8, 2.5), 2)
-        elif rand <= 0.95:  # 10% chance for 2.5x - 4.0x
-            return round(random.uniform(2.5, 4.0), 2)
-        else:  # 5% chance for 4.0x - 8.0x (reduced from 10.0x)
-            return round(random.uniform(4.0, 8.0), 2)
+        if rand <= 0.50:
+            return round(random.uniform(1.2, 2.0), 2)
+        elif rand <= 0.75:
+            return round(random.uniform(2.0, 3.5), 2)
+        elif rand <= 0.90:
+            return round(random.uniform(3.5, 6.0), 2)
+        else:
+            return round(random.uniform(6.0, 15.0), 2)
 
     async def game_lifecycle_task(self, guild_id: int):
         """Manages the game lifecycle with responsible gaming considerations"""
