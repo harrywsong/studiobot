@@ -662,10 +662,41 @@ class LoanCog(commands.Cog):
             if not user:
                 return await interaction.followup.send("❌ 사용자를 찾을 수 없습니다.", ephemeral=True)
 
+            # Create negotiation channel in the category
+            guild = interaction.guild
+            category = guild.get_channel(self.LOAN_CATEGORY)
+
+            if not category or not isinstance(category, discord.CategoryChannel):
+                return await interaction.followup.send("❌ 대출 카테고리를 찾을 수 없습니다.", ephemeral=True)
+
+            # Create channel overwrites
+            overwrites = {
+                guild.default_role: discord.PermissionOverwrite(read_messages=False),
+                user: discord.PermissionOverwrite(read_messages=True, send_messages=True),
+                guild.me: discord.PermissionOverwrite(read_messages=True, send_messages=True)
+            }
+
+            # Add admin roles
+            admin_role_id = config.get_role_id(guild.id, 'admin_role')
+            if admin_role_id:
+                admin_role = guild.get_role(admin_role_id)
+                if admin_role:
+                    overwrites[admin_role] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
+
+            staff_role_id = config.get_role_id(guild.id, 'staff_role')
+            if staff_role_id:
+                staff_role = guild.get_role(staff_role_id)
+                if staff_role:
+                    overwrites[staff_role] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
+
             # Create negotiation channel
-            channel = await self.create_loan_channel(user, counter_amount, counter_interest, counter_days)
-            if not channel:
-                return await interaction.followup.send("❌ 협상 채널 생성에 실패했습니다.", ephemeral=True)
+            channel_name = f"💬┆{user.display_name}님의-대출-협상"
+            channel = await guild.create_text_channel(
+                name=channel_name,
+                category=category,
+                overwrites=overwrites,
+                topic=f"{user.display_name}님의 대출 조건 협상 채널"
+            )
 
             # Update request status
             await self.bot.pool.execute(
