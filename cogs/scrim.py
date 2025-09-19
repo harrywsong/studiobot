@@ -175,11 +175,16 @@ class MapPoolModal(discord.ui.Modal):
         self.guild_id = guild_id
         self.logger = get_logger("내전 시스템")
 
+        # Create the current maps string, ensuring it's not too long
+        current_maps_str = ", ".join(current_maps)
+        if len(current_maps_str) > 490:  # Leave some room for safety
+            current_maps_str = current_maps_str[:490] + "..."
+
         # Map pool input
         self.map_input = discord.ui.TextInput(
             label="맵 목록 (쉼표로 구분)",
             placeholder="예: 바인드, 헤이븐, 스플릿, 어센트...",
-            value=", ".join(current_maps),
+            default=current_maps_str,
             required=True,
             max_length=500,
             style=discord.TextStyle.paragraph
@@ -201,8 +206,13 @@ class MapPoolModal(discord.ui.Modal):
             if scrim_cog:
                 success = await scrim_cog.update_map_pool(self.guild_id, map_list)
                 if success:
+                    # Create response message with truncation if too long
+                    map_list_str = ', '.join(map_list)
+                    if len(map_list_str) > 1500:
+                        map_list_str = map_list_str[:1500] + "... (목록이 너무 길어 일부만 표시)"
+
                     await interaction.response.send_message(
-                        f"✅ 맵 풀이 업데이트되었습니다!\n**총 {len(map_list)}개 맵**: {', '.join(map_list)}",
+                        f"✅ 맵 풀이 업데이트되었습니다!\n**총 {len(map_list)}개 맵**: {map_list_str}",
                         ephemeral=True
                     )
                 else:
@@ -213,6 +223,12 @@ class MapPoolModal(discord.ui.Modal):
         except Exception as e:
             self.logger.error(f"Error in map pool modal for guild {self.guild_id}: {e}",
                               extra={'guild_id': self.guild_id})
+            if not interaction.response.is_done():
+                await interaction.response.send_message("❌ 오류가 발생했습니다. 다시 시도해 주세요.", ephemeral=True)
+
+    async def on_error(self, interaction: discord.Interaction, error: Exception) -> None:
+        self.logger.error(f"Modal error for guild {self.guild_id}: {error}", extra={'guild_id': self.guild_id})
+        if not interaction.response.is_done():
             await interaction.response.send_message("❌ 오류가 발생했습니다. 다시 시도해 주세요.", ephemeral=True)
 
 
@@ -1082,12 +1098,20 @@ class ScrimCog(commands.Cog):
     @app_commands.command(name="맵풀설정", description="서버의 맵 풀을 설정합니다. (관리자 전용)")
     @app_commands.default_permissions(administrator=True)
     async def set_map_pool(self, interaction: discord.Interaction):
-        guild_id = interaction.guild.id
-        current_maps = self.get_map_pool(guild_id)
+        try:
+            guild_id = interaction.guild.id
+            current_maps = self.get_map_pool(guild_id)
 
-        # Show modal for map pool configuration
-        modal = MapPoolModal(self.bot, guild_id, current_maps)
-        await interaction.response.send_modal(modal)
+            # Show modal for map pool configuration
+            modal = MapPoolModal(self.bot, guild_id, current_maps)
+            await interaction.response.send_modal(modal)
+
+        except Exception as e:
+            self.logger.error(f"Error in set_map_pool command: {e}", extra={'guild_id': interaction.guild.id})
+            if not interaction.response.is_done():
+                await interaction.response.send_message("❌ 맵 풀 설정 중 오류가 발생했습니다.", ephemeral=True)
+            else:
+                await interaction.followup.send("❌ 맵 풀 설정 중 오류가 발생했습니다.", ephemeral=True)
 
     @app_commands.command(name="맵풀확인", description="현재 서버의 맵 풀을 확인합니다.")
     async def show_map_pool(self, interaction: discord.Interaction):
