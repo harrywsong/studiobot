@@ -598,13 +598,12 @@ class CrashCog(commands.Cog):
 
     def calculate_payout_with_fee(self, bet: int, multiplier: float, fee_percentage: float = 5.0) -> tuple[int, int]:
         """
-        Calculate payout with house fee deduction - fee only applies to winnings/profit
+        Calculate payout with house fee deduction - fee applies to gross payout
         Returns: (net_payout, house_fee)
         """
         gross_payout = int(bet * multiplier)  # Total winnings including original bet
-        winnings_only = gross_payout - bet  # Just the profit portion
-        house_fee = round(winnings_only * (fee_percentage / 100))  # Use round() instead of int()
-        net_payout = gross_payout - house_fee  # Return bet + (winnings - fee)
+        house_fee = round(gross_payout * (fee_percentage / 100))  # Fee on gross payout
+        net_payout = gross_payout - house_fee
 
         return net_payout, house_fee
 
