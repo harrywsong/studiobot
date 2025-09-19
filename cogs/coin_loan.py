@@ -520,7 +520,9 @@ class LoanCog(commands.Cog):
                             "• 한 번에 하나의 대출만 가능합니다\n"
                             "• 모든 대출은 관리자 승인이 필요합니다\n"
                             "• 연체 시 추가 대출이 제한될 수 있습니다\n"
-                            "• 상환은 언제든지 가능합니다",
+                            "• 상환은 언제든지 가능합니다\n\n"
+                            "**🔧 버튼이 작동하지 않는 경우:**\n"
+                            "`/대출신청` 명령어를 사용하세요",
                 color=discord.Color.blue(),
                 timestamp=datetime.now(timezone.utc)
             )
@@ -575,6 +577,13 @@ class LoanCog(commands.Cog):
             embed.add_field(name="총 상환액", value=f"{total_repayment:,} 코인", inline=True)
             embed.add_field(name="신청 ID", value=f"{request_id}", inline=True)
             embed.add_field(name="신청 사유", value=reason, inline=False)
+            embed.add_field(
+                name="🔧 버튼이 작동하지 않는 경우",
+                value=f"• 승인: `/대출승인 request_id:{request_id}`\n"
+                      f"• 역제안: `/대출역제안 request_id:{request_id}`\n"
+                      f"• 거부: `/대출거부 request_id:{request_id}`",
+                inline=False
+            )
             embed.set_thumbnail(url=user.display_avatar.url)
             embed.set_footer(text="아래 버튼으로 대출을 승인, 역제안, 또는 거부할 수 있습니다.")
 
@@ -829,6 +838,15 @@ class LoanCog(commands.Cog):
 
             embed.add_field(name="상환 기한", value=f"<t:{int(due_date.timestamp())}:R>", inline=True)
             embed.add_field(name="발행일", value=f"<t:{int(loan['issued_at'].timestamp())}:f>", inline=True)
+
+            # Add fallback instructions
+            if loan['status'] == 'active':
+                embed.add_field(
+                    name="🔧 버튼이 작동하지 않는 경우",
+                    value=f"`/대출상환 {loan['remaining_amount']:,}` (전액 상환)\n또는 `/대출상환 원하는금액`",
+                    inline=False
+                )
+
             embed.set_thumbnail(url=user.display_avatar.url)
             embed.set_footer(text=f"대출 ID: {loan['loan_id']}")
 
@@ -937,6 +955,14 @@ class LoanCog(commands.Cog):
             embed.add_field(
                 name="💬 협상 안내",
                 value="이 채널에서 대출 조건에 대해 자유롭게 논의하실 수 있습니다.\n최종 합의 후 관리자가 대출을 승인하게 됩니다.",
+                inline=False
+            )
+
+            embed.add_field(
+                name="🔧 버튼이 작동하지 않는 경우",
+                value=f"• 수정 제안: `/협상수정 request_id:{request_id}`\n"
+                      f"• 협상 완료: `/협상완료 request_id:{request_id}`\n"
+                      f"• 협상 중단: `/협상중단 request_id:{request_id}`",
                 inline=False
             )
 
@@ -1071,7 +1097,7 @@ class LoanCog(commands.Cog):
             if summary:
                 completion_embed.add_field(name="📝 협상 요약", value=summary, inline=False)
 
-            completion_embed.add_field(name="🏦 대출 채널", value=loan_channel.mention, inline=False)
+            completion_embed.add_field(name="🦀 대출 채널", value=loan_channel.mention, inline=False)
             completion_embed.add_field(name="👤 승인자", value=interaction.user.display_name, inline=True)
             completion_embed.add_field(name="💰 코인 지급됨", value=f"{final_amount:,} 코인", inline=True)
 
@@ -1266,7 +1292,7 @@ class LoanCog(commands.Cog):
             comparison_embed.set_footer(text=f"제안자: {interaction.user.display_name}")
 
             # Post the revised offer
-            await interaction.channel.send(f"🔄 **수정 제안 알림** {user.mention}", embed=comparison_embed)
+            await interaction.channel.send(f"📄 **수정 제안 알림** {user.mention}", embed=comparison_embed)
 
             await interaction.followup.send("✅ 수정된 역제안이 협상 채널에 게시되었습니다.", ephemeral=True)
 
@@ -1523,6 +1549,160 @@ class LoanCog(commands.Cog):
             self.logger.error(f"대출 발행 중 오류 발생: {e}")
             await interaction.followup.send(f"❌ 대출 발행 중 오류가 발생했습니다: {e}", ephemeral=True)
 
+    @app_commands.command(name="대출신청", description="새로운 대출을 신청합니다.")
+    @app_commands.describe(
+        amount="신청할 대출 금액",
+        interest="희망 이자율 (%)",
+        days="상환 기간 (일)",
+        reason="대출 사유"
+    )
+    async def request_loan_command(self, interaction: discord.Interaction, amount: int, interest: float, days: int,
+                                   reason: str):
+        """Fallback command for loan requests when buttons don't work"""
+        if amount <= 0 or interest < 0 or days <= 0:
+            return await interaction.response.send_message("❌ 유효하지 않은 입력값입니다.", ephemeral=True)
+
+        if len(reason) < 10:
+            return await interaction.response.send_message("❌ 대출 사유는 최소 10자 이상 입력해주세요.", ephemeral=True)
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            # Check if user already has an active loan
+            existing_loan_query = "SELECT loan_id FROM user_loans WHERE user_id = $1 AND guild_id = $2 AND status IN ('active', 'defaulted')"
+            existing_loan = await self.bot.pool.fetchrow(existing_loan_query, interaction.user.id, interaction.guild.id)
+
+            if existing_loan:
+                return await interaction.followup.send("❌ 이미 활성 상태의 대출이 있어 새로운 대출을 신청할 수 없습니다.", ephemeral=True)
+
+            # Check for pending requests
+            pending_query = "SELECT request_id FROM loan_requests WHERE user_id = $1 AND guild_id = $2 AND status = 'pending'"
+            pending_request = await self.bot.pool.fetchrow(pending_query, interaction.user.id, interaction.guild.id)
+
+            if pending_request:
+                return await interaction.followup.send("❌ 이미 검토 중인 대출 신청이 있습니다.", ephemeral=True)
+
+            # Create loan request
+            request_query = """
+                INSERT INTO loan_requests (user_id, guild_id, amount, interest_rate, days_due, reason, status)
+                VALUES ($1, $2, $3, $4, $5, $6, 'pending')
+                RETURNING request_id
+            """
+            request_record = await self.bot.pool.fetchrow(
+                request_query, interaction.user.id, interaction.guild.id, amount, interest, days, reason
+            )
+
+            # Send to admin review channel
+            await self.send_admin_review(request_record['request_id'], interaction.user, amount, interest, days, reason)
+
+            await interaction.followup.send("✅ 대출 신청이 성공적으로 제출되었습니다. 관리자가 검토 후 연락드리겠습니다.", ephemeral=True)
+
+        except Exception as e:
+            self.logger.error(f"대출 신청 처리 중 오류: {e}")
+            await interaction.followup.send("❌ 대출 신청 처리 중 오류가 발생했습니다.", ephemeral=True)
+
+    @app_commands.command(name="대출승인", description="대출 신청을 승인합니다. (관리자 전용)")
+    @app_commands.describe(request_id="승인할 요청 ID")
+    async def approve_loan_command(self, interaction: discord.Interaction, request_id: int):
+        """Fallback command for approving loans"""
+        if not self.has_admin_permissions(interaction.user):
+            return await interaction.response.send_message("❌ 권한이 없습니다.", ephemeral=True)
+
+        await self.handle_loan_approval(interaction, request_id)
+
+    @app_commands.command(name="대출거부", description="대출 신청을 거부합니다. (관리자 전용)")
+    @app_commands.describe(request_id="거부할 요청 ID")
+    async def deny_loan_command(self, interaction: discord.Interaction, request_id: int):
+        """Fallback command for denying loans"""
+        if not self.has_admin_permissions(interaction.user):
+            return await interaction.response.send_message("❌ 권한이 없습니다.", ephemeral=True)
+
+        await self.handle_loan_denial(interaction, request_id)
+
+    @app_commands.command(name="대출역제안", description="대출 신청에 대해 역제안합니다. (관리자 전용)")
+    @app_commands.describe(
+        request_id="역제안할 요청 ID",
+        amount="제안할 대출 금액",
+        interest="제안할 이자율 (%)",
+        days="제안할 상환 기간 (일)",
+        note="추가 메모 (선택사항)"
+    )
+    async def counter_offer_command(self, interaction: discord.Interaction, request_id: int, amount: int,
+                                    interest: float, days: int, note: str = ""):
+        """Fallback command for counter offers"""
+        if not self.has_admin_permissions(interaction.user):
+            return await interaction.response.send_message("❌ 권한이 없습니다.", ephemeral=True)
+
+        if amount <= 0 or interest < 0 or days <= 0:
+            return await interaction.response.send_message("❌ 유효하지 않은 입력값입니다.", ephemeral=True)
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            await self.create_negotiation_channel(interaction, request_id, amount, interest, days, note)
+        except Exception as e:
+            self.logger.error(f"역제안 처리 중 오류: {e}")
+            await interaction.followup.send(f"❌ 역제안 처리 중 오류가 발생했습니다: {e}", ephemeral=True)
+
+    @app_commands.command(name="협상수정", description="협상 중인 조건을 수정합니다. (관리자 전용)")
+    @app_commands.describe(
+        request_id="수정할 협상 ID",
+        amount="수정할 대출 금액",
+        interest="수정할 이자율 (%)",
+        days="수정할 상환 기간 (일)",
+        reasoning="수정 사유 (선택사항)"
+    )
+    async def revise_negotiation_command(self, interaction: discord.Interaction, request_id: int, amount: int,
+                                         interest: float, days: int, reasoning: str = ""):
+        """Fallback command for revising negotiation terms"""
+        if not self.has_admin_permissions(interaction.user):
+            return await interaction.response.send_message("❌ 권한이 없습니다.", ephemeral=True)
+
+        if amount <= 0 or interest < 0 or days <= 0:
+            return await interaction.response.send_message("❌ 유효하지 않은 입력값입니다.", ephemeral=True)
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            await self.post_revised_counter_offer(interaction, request_id, amount, interest, days, reasoning)
+        except Exception as e:
+            self.logger.error(f"협상 수정 처리 중 오류: {e}")
+            await interaction.followup.send(f"❌ 협상 수정 처리 중 오류가 발생했습니다: {e}", ephemeral=True)
+
+    @app_commands.command(name="협상완료", description="협상을 완료하고 대출을 승인합니다. (관리자 전용)")
+    @app_commands.describe(
+        request_id="완료할 협상 ID",
+        amount="최종 대출 금액",
+        interest="최종 이자율 (%)",
+        days="최종 상환 기간 (일)",
+        summary="협상 요약 (선택사항)"
+    )
+    async def finalize_negotiation_command(self, interaction: discord.Interaction, request_id: int, amount: int,
+                                           interest: float, days: int, summary: str = ""):
+        """Fallback command for finalizing negotiations"""
+        if not self.has_admin_permissions(interaction.user):
+            return await interaction.response.send_message("❌ 권한이 없습니다.", ephemeral=True)
+
+        if amount <= 0 or interest < 0 or days <= 0:
+            return await interaction.response.send_message("❌ 유효하지 않은 입력값입니다.", ephemeral=True)
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            await self.finalize_negotiated_loan(interaction, request_id, amount, interest, days, summary)
+        except Exception as e:
+            self.logger.error(f"협상 완료 처리 중 오류: {e}")
+            await interaction.followup.send(f"❌ 협상 완료 처리 중 오류가 발생했습니다: {e}", ephemeral=True)
+
+    @app_commands.command(name="협상중단", description="협상을 중단합니다. (관리자 전용)")
+    @app_commands.describe(request_id="중단할 협상 ID")
+    async def cancel_negotiation_command(self, interaction: discord.Interaction, request_id: int):
+        """Fallback command for canceling negotiations"""
+        if not self.has_admin_permissions(interaction.user):
+            return await interaction.response.send_message("❌ 권한이 없습니다.", ephemeral=True)
+
+        await self.cancel_negotiation(interaction, request_id)
+
     @app_commands.command(name="대출정보", description="현재 대출 상태를 확인합니다.")
     async def loan_info(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
@@ -1638,6 +1818,142 @@ class LoanCog(commands.Cog):
         except Exception as e:
             self.logger.error(f"대출 목록 조회 중 오류 발생: {e}")
             await interaction.followup.send(f"❌ 대출 목록 조회 중 오류가 발생했습니다: {e}", ephemeral=True)
+
+    @app_commands.command(name="신청목록", description="대출 신청 목록을 확인합니다. (관리자 전용)")
+    async def list_requests(self, interaction: discord.Interaction):
+        """View pending loan requests"""
+        if not self.has_admin_permissions(interaction.user):
+            return await interaction.response.send_message("❌ 권한이 없습니다.", ephemeral=True)
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            query = """
+                SELECT request_id, user_id, amount, interest_rate, days_due, reason, status, requested_at
+                FROM loan_requests 
+                WHERE guild_id = $1 AND status IN ('pending', 'negotiating')
+                ORDER BY requested_at DESC
+                LIMIT 10
+            """
+            requests = await self.bot.pool.fetch(query, interaction.guild.id)
+
+            if not requests:
+                return await interaction.followup.send("현재 처리 중인 대출 신청이 없습니다.", ephemeral=True)
+
+            embed = discord.Embed(
+                title=f"📋 대출 신청 목록",
+                color=discord.Color.orange(),
+                timestamp=datetime.now(timezone.utc)
+            )
+
+            for req in requests:
+                user = self.bot.get_user(req['user_id'])
+                user_name = user.display_name if user else f"Unknown ({req['user_id']})"
+                status_emoji = "⏳ 검토중" if req['status'] == 'pending' else "💬 협상중"
+
+                total_repayment = req['amount'] + int(req['amount'] * (req['interest_rate'] / 100))
+
+                embed.add_field(
+                    name=f"{status_emoji} {user_name} (ID: {req['request_id']})",
+                    value=f"**금액:** {req['amount']:,} 코인\n**이자율:** {req['interest_rate']}%\n**기간:** {req['days_due']}일\n**총액:** {total_repayment:,} 코인\n**사유:** {req['reason'][:50]}{'...' if len(req['reason']) > 50 else ''}",
+                    inline=False
+                )
+
+            embed.add_field(
+                name="🔧 명령어 안내",
+                value="• 승인: `/대출승인 request_id:번호`\n• 역제안: `/대출역제안 request_id:번호`\n• 거부: `/대출거부 request_id:번호`",
+                inline=False
+            )
+
+            embed.set_footer(text="최근 10개의 신청만 표시됩니다.")
+            await interaction.followup.send(embed=embed, ephemeral=True)
+
+        except Exception as e:
+            self.logger.error(f"신청 목록 조회 중 오류 발생: {e}")
+            await interaction.followup.send(f"❌ 신청 목록 조회 중 오류가 발생했습니다: {e}", ephemeral=True)
+
+    @app_commands.command(name="대출통계", description="대출 시스템 통계를 확인합니다. (관리자 전용)")
+    async def loan_statistics(self, interaction: discord.Interaction):
+        """View loan system statistics"""
+        if not self.has_admin_permissions(interaction.user):
+            return await interaction.response.send_message("❌ 권한이 없습니다.", ephemeral=True)
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            # Get various statistics
+            stats_queries = {
+                'active_loans': "SELECT COUNT(*) FROM user_loans WHERE guild_id = $1 AND status = 'active'",
+                'defaulted_loans': "SELECT COUNT(*) FROM user_loans WHERE guild_id = $1 AND status = 'defaulted'",
+                'completed_loans': "SELECT COUNT(*) FROM user_loans WHERE guild_id = $1 AND status = 'paid'",
+                'pending_requests': "SELECT COUNT(*) FROM loan_requests WHERE guild_id = $1 AND status = 'pending'",
+                'negotiating_requests': "SELECT COUNT(*) FROM loan_requests WHERE guild_id = $1 AND status = 'negotiating'",
+                'total_active_amount': "SELECT COALESCE(SUM(remaining_amount), 0) FROM user_loans WHERE guild_id = $1 AND status = 'active'",
+                'total_principal_issued': "SELECT COALESCE(SUM(principal_amount), 0) FROM user_loans WHERE guild_id = $1",
+            }
+
+            stats = {}
+            for key, query in stats_queries.items():
+                result = await self.bot.pool.fetchval(query, interaction.guild.id)
+                stats[key] = result
+
+            embed = discord.Embed(
+                title=f"📊 {interaction.guild.name} 대출 시스템 통계",
+                color=discord.Color.green(),
+                timestamp=datetime.now(timezone.utc)
+            )
+
+            # Current loans status
+            embed.add_field(
+                name="🏦 현재 대출 현황",
+                value=f"**활성 대출:** {stats['active_loans']}건\n**연체 대출:** {stats['defaulted_loans']}건\n**완료 대출:** {stats['completed_loans']}건",
+                inline=True
+            )
+
+            # Request status
+            embed.add_field(
+                name="📋 신청 현황",
+                value=f"**검토 중:** {stats['pending_requests']}건\n**협상 중:** {stats['negotiating_requests']}건",
+                inline=True
+            )
+
+            # Financial stats
+            embed.add_field(
+                name="💰 금액 통계",
+                value=f"**총 발행액:** {stats['total_principal_issued']:,} 코인\n**현재 미수금:** {stats['total_active_amount']:,} 코인",
+                inline=True
+            )
+
+            # Get top borrowers
+            top_borrowers_query = """
+                SELECT user_id, COUNT(*) as loan_count, SUM(principal_amount) as total_borrowed
+                FROM user_loans 
+                WHERE guild_id = $1 
+                GROUP BY user_id 
+                ORDER BY total_borrowed DESC 
+                LIMIT 5
+            """
+            top_borrowers = await self.bot.pool.fetch(top_borrowers_query, interaction.guild.id)
+
+            if top_borrowers:
+                borrower_list = []
+                for borrower in top_borrowers:
+                    user = self.bot.get_user(borrower['user_id'])
+                    user_name = user.display_name if user else f"Unknown"
+                    borrower_list.append(f"{user_name}: {borrower['total_borrowed']:,} 코인 ({borrower['loan_count']}건)")
+
+                embed.add_field(
+                    name="🏅 주요 대출자 (총 대출액 기준)",
+                    value="\n".join(borrower_list),
+                    inline=False
+                )
+
+            embed.set_footer(text="통계는 실시간으로 업데이트됩니다.")
+            await interaction.followup.send(embed=embed, ephemeral=True)
+
+        except Exception as e:
+            self.logger.error(f"대출 통계 조회 중 오류 발생: {e}")
+            await interaction.followup.send(f"❌ 대출 통계 조회 중 오류가 발생했습니다: {e}", ephemeral=True)
 
 
 async def setup(bot: commands.Bot):
