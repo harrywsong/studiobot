@@ -1195,8 +1195,13 @@ class LoanCog(commands.Cog):
             if not user:
                 return await interaction.followup.send("❌ 사용자를 찾을 수 없습니다.", ephemeral=True)
 
+            # Convert decimal values to float for calculations
+            original_amount = int(request['amount'])
+            original_interest = float(request['interest_rate'])
+            original_days = int(request['days_due'])
+
             # Calculate totals
-            original_total = request['amount'] + int(request['amount'] * (request['interest_rate'] / 100))
+            original_total = original_amount + int(original_amount * (original_interest / 100))
             revised_total = revised_amount + int(revised_amount * (revised_interest / 100))
 
             # Create comparison embed
@@ -1210,7 +1215,7 @@ class LoanCog(commands.Cog):
             # Original request terms
             comparison_embed.add_field(
                 name="📋 원래 신청 조건",
-                value=f"**금액:** {request['amount']:,} 코인\n**이자율:** {request['interest_rate']}%\n**기간:** {request['days_due']}일\n**총 상환액:** {original_total:,} 코인",
+                value=f"**금액:** {original_amount:,} 코인\n**이자율:** {original_interest}%\n**기간:** {original_days}일\n**총 상환액:** {original_total:,} 코인",
                 inline=True
             )
 
@@ -1222,9 +1227,9 @@ class LoanCog(commands.Cog):
             )
 
             # Show changes
-            amount_change = revised_amount - request['amount']
-            interest_change = revised_interest - request['interest_rate']
-            days_change = revised_days - request['days_due']
+            amount_change = revised_amount - original_amount
+            interest_change = revised_interest - original_interest
+            days_change = revised_days - original_days
             total_change = revised_total - original_total
 
             change_symbols = {
