@@ -8,6 +8,7 @@ import json
 import os
 from datetime import datetime, timezone, timedelta
 import pytz
+import random
 
 from utils.logger import get_logger
 from utils import config
@@ -163,6 +164,56 @@ class ScrimSetupModal(discord.ui.Modal):
             pass
 
         return None
+
+
+class MapPoolModal(discord.ui.Modal):
+    """Modal for managing map pool"""
+
+    def __init__(self, bot, guild_id: int, current_maps: List[str]):
+        super().__init__(title="맵 풀 설정", timeout=300)
+        self.bot = bot
+        self.guild_id = guild_id
+        self.logger = get_logger("내전 시스템")
+
+        # Map pool input
+        self.map_input = discord.ui.TextInput(
+            label="맵 목록 (쉼표로 구분)",
+            placeholder="예: 바인드, 헤이븐, 스플릿, 어센트...",
+            value=", ".join(current_maps),
+            required=True,
+            max_length=500,
+            style=discord.TextStyle.paragraph
+        )
+
+        self.add_item(self.map_input)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            # Parse maps from input
+            map_list = [map_name.strip() for map_name in self.map_input.value.split(',') if map_name.strip()]
+
+            if len(map_list) < 2:
+                await interaction.response.send_message("❌ 최소 2개 이상의 맵이 필요합니다.", ephemeral=True)
+                return
+
+            # Get the scrim cog and update map pool
+            scrim_cog = self.bot.get_cog('ScrimCog')
+            if scrim_cog:
+                success = await scrim_cog.update_map_pool(self.guild_id, map_list)
+                if success:
+                    await interaction.response.send_message(
+                        f"✅ 맵 풀이 업데이트되었습니다!\n**총 {len(map_list)}개 맵**: {', '.join(map_list)}",
+                        ephemeral=True
+                    )
+                else:
+                    await interaction.response.send_message("❌ 맵 풀 업데이트 중 오류가 발생했습니다.", ephemeral=True)
+            else:
+                await interaction.response.send_message("❌ 내전 시스템을 찾을 수 없습니다.", ephemeral=True)
+
+        except Exception as e:
+            self.logger.error(f"Error in map pool modal for guild {self.guild_id}: {e}",
+                              extra={'guild_id': self.guild_id})
+            await interaction.response.send_message("❌ 오류가 발생했습니다. 다시 시도해 주세요.", ephemeral=True)
 
 
 class ScrimView(discord.ui.View):
@@ -328,6 +379,14 @@ class ScrimCog(commands.Cog):
         self.logger = get_logger("내전 시스템")
         self.scrims_data = {}  # In-memory storage for active scrims
         self.scrims_file = "data/scrims.json"
+        self.map_pools_file = "data/map_pools.json"
+        self.map_pools = {}  # Guild ID -> List of maps
+
+        # Default Valorant map pool in Korean
+        self.default_valorant_maps = [
+            "바인드", "헤이븐", "스플릿", "어센트", "아이스박스",
+            "브리즈", "프랙처", "펄", "로터스", "선셋", "어비스", "코로드"
+        ]
 
         # Start tasks after bot is ready
         self.bot.loop.create_task(self.wait_and_start_tasks())
@@ -336,6 +395,7 @@ class ScrimCog(commands.Cog):
         """Wait for bot to be ready then start tasks"""
         await self.bot.wait_until_ready()
         await self.load_scrims_data()
+        await self.load_map_pools()
         await self.setup_scrim_panels()
 
         # Start notification and cleanup tasks
@@ -392,6 +452,48 @@ class ScrimCog(commands.Cog):
         except Exception as e:
             self.logger.error(f"Error saving scrims data: {e}", extra={'guild_id': None})
 
+    async def load_map_pools(self):
+        """Load map pools from file"""
+        try:
+            if os.path.exists(self.map_pools_file):
+                with open(self.map_pools_file, 'r', encoding='utf-8') as f:
+                    # Convert string keys back to int
+                    data = json.load(f)
+                    self.map_pools = {int(guild_id): maps for guild_id, maps in data.items()}
+                self.logger.info("Loaded map pools data", extra={'guild_id': None})
+            else:
+                self.map_pools = {}
+        except Exception as e:
+            self.logger.error(f"Error loading map pools: {e}", extra={'guild_id': None})
+            self.map_pools = {}
+
+    async def save_map_pools(self):
+        """Save map pools to file"""
+        try:
+            os.makedirs(os.path.dirname(self.map_pools_file), exist_ok=True)
+            # Convert int keys to string for JSON
+            data_to_save = {str(guild_id): maps for guild_id, maps in self.map_pools.items()}
+
+            with open(self.map_pools_file, 'w', encoding='utf-8') as f:
+                json.dump(data_to_save, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            self.logger.error(f"Error saving map pools: {e}", extra={'guild_id': None})
+
+    def get_map_pool(self, guild_id: int) -> List[str]:
+        """Get map pool for a guild, return default if not set"""
+        return self.map_pools.get(guild_id, self.default_valorant_maps.copy())
+
+    async def update_map_pool(self, guild_id: int, maps: List[str]) -> bool:
+        """Update map pool for a guild"""
+        try:
+            self.map_pools[guild_id] = maps
+            await self.save_map_pools()
+            self.logger.info(f"Updated map pool for guild {guild_id}: {maps}", extra={'guild_id': guild_id})
+            return True
+        except Exception as e:
+            self.logger.error(f"Error updating map pool for guild {guild_id}: {e}", extra={'guild_id': guild_id})
+            return False
+
     async def setup_scrim_panels(self):
         """Setup scrim creation panels in configured channels"""
         all_configs = config.get_all_server_configs()
@@ -427,10 +529,11 @@ class ScrimCog(commands.Cog):
                             "• 다양한 게임 지원\n"
                             "• 자동 대기열 관리\n"
                             "• 시간 알림 시스템\n"
-                            "• 참가자 관리",
+                            "• 참가자 관리\n"
+                            "• 랜덤 맵 선택",
                 color=discord.Color.blue()
             )
-            embed.set_footer(text="내전 시스템 v1.0")
+            embed.set_footer(text="내전 시스템 v1.1")
 
             message = await channel.send(embed=embed, view=ScrimCreateView(self.bot))
             self.logger.info(f"Created new scrim panel in channel {channel.id}",
@@ -926,6 +1029,90 @@ class ScrimCog(commands.Cog):
         except Exception as e:
             self.logger.error(f"Error in cleanup task: {e}", extra={'guild_id': None})
 
+    # Slash Commands
+    @app_commands.command(name="맵선택", description="활성 맵 풀에서 랜덤 맵을 선택합니다.")
+    @app_commands.describe(count="선택할 맵 개수 (기본값: 1)")
+    async def random_map(self, interaction: discord.Interaction, count: Optional[int] = 1):
+        # Check if feature is enabled
+        if not config.is_feature_enabled(interaction.guild.id, 'scrim_system'):
+            await interaction.response.send_message(
+                "❌ 이 서버에서는 내전 시스템이 비활성화되어 있습니다.",
+                ephemeral=True
+            )
+            return
+
+        # Validate count
+        if count < 1 or count > 10:
+            await interaction.response.send_message("❌ 맵 개수는 1~10개 사이여야 합니다.", ephemeral=True)
+            return
+
+        guild_id = interaction.guild.id
+        map_pool = self.get_map_pool(guild_id)
+
+        if not map_pool:
+            await interaction.response.send_message("❌ 이 서버에 설정된 맵 풀이 없습니다.", ephemeral=True)
+            return
+
+        # Don't select more maps than available
+        if count > len(map_pool):
+            count = len(map_pool)
+
+        # Select random maps
+        selected_maps = random.sample(map_pool, count)
+
+        embed = discord.Embed(
+            title="🎯 랜덤 맵 선택",
+            color=discord.Color.green()
+        )
+
+        if count == 1:
+            embed.description = f"**선택된 맵:** {selected_maps[0]}"
+        else:
+            map_list = "\n".join([f"{i + 1}. **{map_name}**" for i, map_name in enumerate(selected_maps)])
+            embed.description = f"**선택된 맵들:**\n{map_list}"
+
+        embed.add_field(name="전체 맵 풀", value=f"{len(map_pool)}개 맵", inline=True)
+        embed.set_footer(text=f"요청자: {interaction.user.display_name}")
+
+        await interaction.response.send_message(embed=embed)
+
+        self.logger.info(f"Random map selection: {selected_maps} for guild {guild_id}",
+                         extra={'guild_id': guild_id})
+
+    @app_commands.command(name="맵풀설정", description="서버의 맵 풀을 설정합니다. (관리자 전용)")
+    @app_commands.default_permissions(administrator=True)
+    async def set_map_pool(self, interaction: discord.Interaction):
+        guild_id = interaction.guild.id
+        current_maps = self.get_map_pool(guild_id)
+
+        # Show modal for map pool configuration
+        modal = MapPoolModal(self.bot, guild_id, current_maps)
+        await interaction.response.send_modal(modal)
+
+    @app_commands.command(name="맵풀확인", description="현재 서버의 맵 풀을 확인합니다.")
+    async def show_map_pool(self, interaction: discord.Interaction):
+        guild_id = interaction.guild.id
+        map_pool = self.get_map_pool(guild_id)
+
+        embed = discord.Embed(
+            title="🗺️ 현재 맵 풀",
+            color=discord.Color.blue()
+        )
+
+        if map_pool:
+            map_list = "\n".join([f"{i + 1}. **{map_name}**" for i, map_name in enumerate(map_pool)])
+            embed.description = f"**총 {len(map_pool)}개 맵:**\n{map_list}"
+
+            if map_pool == self.default_valorant_maps:
+                embed.set_footer(text="기본 발로란트 맵 풀 사용 중")
+            else:
+                embed.set_footer(text="커스텀 맵 풀 사용 중")
+        else:
+            embed.description = "설정된 맵이 없습니다."
+            embed.color = discord.Color.red()
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
     @app_commands.command(name="내전목록", description="진행 중인 내전 목록을 확인합니다.")
     async def list_scrims(self, interaction: discord.Interaction):
         # Check if feature is enabled
@@ -1103,5 +1290,7 @@ class ScrimCog(commands.Cog):
 
         # Acknowledge the user
         await interaction.followup.send("✅ 내전 패널이 성공적으로 새로고침되었습니다.", ephemeral=True)
+
+
 async def setup(bot):
     await bot.add_cog(ScrimCog(bot))

@@ -18,7 +18,7 @@ class RPSChoice:
     """Represents a Rock Paper Scissors choice"""
 
     ROCK = "바위"
-    PAPER = "보"
+    PAPER = "보자기"
     SCISSORS = "가위"
 
     CHOICES = [ROCK, PAPER, SCISSORS]
@@ -242,15 +242,15 @@ class RPSView(discord.ui.View):
             for item in self.children:
                 item.disabled = True
 
-    @discord.ui.button(label="🪨 바위", style=discord.ButtonStyle.secondary, emoji="🪨")
+    @discord.ui.button(label="바위", style=discord.ButtonStyle.secondary, emoji="🪨")
     async def rock_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.make_choice(interaction, RPSChoice.ROCK)
 
-    @discord.ui.button(label="📄 보", style=discord.ButtonStyle.secondary, emoji="📄")
+    @discord.ui.button(label="보자기", style=discord.ButtonStyle.secondary, emoji="📄")
     async def paper_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.make_choice(interaction, RPSChoice.PAPER)
 
-    @discord.ui.button(label="✂️ 가위", style=discord.ButtonStyle.secondary, emoji="✂️")
+    @discord.ui.button(label="가위", style=discord.ButtonStyle.secondary, emoji="✂️")
     async def scissors_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.make_choice(interaction, RPSChoice.SCISSORS)
 
