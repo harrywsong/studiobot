@@ -944,7 +944,7 @@ class LoanCog(commands.Cog):
 
             # Add negotiation control buttons
             view = NegotiationChannelView(self, request_id)
-            await channel.send(f"{guild_member.mention} 관리자들", embed=embed, view=view)
+            await channel.send(f"{guild_member.mention}", embed=embed, view=view)
 
             # Update original message
             try:
