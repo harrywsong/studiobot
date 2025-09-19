@@ -92,6 +92,19 @@ class CasinoBaseCog(commands.Cog):
         if not allowed:
             return False, channel_msg
 
+        # ========== NEW CODE BLOCK START ==========
+        # Check for a defaulted loan before checking bet limits
+        try:
+            loan_query = "SELECT loan_id FROM user_loans WHERE user_id = $1 AND guild_id = $2 AND status = 'defaulted'"
+            defaulted_loan = await self.bot.pool.fetchrow(loan_query, interaction.user.id, guild_id)
+            if defaulted_loan:
+                return False, "❌ 연체된 대출이 있어 카지노 게임을 이용할 수 없습니다. `/loan-repay` 명령어로 대출을 상환해주세요."
+        except Exception as e:
+            self.logger.error(f"대출 상태 확인 중 오류 발생: {e}", extra={'guild_id': guild_id})
+            # Fail safe: if the check fails, deny play to be safe.
+            return False, "❌ 사용자의 대출 상태를 확인하는 중 오류가 발생했습니다. 나중에 다시 시도해주세요."
+        # ========== NEW CODE BLOCK END ==========
+
         # Get server-specific bet limits
         server_min_bet = get_server_setting(guild_id, 'min_bet', min_bet)
         server_max_bet = get_server_setting(guild_id, 'max_bet', max_bet)
