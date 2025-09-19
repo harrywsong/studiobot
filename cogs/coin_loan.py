@@ -108,8 +108,9 @@ class LoanCog(commands.Cog):
             if existing_loan:
                 return await interaction.followup.send(f"❌ {user.display_name}님은 이미 활성 상태의 대출이 있습니다!", ephemeral=True)
 
-            # Calculate due date and total repayment
-            due_date = datetime.now(timezone.utc) + timedelta(days=days_due)
+            # Calculate due date and total repayment (fix timezone issue)
+            now_utc = datetime.now(timezone.utc)
+            due_date = now_utc + timedelta(days=days_due)
             total_repayment = amount + int(amount * (interest / 100))
 
             # Insert loan record
