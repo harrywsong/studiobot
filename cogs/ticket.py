@@ -121,6 +121,8 @@ class HelpView(View):
             embed.add_field(name="티켓 채널", value=ticket_chan.mention, inline=False)
         embed.set_footer(text=f"티켓 ID: {ticket_chan.id}" if ticket_chan else "티켓 생성 실패")
 
+        content_mention = f"{member.mention} {staff_role.mention}"
+
         try:
             await ticket_chan.send(embed=embed, view=CloseTicketView(self.bot, self.logger))
             # extra={'guild_id': guild_id} 추가
