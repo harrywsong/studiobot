@@ -842,7 +842,7 @@ class LoanCog(commands.Cog):
             # This is the new field to provide a fallback command.
             embed.add_field(
                 name="🔧 버튼이 사라진 경우",
-                value=f"• 상환: `/대출상환 loan_id:{loan['loan_id']}`",
+                value=f"• 상환: `/대출상환`",
                 inline=False
             )
 
