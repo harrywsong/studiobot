@@ -44,49 +44,72 @@ class LotteryCog(commands.Cog):
         self.guild_lotteries: Dict[int, LotterySystem] = {}
         self.lottery_interface_message = None  # Store the interface message
         self.lottery_channel_id = 1418763263721869403
+        self._setup_completed = False  # Add flag to prevent duplicate setup
 
-        # cogs/lottery.py
 
     async def setup_lottery_interface(self):
         """Setup the persistent lottery interface in the designated channel"""
         try:
+            # Wait for bot to be ready
+            if not self.bot.is_ready():
+                self.logger.warning("Bot not ready, skipping lottery interface setup")
+                return
+
             channel = self.bot.get_channel(self.lottery_channel_id)
             if not channel:
                 self.logger.error(f"복권 채널을 찾을 수 없습니다: {self.lottery_channel_id}")
                 return
 
+            # Ensure we have permission to send messages
+            if not channel.permissions_for(channel.guild.me).send_messages:
+                self.logger.error(f"복권 채널에 메시지 전송 권한이 없습니다: {channel.name}")
+                return
+
             # Get the guild ID directly from the channel object
             guild_id = channel.guild.id
 
+            # Ensure lottery system exists for this guild
+            lottery = self.get_lottery(guild_id)
+
             # Look for existing interface message
+            self.lottery_interface_message = None
             async for message in channel.history(limit=20):
                 if (message.author == self.bot.user and
                         message.embeds and
+                        len(message.embeds) > 0 and
                         "복권 시스템" in message.embeds[0].title):
                     self.lottery_interface_message = message
-                    # Add the view to existing message
-                    view = LotteryInterfaceView(self)
-                    try:
-                        # When editing, also update the embed with current data for the correct guild
-                        updated_embed = self.create_lottery_interface_embed(target_guild_id=guild_id)
-                        await message.edit(embed=updated_embed, view=view)
-                        self.logger.info("기존 복권 인터페이스에 뷰를 연결하고 업데이트했습니다.")
-                        return
-                    except discord.HTTPException:
-                        # If edit fails, delete and create new
-                        await message.delete()
-                        break
+                    self.logger.info(f"기존 복권 인터페이스 메시지 발견: {message.id}")
+                    break
 
-            # Create new interface
-            # Pass the guild_id to the embed creation function
+            # Create or update the interface
             embed = self.create_lottery_interface_embed(target_guild_id=guild_id)
             view = LotteryInterfaceView(self)
 
-            self.lottery_interface_message = await channel.send(embed=embed, view=view)
-            self.logger.info(f"새로운 복권 인터페이스를 생성했습니다: {self.lottery_interface_message.id}")
+            if self.lottery_interface_message:
+                try:
+                    await self.lottery_interface_message.edit(embed=embed, view=view)
+                    self.logger.info("기존 복권 인터페이스에 뷰를 연결하고 업데이트했습니다.")
+                except discord.HTTPException as e:
+                    self.logger.warning(f"기존 메시지 업데이트 실패, 새로 생성합니다: {e}")
+                    # Delete the old message and create new one
+                    try:
+                        await self.lottery_interface_message.delete()
+                    except:
+                        pass
+                    self.lottery_interface_message = None
+
+            if not self.lottery_interface_message:
+                # Create new interface
+                try:
+                    self.lottery_interface_message = await channel.send(embed=embed, view=view)
+                    self.logger.info(f"새로운 복권 인터페이스를 생성했습니다: {self.lottery_interface_message.id}")
+                except discord.HTTPException as e:
+                    self.logger.error(f"복권 인터페이스 메시지 생성 실패: {e}")
+                    return
 
         except Exception as e:
-            self.logger.error(f"복권 인터페이스 설정 실패: {e}")
+            self.logger.error(f"복권 인터페이스 설정 실패: {e}", exc_info=True)
     def create_lottery_interface_embed(self, target_guild_id: int = None) -> discord.Embed:
         """Create the main lottery interface embed"""
         # If no target guild specified, try to determine from channel context or use first available
@@ -190,6 +213,10 @@ class LotteryCog(commands.Cog):
             if target_guild_id is None and self.lottery_interface_message.guild:
                 target_guild_id = self.lottery_interface_message.guild.id
 
+            if not target_guild_id:
+                self.logger.warning("복권 인터페이스 업데이트용 guild_id를 확인할 수 없습니다.")
+                return
+
             embed = self.create_lottery_interface_embed(target_guild_id)
             view = LotteryInterfaceView(self)
 
@@ -202,64 +229,124 @@ class LotteryCog(commands.Cog):
 
         except discord.HTTPException as e:
             self.logger.error(f"복권 인터페이스 업데이트 실패: {e}")
+            # Try to recreate the interface if edit failed
+            if "Unknown Message" in str(e):
+                self.logger.info("메시지가 삭제된 것으로 보입니다. 인터페이스를 재생성합니다.")
+                self.lottery_interface_message = None
+                await self.setup_lottery_interface()
+        except Exception as e:
+            self.logger.error(f"복권 인터페이스 업데이트 중 예외 발생: {e}", exc_info=True)
 
+    @app_commands.command(name="복권인터페이스설정", description="복권 인터페이스를 수동으로 설정합니다 (관리자 전용)")
+    async def setup_lottery_interface_command(self, interaction: discord.Interaction):
+        """Manually setup lottery interface (admin only)"""
+        # Check admin permissions
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("⛔ 관리자만 사용할 수 있습니다.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            await self.setup_lottery_interface()
+            embed = discord.Embed(
+                title="✅ 복권 인터페이스 설정 완료",
+                description="복권 인터페이스가 성공적으로 설정되었습니다.",
+                color=discord.Color.green()
+            )
+        except Exception as e:
+            self.logger.error(f"수동 복권 인터페이스 설정 실패: {e}", exc_info=True)
+            embed = discord.Embed(
+                title="⛔ 복권 인터페이스 설정 실패",
+                description=f"설정 중 오류가 발생했습니다: {str(e)}",
+                color=discord.Color.red()
+            )
+
+        await interaction.followup.send(embed=embed, ephemeral=True)
     @commands.Cog.listener()
     async def on_ready(self):
         """Run setup tasks once the bot is ready."""
-        # The task is set to count=1, so it will only run once automatically.
-        # No need for an extra flag to prevent it from running again.
-        self.setup_lottery_tables.start()
-    @tasks.loop(count=1)
-    async def setup_lottery_tables(self):
-        """Create lottery database tables and setup interface"""
-        await self.bot.wait_until_ready()
+        if not self._setup_completed:
+            self.logger.info("복권 시스템 초기화 시작...")
+            # Use asyncio.create_task instead of the loop decorator
+            asyncio.create_task(self._initialize_lottery_system())
+
+    async def _initialize_lottery_system(self):
+        """Initialize the lottery system components"""
+        try:
+            # Wait a bit for bot to be fully ready
+            await asyncio.sleep(2)
+
+            # Create database tables
+            await self._create_lottery_tables()
+
+            # Load existing lottery states
+            await self.load_lottery_states()
+
+            # Setup the interface
+            await self.setup_lottery_interface()
+
+            self._setup_completed = True
+            self.logger.info("복권 시스템 초기화 완료")
+
+        except Exception as e:
+            self.logger.error(f"복권 시스템 초기화 실패: {e}", exc_info=True)
+
+    async def _create_lottery_tables(self):
+        """Create lottery database tables"""
+        if not self.bot.pool:
+            self.logger.warning("데이터베이스 풀이 없어 테이블 생성을 건너뜁니다")
+            return
+
         try:
             # Lottery state table
             await self.bot.pool.execute("""
-                CREATE TABLE IF NOT EXISTS lottery_state (
-                    guild_id BIGINT PRIMARY KEY,
-                    pot_amount BIGINT DEFAULT 0,
-                    draw_scheduled TIMESTAMPTZ,
-                    last_draw_time TIMESTAMPTZ,
-                    winning_numbers TEXT,
-                    last_winner_id BIGINT,
-                    last_prize_amount BIGINT DEFAULT 0
-                );
-            """)
+                   CREATE TABLE IF NOT EXISTS lottery_state (
+                       guild_id BIGINT PRIMARY KEY,
+                       pot_amount BIGINT DEFAULT 0,
+                       draw_scheduled TIMESTAMPTZ,
+                       last_draw_time TIMESTAMPTZ,
+                       winning_numbers TEXT,
+                       last_winner_id BIGINT,
+                       last_prize_amount BIGINT DEFAULT 0
+                   );
+               """)
 
             # Current entries table
             await self.bot.pool.execute("""
-                CREATE TABLE IF NOT EXISTS lottery_entries (
-                    guild_id BIGINT,
-                    user_id BIGINT,
-                    numbers TEXT NOT NULL,
-                    entry_time TIMESTAMPTZ DEFAULT NOW(),
-                    PRIMARY KEY (guild_id, user_id)
-                );
-            """)
+                   CREATE TABLE IF NOT EXISTS lottery_entries (
+                       guild_id BIGINT,
+                       user_id BIGINT,
+                       numbers TEXT NOT NULL,
+                       entry_time TIMESTAMPTZ DEFAULT NOW(),
+                       PRIMARY KEY (guild_id, user_id)
+                   );
+               """)
 
             # Historical draws table
             await self.bot.pool.execute("""
-                CREATE TABLE IF NOT EXISTS lottery_history (
-                    draw_id SERIAL PRIMARY KEY,
-                    guild_id BIGINT NOT NULL,
-                    draw_time TIMESTAMPTZ DEFAULT NOW(),
-                    winning_numbers TEXT NOT NULL,
-                    winner_id BIGINT,
-                    prize_amount BIGINT NOT NULL,
-                    total_entries INTEGER NOT NULL
-                );
-            """)
+                   CREATE TABLE IF NOT EXISTS lottery_history (
+                       draw_id SERIAL PRIMARY KEY,
+                       guild_id BIGINT NOT NULL,
+                       draw_time TIMESTAMPTZ DEFAULT NOW(),
+                       winning_numbers TEXT NOT NULL,
+                       winner_id BIGINT,
+                       prize_amount BIGINT NOT NULL,
+                       total_entries INTEGER NOT NULL
+                   );
+               """)
 
-            await self.load_lottery_states()
-            await self.setup_lottery_interface()  # Add this line
-            self.logger.info("복권 시스템 데이터베이스 및 인터페이스 설정 완료")
+            self.logger.info("복권 데이터베이스 테이블 생성 완료")
 
         except Exception as e:
-            self.logger.error(f"복권 테이블 설정 실패: {e}")
+            self.logger.error(f"복권 테이블 설정 실패: {e}", exc_info=True)
 
     async def load_lottery_states(self):
         """Load lottery states from database"""
+        if not self.bot.pool:
+            self.logger.warning("데이터베이스 풀이 없어 복권 상태 로드를 건너뜁니다")
+            return
+
         try:
             states = await self.bot.pool.fetch("SELECT * FROM lottery_state")
             for state in states:
@@ -284,8 +371,10 @@ class LotteryCog(commands.Cog):
 
                 self.guild_lotteries[guild_id] = lottery
 
+            self.logger.info(f"복권 상태 로드 완료: {len(self.guild_lotteries)}개 서버")
+
         except Exception as e:
-            self.logger.error(f"복권 상태 로드 실패: {e}")
+            self.logger.error(f"복권 상태 로드 실패: {e}", exc_info=True)
 
     def get_lottery(self, guild_id: int) -> LotterySystem:
         """Get or create lottery system for guild"""
