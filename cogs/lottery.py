@@ -405,44 +405,102 @@ class LotteryCog(commands.Cog):
             self.logger.error(f"팟 추가 실패: {e}")
 
     def validate_lottery_numbers(self, numbers: List[int]) -> tuple[bool, str]:
-        """Validate lottery number selection"""
-        if len(numbers) != 5:
-            return False, "정확히 5개의 번호를 선택해야 합니다."
+        """Validate lottery number selection with debugging"""
+        try:
+            self.logger.info(f"번호 검증 시작: {numbers}")
 
-        if len(set(numbers)) != 5:
-            return False, "중복된 번호는 선택할 수 없습니다."
+            if not isinstance(numbers, list):
+                self.logger.error(f"번호가 리스트가 아님: {type(numbers)}")
+                return False, "잘못된 번호 형식입니다."
 
-        if not all(1 <= num <= 35 for num in numbers):
-            return False, "번호는 1부터 35 사이여야 합니다."
+            if len(numbers) != 5:
+                self.logger.error(f"번호 개수 오류: {len(numbers)} != 5")
+                return False, "정확히 5개의 번호를 선택해야 합니다."
 
-        return True, ""
+            if len(set(numbers)) != 5:
+                self.logger.error(f"중복 번호 발견: {numbers}")
+                return False, "중복된 번호는 선택할 수 없습니다."
+
+            for i, num in enumerate(numbers):
+                if not isinstance(num, int):
+                    self.logger.error(f"번호 {i}가 정수가 아님: {num} ({type(num)})")
+                    return False, f"번호는 정수여야 합니다: {num}"
+
+                if not (1 <= num <= 35):
+                    self.logger.error(f"번호 범위 오류: {num}")
+                    return False, "번호는 1부터 35 사이여야 합니다."
+
+            self.logger.info(f"번호 검증 성공: {numbers}")
+            return True, ""
+
+        except Exception as e:
+            self.logger.error(f"번호 검증 중 오류: {e}", exc_info=True)
+            return False, f"번호 검증 오류: {str(e)}"
 
     async def enter_lottery(self, user_id: int, guild_id: int, numbers: List[int]) -> tuple[bool, str]:
-        """Enter user into lottery with improved error handling"""
+        """Enter user into lottery with detailed debugging"""
         try:
-            lottery = self.get_lottery(guild_id)
+            self.logger.info(f"복권 참가 시작 - 사용자: {user_id}, 길드: {guild_id}, 번호: {numbers}")
 
-            # Check if user already entered
-            if user_id in lottery.entries:
-                return False, "이미 이번 추첨에 참가했습니다."
+            # Step 1: Get lottery system
+            try:
+                lottery = self.get_lottery(guild_id)
+                self.logger.info(f"복권 시스템 가져오기 성공 - 현재 팟: {lottery.pot_amount}, 참가자: {len(lottery.entries)}")
+            except Exception as e:
+                self.logger.error(f"복권 시스템 가져오기 실패: {e}", exc_info=True)
+                return False, f"복권 시스템 초기화 오류: {str(e)}"
 
-            # Validate numbers
-            valid, error_msg = self.validate_lottery_numbers(numbers)
-            if not valid:
-                return False, error_msg
+            # Step 2: Check if user already entered
+            try:
+                if user_id in lottery.entries:
+                    self.logger.info(f"사용자 {user_id} 이미 참가함")
+                    return False, "이미 이번 추첨에 참가했습니다."
+            except Exception as e:
+                self.logger.error(f"사용자 중복 확인 오류: {e}", exc_info=True)
+                return False, f"참가 상태 확인 오류: {str(e)}"
 
-            # Check minimum pot amount
-            min_pot = get_server_setting(guild_id, 'lottery_min_pot', 1000)
-            if lottery.pot_amount < min_pot:
-                return False, f"복권 팟이 최소 금액({min_pot:,} 코인)에 도달하지 않았습니다."
+            # Step 3: Validate numbers
+            try:
+                valid, error_msg = self.validate_lottery_numbers(numbers)
+                if not valid:
+                    self.logger.info(f"번호 검증 실패: {error_msg}")
+                    return False, error_msg
+                self.logger.info(f"번호 검증 성공: {numbers}")
+            except Exception as e:
+                self.logger.error(f"번호 검증 오류: {e}", exc_info=True)
+                return False, f"번호 검증 중 오류: {str(e)}"
 
-            # Add entry
-            entry = LotteryEntry(user_id, numbers, datetime.now(timezone.utc))
-            lottery.entries[user_id] = entry
+            # Step 4: Check minimum pot
+            try:
+                min_pot = get_server_setting(guild_id, 'lottery_min_pot', 1000)
+                if lottery.pot_amount < min_pot:
+                    self.logger.info(f"팟 부족: {lottery.pot_amount} < {min_pot}")
+                    return False, f"복권 팟이 최소 금액({min_pot:,} 코인)에 도달하지 않았습니다."
+                self.logger.info(f"최소 팟 조건 만족: {lottery.pot_amount} >= {min_pot}")
+            except Exception as e:
+                self.logger.error(f"최소 팟 확인 오류: {e}", exc_info=True)
+                return False, f"팟 확인 중 오류: {str(e)}"
 
-            # Update database with better error handling
+            # Step 5: Create entry
+            try:
+                entry = LotteryEntry(user_id, numbers, datetime.now(timezone.utc))
+                self.logger.info(f"복권 엔트리 생성 성공")
+            except Exception as e:
+                self.logger.error(f"복권 엔트리 생성 오류: {e}", exc_info=True)
+                return False, f"참가 정보 생성 오류: {str(e)}"
+
+            # Step 6: Add to memory first
+            try:
+                lottery.entries[user_id] = entry
+                self.logger.info(f"메모리에 엔트리 추가 성공")
+            except Exception as e:
+                self.logger.error(f"메모리 엔트리 추가 오류: {e}", exc_info=True)
+                return False, f"참가 정보 저장 오류: {str(e)}"
+
+            # Step 7: Update database
             if self.bot.pool:
                 try:
+                    self.logger.info("데이터베이스 업데이트 시작")
                     await self.bot.pool.execute("""
                         INSERT INTO lottery_entries (guild_id, user_id, numbers)
                         VALUES ($1, $2, $3)
@@ -450,31 +508,37 @@ class LotteryCog(commands.Cog):
                         DO UPDATE SET numbers = $3, entry_time = NOW()
                     """, guild_id, user_id, json.dumps(numbers))
 
-                    self.logger.info(f"사용자 {user_id}가 길드 {guild_id}에서 복권에 참가했습니다: {numbers}")
+                    self.logger.info(f"데이터베이스 업데이트 성공")
 
                 except Exception as db_error:
                     self.logger.error(f"데이터베이스 업데이트 실패: {db_error}", exc_info=True)
                     # Remove from memory if DB update failed
-                    if user_id in lottery.entries:
-                        del lottery.entries[user_id]
-                    return False, "데이터베이스 오류로 참가에 실패했습니다. 다시 시도해주세요."
+                    try:
+                        if user_id in lottery.entries:
+                            del lottery.entries[user_id]
+                            self.logger.info("메모리에서 실패한 엔트리 제거")
+                    except:
+                        pass
+                    return False, f"데이터베이스 저장 실패: {str(db_error)}"
             else:
                 self.logger.warning("데이터베이스 풀이 없어 메모리에만 저장됩니다.")
 
+            self.logger.info(f"복권 참가 완료 - 사용자: {user_id}")
             return True, f"복권에 성공적으로 참가했습니다! 선택 번호: {sorted(numbers)}"
 
         except Exception as e:
-            self.logger.error(f"복권 참가 중 오류: {e}", exc_info=True)
+            self.logger.error(f"복권 참가 중 예상치 못한 오류: {e}", exc_info=True)
 
             # Clean up memory entry if it was added
             try:
+                lottery = self.get_lottery(guild_id)
                 if user_id in lottery.entries:
                     del lottery.entries[user_id]
+                    self.logger.info("오류 후 메모리 정리 완료")
             except:
                 pass
 
-            return False, "복권 참가 중 시스템 오류가 발생했습니다."
-
+            return False, f"시스템 오류: {str(e)}"
     def calculate_matches(self, user_numbers: List[int], winning_numbers: List[int]) -> int:
         """Calculate number of matches"""
         return len(set(user_numbers) & set(winning_numbers))
@@ -766,6 +830,66 @@ class LotteryCog(commands.Cog):
             self.logger.error(f"복권 이력 조회 실패: {e}")
             await interaction.response.send_message("이력 조회 중 오류가 발생했습니다.", ephemeral=True)
 
+
+@app_commands.command(name="복권디버그", description="복권 시스템 디버깅 (관리자 전용)")
+async def debug_lottery(self, interaction: discord.Interaction):
+    """Debug lottery system"""
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message("⛔ 관리자만 사용할 수 있습니다.", ephemeral=True)
+        return
+
+    await interaction.response.defer(ephemeral=True)
+
+    debug_info = []
+
+    try:
+        # Test 1: Basic system check
+        debug_info.append("🔍 **시스템 체크:**")
+        debug_info.append(f"- Bot ready: {self.bot.is_ready()}")
+        debug_info.append(f"- Database pool: {'✅' if self.bot.pool else '❌'}")
+        debug_info.append(f"- Guild lotteries: {len(self.guild_lotteries)}")
+
+        # Test 2: Guild lottery check
+        try:
+            lottery = self.get_lottery(interaction.guild.id)
+            debug_info.append(f"- 길드 복권 시스템: ✅")
+            debug_info.append(f"- 현재 팟: {lottery.pot_amount}")
+            debug_info.append(f"- 현재 참가자: {len(lottery.entries)}")
+        except Exception as e:
+            debug_info.append(f"- 길드 복권 시스템: ❌ ({e})")
+
+        # Test 3: Database connection
+        if self.bot.pool:
+            try:
+                result = await self.bot.pool.fetchval("SELECT 1")
+                debug_info.append(f"- DB 연결: ✅")
+            except Exception as e:
+                debug_info.append(f"- DB 연결: ❌ ({e})")
+
+        # Test 4: Settings check
+        try:
+            min_pot = get_server_setting(interaction.guild.id, 'lottery_min_pot', 1000)
+            debug_info.append(f"- 최소 팟 설정: {min_pot}")
+        except Exception as e:
+            debug_info.append(f"- 설정 확인: ❌ ({e})")
+
+        # Test 5: Number validation
+        try:
+            valid, msg = self.validate_lottery_numbers([1, 2, 3, 4, 5])
+            debug_info.append(f"- 번호 검증: {'✅' if valid else '❌'} ({msg})")
+        except Exception as e:
+            debug_info.append(f"- 번호 검증: ❌ ({e})")
+
+    except Exception as e:
+        debug_info.append(f"디버그 중 오류: {e}")
+
+    embed = discord.Embed(
+        title="🔧 복권 시스템 디버그",
+        description="\n".join(debug_info),
+        color=discord.Color.blue()
+    )
+
+    await interaction.followup.send(embed=embed, ephemeral=True)
 
 class LotteryEntryModal(discord.ui.Modal, title="복권 번호 선택"):
     """Modal for entering lottery numbers"""
