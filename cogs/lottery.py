@@ -81,16 +81,18 @@ class LotteryCog(commands.Cog):
         except Exception as e:
             self.logger.error(f"복권 인터페이스 설정 실패: {e}")
 
-    def create_lottery_interface_embed(self) -> discord.Embed:
+    def create_lottery_interface_embed(self, target_guild_id: int = None) -> discord.Embed:
         """Create the main lottery interface embed"""
-        # Get lottery data for the main guild (you may need to adjust this)
-        main_guild_id = None
-        for guild_id in self.guild_lotteries:
-            main_guild_id = guild_id
-            break
+        # If no target guild specified, try to determine from channel context or use first available
+        if target_guild_id is None:
+            if self.lottery_interface_message:
+                target_guild_id = self.lottery_interface_message.guild.id if self.lottery_interface_message.guild else None
 
-        if main_guild_id:
-            lottery = self.guild_lotteries[main_guild_id]
+            if target_guild_id is None and self.guild_lotteries:
+                target_guild_id = next(iter(self.guild_lotteries.keys()))
+
+        if target_guild_id and target_guild_id in self.guild_lotteries:
+            lottery = self.guild_lotteries[target_guild_id]
         else:
             # Create a default display
             lottery = type('DefaultLottery', (), {
@@ -103,7 +105,7 @@ class LotteryCog(commands.Cog):
 
         embed = discord.Embed(
             title="🎰 복권 시스템",
-            description="크래시 게임 수수료로 쌓인 복권 팟에 참가하세요!\n아래 버튼을 눌러 1-35 중 5개 번호를 선택하세요.",
+            description="카지노 게임 수수료와 패배 기여금으로 쌓인 복권 팟에 참가하세요!\n아래 버튼을 눌러 1-35 중 5개 번호를 선택하세요.",
             color=discord.Color.gold(),
             timestamp=datetime.now(timezone.utc)
         )
@@ -125,6 +127,12 @@ class LotteryCog(commands.Cog):
             name="📊 최소 팟",
             value=f"{min_pot:,} 코인",
             inline=True
+        )
+
+        embed.add_field(
+            name="💡 팟 충전 방식",
+            value="• 크래시 승리 시: 5% 수수료\n• 카지노 패배 시: 베팅금의 50%\n• 자동 실시간 업데이트",
+            inline=False
         )
 
         if lottery.last_draw_time:
@@ -164,15 +172,28 @@ class LotteryCog(commands.Cog):
 
         return embed
 
-    async def update_lottery_interface(self):
+    async def update_lottery_interface(self, guild_id: int = None):
         """Update the lottery interface embed with current data"""
         if not self.lottery_interface_message:
+            self.logger.warning("복권 인터페이스 메시지가 없어 업데이트를 건너뜁니다.")
             return
 
         try:
-            embed = self.create_lottery_interface_embed()
+            # Use the specific guild_id if provided, otherwise determine from message context
+            target_guild_id = guild_id
+            if target_guild_id is None and self.lottery_interface_message.guild:
+                target_guild_id = self.lottery_interface_message.guild.id
+
+            embed = self.create_lottery_interface_embed(target_guild_id)
             view = LotteryInterfaceView(self)
+
+            # Add timestamp to show when last updated
+            embed.set_footer(
+                text=f"카지노 게임 수수료가 자동으로 팟에 추가됩니다 • 마지막 업데이트: {datetime.now(timezone.utc).strftime('%H:%M:%S UTC')}")
+
             await self.lottery_interface_message.edit(embed=embed, view=view)
+            self.logger.debug(f"복권 인터페이스가 성공적으로 업데이트되었습니다 (길드: {target_guild_id}).")
+
         except discord.HTTPException as e:
             self.logger.error(f"복권 인터페이스 업데이트 실패: {e}")
 
@@ -274,10 +295,10 @@ class LotteryCog(commands.Cog):
                 DO UPDATE SET pot_amount = lottery_state.pot_amount + $2
             """, guild_id, amount)
 
-            # Update interface
-            await self.update_lottery_interface()
+            # Auto-update interface whenever pot changes, passing the specific guild_id
+            await self.update_lottery_interface(guild_id)
 
-            self.logger.info(f"복권 팟에 {amount} 코인 추가 (길드: {guild_id})")
+            self.logger.info(f"복권 팟에 {amount} 코인 추가 (길드: {guild_id}) - 인터페이스 자동 업데이트됨")
 
         except Exception as e:
             self.logger.error(f"팟 추가 실패: {e}")
