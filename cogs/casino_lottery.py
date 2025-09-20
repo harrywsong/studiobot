@@ -202,7 +202,7 @@ class CasinoLotteryCog(commands.Cog):
                                       f"Lottery win: {match_count} matches")
         else:
             # Add 50% of loss to lottery pot when player loses
-            total_losses_to_lottery = int(bet * 0.5)
+            total_losses_to_lottery = int(bet * 0.1)
             try:
                 from cogs.lottery import add_casino_fee_to_lottery
                 await add_casino_fee_to_lottery(self.bot, interaction.guild.id, total_losses_to_lottery)

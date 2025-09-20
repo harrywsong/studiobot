@@ -263,7 +263,7 @@ class BlackjackView(discord.ui.View):
             if self.insurance_bet > 0 and not insurance_won:
                 total_bet_lost += self.insurance_bet
 
-            loss_contribution = int(total_bet_lost * 0.5)
+            loss_contribution = int(total_bet_lost * 0.1)
             total_losses_to_lottery = loss_contribution
 
             # Add loss contribution to lottery pot

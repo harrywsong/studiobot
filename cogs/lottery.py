@@ -160,7 +160,7 @@ class LotteryCog(commands.Cog):
 
         embed.add_field(
             name="💡 팟 충전 방식",
-            value="• 크래시 승리 시: 5% 수수료\n• 카지노 패배 시: 베팅금의 50%\n• 자동 실시간 업데이트",
+            value="• 크래시 승리 시: 5% 수수료\n• 카지노 패배 시: 베팅금의 10%\n• 자동 실시간 업데이트",
             inline=False
         )
 

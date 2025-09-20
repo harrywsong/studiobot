@@ -164,7 +164,7 @@ class DiceGameCog(commands.Cog):
                                       f"Dice win: {total}")
         else:
             # Add 50% of loss to lottery pot
-            total_losses_to_lottery = int(bet * 0.5)
+            total_losses_to_lottery = int(bet * 0.1)
             from cogs.lottery import add_casino_fee_to_lottery
             await add_casino_fee_to_lottery(self.bot, interaction.guild.id, total_losses_to_lottery)
 
