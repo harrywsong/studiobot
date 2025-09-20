@@ -11,6 +11,7 @@ from utils.config import (
     is_feature_enabled,
     is_server_configured
 )
+from cogs.coins import check_user_casino_eligibility # <--- ADD THIS LINE
 
 
 class BingoCard:
@@ -420,6 +421,15 @@ class MultiBingoView(discord.ui.View):
             await interaction.response.send_message("❌ 게임이 가득 찼습니다! (최대 4명)", ephemeral=True)
             return
 
+        # =================================================================
+        # LOAN RESTRICTION CHECK FOR JOINING PLAYERS
+        # =================================================================
+        restriction = await check_user_casino_eligibility(self.bot, interaction.user.id, interaction.guild.id)
+        if not restriction['allowed']:
+            await interaction.response.send_message(restriction['message'], ephemeral=True)
+            return
+        # =================================================================
+
         # Get the bet amount from the first player (all players must match)
         if self.players:
             required_bet = next(iter(self.players.values())).bet
@@ -525,6 +535,11 @@ class BingoCog(commands.Cog):
         # Check if casino games are enabled for this server
         if not interaction.guild or not is_feature_enabled(interaction.guild.id, 'casino_games'):
             await interaction.response.send_message("❌ 이 서버에서는 카지노 게임이 비활성화되어 있습니다!", ephemeral=True)
+            return
+
+        restriction = await check_user_casino_eligibility(self.bot, interaction.user.id, interaction.guild.id)
+        if not restriction['allowed']:
+            await interaction.response.send_message(restriction['message'], ephemeral=True)
             return
 
         channel_id = interaction.channel_id

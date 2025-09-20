@@ -18,6 +18,7 @@ from utils.config import (
     get_channel_id,
     get_server_setting
 )
+from cogs.coins import check_user_casino_eligibility # <--- ADD THIS LINE
 
 # Font setup for Korean text
 here = os.path.dirname(os.path.dirname(__file__))
@@ -111,6 +112,16 @@ class JoinBetModal(discord.ui.Modal, title="크래시 게임 참가"):
             if bet <= 0:
                 await interaction.followup.send("베팅 금액은 0보다 커야 합니다.", ephemeral=True)
                 return
+
+            # =================================================================
+            # LOAN RESTRICTION CHECK FOR JOINING PLAYERS
+            # =================================================================
+            # Note: We use self.cog.bot here to access the bot instance
+            restriction = await check_user_casino_eligibility(self.cog.bot, interaction.user.id, interaction.guild.id)
+            if not restriction['allowed']:
+                await interaction.followup.send(restriction['message'], ephemeral=True)
+                return
+            # =================================================================
 
             if not self.game or self.game != self.cog.server_games.get(interaction.guild.id):
                 await interaction.followup.send("게임을 찾을 수 없거나 이미 종료되었습니다.", ephemeral=True)
@@ -631,6 +642,11 @@ class CrashCog(commands.Cog):
         # Check if casino games are enabled
         if not interaction.guild or not is_feature_enabled(interaction.guild.id, 'casino_games'):
             await interaction.response.send_message("❌ 이 서버에서는 카지노 게임이 비활성화되어 있습니다!", ephemeral=True)
+            return
+
+        restriction = await check_user_casino_eligibility(self.bot, interaction.user.id, interaction.guild.id)
+        if not restriction['allowed']:
+            await interaction.response.send_message(restriction['message'], ephemeral=True)
             return
 
         guild_id = interaction.guild.id

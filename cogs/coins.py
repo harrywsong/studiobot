@@ -793,7 +793,7 @@ class CoinsCog(commands.Cog):
         # Check if casino games are enabled
         if not config.is_feature_enabled(guild_id, 'casino_games'):
             await interaction.response.send_message(
-                "❌ 이 서버에서는 코인 시스템이 비활성화되어 있습니다.",
+                "⛔ 이 서버에서는 코인 시스템이 비활성화되어 있습니다.",
                 ephemeral=True
             )
             return
@@ -803,41 +803,82 @@ class CoinsCog(commands.Cog):
             return
 
         if interaction.user == user:
-            await interaction.response.send_message("❌ 자기 자신에게 코인을 줄 수 없습니다.", ephemeral=True)
+            await interaction.response.send_message("⛔ 자기 자신에게 코인을 줄 수 없습니다.", ephemeral=True)
             return
 
         if amount <= 0:
-            await interaction.response.send_message("❌ 코인 수량은 0보다 커야 합니다.", ephemeral=True)
+            await interaction.response.send_message("⛔ 코인 수량은 0보다 커야 합니다.", ephemeral=True)
             return
 
-        # Check if sender has enough coins
-        sender_coins = await self.get_user_coins(interaction.user.id, guild_id)
-        if sender_coins < amount:
-            await interaction.response.send_message(f"❌ 코인이 부족합니다. 현재 잔액: {sender_coins:,} 코인", ephemeral=True)
-            return
+        await interaction.response.defer(ephemeral=True)
 
-        # Attempt to remove coins from sender
-        removed = await self.remove_coins(interaction.user.id, guild_id, amount, "given", f"Given to {user.display_name}")
-        if not removed:
-            await interaction.response.send_message("❌ 코인 전송 중 오류가 발생했습니다.", ephemeral=True)
-            # FIX: Add guild_id to log message
-            self.logger.error(f"Failed to remove coins from sender {interaction.user.id} for give_coins command in guild {guild_id}", extra={'guild_id': guild_id})
-            return
+        try:
+            # Check if recipient has overdue loan restrictions
+            recipient_restrictions = await self.check_user_loan_restrictions(user.id, guild_id)
 
-        # Attempt to add coins to receiver
-        added = await self.add_coins(user.id, guild_id, amount, "received", f"Received from {interaction.user.display_name}")
-        if not added:
-            # If adding coins fails, reverse the sender's deduction
-            await self.add_coins(interaction.user.id, guild_id, amount, "refund", f"Refund for failed give to {user.display_name}")
-            await interaction.response.send_message("❌ 코인 전송 중 오류가 발생했습니다. 잔액이 복구되었습니다.", ephemeral=True)
-            # FIX: Add guild_id to log message
-            self.logger.error(f"Failed to add coins to receiver {user.id} for give_coins command in guild {guild_id}, attempted refund.", extra={'guild_id': guild_id})
-            return
+            if recipient_restrictions['restricted']:
+                if recipient_restrictions['reason'] == 'overdue_loan':
+                    embed = discord.Embed(
+                        title="⛔ 코인 전송 제한",
+                        description=f"{user.mention}님은 연체된 대출이 있어 다른 사용자로부터 코인을 받을 수 없습니다.",
+                        color=discord.Color.red()
+                    )
+                    embed.add_field(
+                        name="제한 사유",
+                        value="연체된 대출금 존재",
+                        inline=True
+                    )
+                    embed.add_field(
+                        name="남은 대출금",
+                        value=f"{recipient_restrictions['remaining_amount']:,} 코인",
+                        inline=True
+                    )
+                    embed.add_field(
+                        name="해결 방법",
+                        value="대상자가 대출금을 완전히 상환한 후 다시 시도해주세요.\n연체자는 일일 코인 수령만 가능합니다.",
+                        inline=False
+                    )
 
-        # Success
-        await interaction.response.send_message(f"✅ {user.mention}님께 {amount:,} 코인을 성공적으로 전송했습니다!")
-        # FIX: Add guild_id to log message
-        self.logger.info(f"User {interaction.user.id} gave {amount} coins to {user.id} in guild {guild_id}", extra={'guild_id': guild_id})
+                    await interaction.followup.send(embed=embed, ephemeral=True)
+                    return
+
+            # Check if sender has enough coins
+            sender_coins = await self.get_user_coins(interaction.user.id, guild_id)
+            if sender_coins < amount:
+                await interaction.followup.send(f"⛔ 코인이 부족합니다. 현재 잔액: {sender_coins:,} 코인", ephemeral=True)
+                return
+
+            # Attempt to remove coins from sender
+            removed = await self.remove_coins(interaction.user.id, guild_id, amount, "given",
+                                              f"Given to {user.display_name}")
+            if not removed:
+                await interaction.followup.send("⛔ 코인 전송 중 오류가 발생했습니다.", ephemeral=True)
+                self.logger.error(
+                    f"Failed to remove coins from sender {interaction.user.id} for give_coins command in guild {guild_id}",
+                    extra={'guild_id': guild_id})
+                return
+
+            # Attempt to add coins to receiver
+            added = await self.add_coins(user.id, guild_id, amount, "received",
+                                         f"Received from {interaction.user.display_name}")
+            if not added:
+                # If adding coins fails, reverse the sender's deduction
+                await self.add_coins(interaction.user.id, guild_id, amount, "refund",
+                                     f"Refund for failed give to {user.display_name}")
+                await interaction.followup.send("⛔ 코인 전송 중 오류가 발생했습니다. 잔액이 복구되었습니다.", ephemeral=True)
+                self.logger.error(
+                    f"Failed to add coins to receiver {user.id} for give_coins command in guild {guild_id}, attempted refund.",
+                    extra={'guild_id': guild_id})
+                return
+
+            # Success
+            await interaction.followup.send(f"✅ {user.mention}님께 {amount:,} 코인을 성공적으로 전송했습니다!")
+            self.logger.info(f"User {interaction.user.id} gave {amount} coins to {user.id} in guild {guild_id}",
+                             extra={'guild_id': guild_id})
+
+        except Exception as e:
+            await interaction.followup.send(f"⛔ 오류가 발생했습니다: {e}", ephemeral=True)
+            self.logger.error(f"Error in give_coins command: {e}", extra={'guild_id': guild_id})
 
     # Add these admin commands to the CoinsCog class:
 
@@ -1143,6 +1184,85 @@ class CoinsCog(commands.Cog):
         else:
             await interaction.followup.send("ℹ️ 변경 사항이 없어 설정을 업데이트하지 않았습니다.")
 
+    async def check_user_loan_restrictions(self, user_id: int, guild_id: int) -> dict:
+        """
+        Check if user has loan restrictions that prevent them from receiving coins or gambling.
+        Returns a dict with restriction info.
+        """
+        try:
+            # Check for overdue loans
+            current_time = datetime.now(timezone.utc)
 
+            overdue_loan_query = """
+                SELECT loan_id, remaining_amount, due_date 
+                FROM user_loans 
+                WHERE user_id = $1 AND guild_id = $2 
+                AND status IN ('active', 'defaulted') 
+                AND due_date < $3
+                ORDER BY due_date ASC
+                LIMIT 1
+            """
+
+            overdue_loan = await self.bot.pool.fetchrow(overdue_loan_query, user_id, guild_id, current_time)
+
+            if overdue_loan:
+                return {
+                    'restricted': True,
+                    'reason': 'overdue_loan',
+                    'loan_id': overdue_loan['loan_id'],
+                    'remaining_amount': overdue_loan['remaining_amount'],
+                    'due_date': overdue_loan['due_date']
+                }
+
+            return {'restricted': False}
+
+        except Exception as e:
+            self.logger.error(f"Error checking loan restrictions for user {user_id} in guild {guild_id}: {e}",
+                              extra={'guild_id': guild_id})
+            # In case of error, allow the operation (fail open)
+            return {'restricted': False}
+
+    async def check_casino_restrictions(self, user_id: int, guild_id: int) -> dict:
+        """
+        Check if user can participate in casino games based on loan status.
+        This would be called by any casino game cogs before allowing gameplay.
+        """
+        try:
+            restrictions = await self.check_user_loan_restrictions(user_id, guild_id)
+
+            if restrictions['restricted'] and restrictions['reason'] == 'overdue_loan':
+                return {
+                    'allowed': False,
+                    'reason': 'overdue_loan',
+                    'message': f"⛔ 연체된 대출이 있어 카지노 게임에 참여할 수 없습니다.\n"
+                               f"남은 대출금: {restrictions['remaining_amount']:,} 코인\n"
+                               f"대출금을 완전히 상환한 후 다시 시도해주세요.",
+                    'remaining_amount': restrictions['remaining_amount']
+                }
+
+            return {'allowed': True}
+
+        except Exception as e:
+            self.logger.error(f"Error checking casino restrictions for user {user_id}: {e}",
+                              extra={'guild_id': guild_id})
+            # In case of error, allow the operation (fail open)
+            return {'allowed': True}
+
+
+def get_coins_cog_from_bot(bot):
+    """Helper function for other cogs to get the CoinsCog instance"""
+    return bot.get_cog('CoinsCog')
+
+
+async def check_user_casino_eligibility(bot, user_id: int, guild_id: int) -> dict:
+    """
+    Utility function that other cogs can import to check if a user can gamble.
+    Returns dict with 'allowed' boolean and 'message' string.
+    """
+    coins_cog = get_coins_cog_from_bot(bot)
+    if not coins_cog:
+        return {'allowed': True}  # If coins cog not available, don't restrict
+
+    return await coins_cog.check_casino_restrictions(user_id, guild_id)
 async def setup(bot):
     await bot.add_cog(CoinsCog(bot))

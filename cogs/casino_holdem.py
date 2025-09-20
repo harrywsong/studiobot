@@ -12,6 +12,7 @@ from utils.config import (
     is_feature_enabled,
     is_server_configured
 )
+from cogs.coins import check_user_casino_eligibility # <--- ADD THIS LINE
 
 
 class Suit(Enum):
@@ -1129,6 +1130,15 @@ class HoldemView(discord.ui.View):
             await interaction.response.send_message("❌ 이미 게임에 참가하셨습니다!", ephemeral=True)
             return
 
+        # =================================================================
+        # LOAN RESTRICTION CHECK FOR JOINING PLAYERS
+        # =================================================================
+        restriction = await check_user_casino_eligibility(self.bot, interaction.user.id, interaction.guild.id)
+        if not restriction['allowed']:
+            await interaction.response.send_message(restriction['message'], ephemeral=True)
+            return
+        # =================================================================
+
         # Validate player can afford buy-in
         casino_base = self.bot.get_cog('CasinoBaseCog')
         if casino_base:
@@ -1331,6 +1341,11 @@ class HoldemCog(commands.Cog):
             # Check if casino games are enabled for this server
             if not interaction.guild or not is_feature_enabled(interaction.guild.id, 'casino_games'):
                 await interaction.response.send_message("❌ 이 서버에서는 카지노 게임이 비활성화되어 있습니다!", ephemeral=True)
+                return
+
+            restriction = await check_user_casino_eligibility(self.bot, interaction.user.id, interaction.guild.id)
+            if not restriction['allowed']:
+                await interaction.response.send_message(restriction['message'], ephemeral=True)
                 return
 
             # Validate game using casino base

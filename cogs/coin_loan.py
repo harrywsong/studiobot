@@ -1324,20 +1324,20 @@ class LoanCog(commands.Cog):
             await interaction.followup.send(f"❌ 수정 역제안 게시 중 오류가 발생했습니다: {e}", ephemeral=True)
 
     async def process_repayment(self, interaction: discord.Interaction, loan_id: int, amount: int):
-        """Process loan repayment"""
+        """Process loan repayment with restriction updates"""
         try:
             coins_cog = self.bot.get_cog('CoinsCog')
             if not coins_cog:
-                return await interaction.followup.send("❌ 코인 시스템을 찾을 수 없습니다!", ephemeral=True)
+                return await interaction.followup.send("⛔ 코인 시스템을 찾을 수 없습니다!", ephemeral=True)
 
             # Find the loan
             query = "SELECT * FROM user_loans WHERE loan_id = $1 AND status IN ('active', 'defaulted')"
             loan = await self.bot.pool.fetchrow(query, loan_id)
             if not loan:
-                return await interaction.followup.send("❌ 유효한 대출을 찾을 수 없습니다.", ephemeral=True)
+                return await interaction.followup.send("⛔ 유효한 대출을 찾을 수 없습니다.", ephemeral=True)
 
             if loan['user_id'] != interaction.user.id:
-                return await interaction.followup.send("❌ 본인의 대출만 상환할 수 있습니다.", ephemeral=True)
+                return await interaction.followup.send("⛔ 본인의 대출만 상환할 수 있습니다.", ephemeral=True)
 
             # Ensure they don't overpay
             payment_amount = min(amount, loan['remaining_amount'])
@@ -1346,7 +1346,7 @@ class LoanCog(commands.Cog):
             user_balance = await coins_cog.get_user_coins(interaction.user.id, interaction.guild.id)
             if user_balance < payment_amount:
                 return await interaction.followup.send(
-                    f"❌ 코인이 부족합니다. 필요: {payment_amount:,}, 보유: {user_balance:,}", ephemeral=True)
+                    f"⛔ 코인이 부족합니다. 필요: {payment_amount:,}, 보유: {user_balance:,}", ephemeral=True)
 
             # Process payment
             success = await coins_cog.remove_coins(
@@ -1354,7 +1354,7 @@ class LoanCog(commands.Cog):
                 "loan_repayment", f"Payment for loan ID {loan['loan_id']}"
             )
             if not success:
-                return await interaction.followup.send("❌ 상환 처리 중 오류가 발생했습니다.", ephemeral=True)
+                return await interaction.followup.send("⛔ 상환 처리 중 오류가 발생했습니다.", ephemeral=True)
 
             new_remaining = loan['remaining_amount'] - payment_amount
             if new_remaining <= 0:
@@ -1365,6 +1365,9 @@ class LoanCog(commands.Cog):
                 await interaction.followup.send(
                     f"🎉 **{payment_amount:,} 코인**을 상환하여 대출을 모두 갚았습니다! 축하합니다!", ephemeral=True)
 
+                # Check and update restrictions after full payment
+                await self.update_user_restrictions_on_payment(loan['user_id'], loan['guild_id'], loan_id)
+
                 # Delete channel after a delay
                 channel = self.bot.get_channel(loan['channel_id'])
                 if channel:
@@ -1374,6 +1377,16 @@ class LoanCog(commands.Cog):
                         color=discord.Color.green(),
                         timestamp=datetime.now(timezone.utc)
                     )
+
+                    # Add restriction lift notification if applicable
+                    restrictions_lifted = await self.check_if_restrictions_lifted(loan['user_id'], loan['guild_id'])
+                    if restrictions_lifted:
+                        final_embed.add_field(
+                            name="🎉 제한 해제!",
+                            value="연체된 대출이 모두 해결되어 모든 제한이 해제되었습니다!",
+                            inline=False
+                        )
+
                     await channel.send(embed=final_embed)
 
                     import asyncio
@@ -1389,6 +1402,9 @@ class LoanCog(commands.Cog):
                 await interaction.followup.send(
                     f"✅ **{payment_amount:,} 코인**을 상환했습니다. 남은 금액: **{new_remaining:,} 코인**", ephemeral=True)
 
+                # Check and update restrictions after partial payment
+                await self.update_user_restrictions_on_payment(loan['user_id'], loan['guild_id'], loan_id)
+
                 # Update channel
                 channel = self.bot.get_channel(loan['channel_id'])
                 if channel:
@@ -1396,20 +1412,46 @@ class LoanCog(commands.Cog):
 
         except Exception as e:
             self.logger.error(f"대출 상환 처리 중 오류: {e}")
-            await interaction.followup.send(f"❌ 상환 처리 중 오류가 발생했습니다: {e}", ephemeral=True)
+            await interaction.followup.send(f"⛔ 상환 처리 중 오류가 발생했습니다: {e}", ephemeral=True)
+
+    async def check_if_restrictions_lifted(self, user_id: int, guild_id: int) -> bool:
+        """Check if user's restrictions have been lifted after payment"""
+        try:
+            current_time = datetime.now(timezone.utc)
+
+            overdue_check_query = """
+                SELECT COUNT(*) FROM user_loans 
+                WHERE user_id = $1 AND guild_id = $2 
+                AND status IN ('active', 'defaulted') 
+                AND due_date < $3
+            """
+
+            overdue_count = await self.bot.pool.fetchval(overdue_check_query, user_id, guild_id, current_time)
+            return overdue_count == 0
+
+        except Exception as e:
+            self.logger.error(f"Error checking if restrictions lifted: {e}")
+            return False
 
     @tasks.loop(hours=24)
     async def check_overdue_loans(self):
-        """Daily check for loans that have passed their due date."""
+        """Daily check for loans that have passed their due date and notifications."""
         current_time = datetime.now(timezone.utc)
         self.logger.info("연체된 대출을 확인하는 중...")
         try:
-            query = "SELECT loan_id, user_id, channel_id FROM user_loans WHERE status = 'active' AND due_date < $1"
-            overdue_loans = await self.bot.pool.fetch(query, current_time)
+            # Find loans that just became overdue (status is still 'active' but past due date)
+            newly_overdue_query = """
+                SELECT loan_id, user_id, guild_id, remaining_amount, channel_id, due_date
+                FROM user_loans 
+                WHERE status = 'active' AND due_date < $1
+            """
+            newly_overdue = await self.bot.pool.fetch(newly_overdue_query, current_time)
 
-            for loan in overdue_loans:
+            for loan in newly_overdue:
+                # Update status to defaulted
                 update_query = "UPDATE user_loans SET status = 'defaulted' WHERE loan_id = $1"
                 await self.bot.pool.execute(update_query, loan['loan_id'])
+
                 self.logger.info(f"대출 ID {loan['loan_id']} (사용자: {loan['user_id']})가 'defaulted'로 변경되었습니다.")
 
                 # Update loan channel if exists
@@ -1418,10 +1460,117 @@ class LoanCog(commands.Cog):
                     if channel:
                         await self.update_loan_channel(channel, loan['loan_id'])
 
+                        # Send overdue notification in the channel
+                        overdue_embed = discord.Embed(
+                            title="🚨 대출 연체 알림",
+                            description="이 대출의 상환 기한이 지났습니다.",
+                            color=discord.Color.red(),
+                            timestamp=current_time
+                        )
+                        overdue_embed.add_field(
+                            name="⚠️ 적용된 제한사항",
+                            value="• 다른 사용자로부터 코인을 받을 수 없습니다\n"
+                                  "• 카지노 게임에 참여할 수 없습니다\n"
+                                  "• 일일 코인 수령만 가능합니다",
+                            inline=False
+                        )
+                        overdue_embed.add_field(
+                            name="📋 제한 해제 조건",
+                            value="모든 연체된 대출을 완전히 상환해야 합니다.",
+                            inline=False
+                        )
+
+                        await channel.send(overdue_embed)
+
+                # Send DM notification to user about restrictions
+                user = self.bot.get_user(loan['user_id'])
+                if user:
+                    try:
+                        dm_embed = discord.Embed(
+                            title="🚨 대출 연체 - 계정 제한 적용",
+                            description=f"대출 상환 기한이 지나 계정에 제한이 적용되었습니다.",
+                            color=discord.Color.red(),
+                            timestamp=current_time
+                        )
+                        dm_embed.add_field(
+                            name="연체 대출 정보",
+                            value=f"대출 ID: {loan['loan_id']}\n남은 금액: {loan['remaining_amount']:,} 코인",
+                            inline=False
+                        )
+                        dm_embed.add_field(
+                            name="⚠️ 적용된 제한사항",
+                            value="• 다른 사용자로부터 코인을 받을 수 없습니다\n"
+                                  "• 카지노 게임에 참여할 수 없습니다\n"
+                                  "• 일일 코인 수령만 가능합니다",
+                            inline=False
+                        )
+                        dm_embed.add_field(
+                            name="📋 제한 해제 방법",
+                            value="연체된 모든 대출을 완전히 상환하면 제한이 자동으로 해제됩니다.",
+                            inline=False
+                        )
+
+                        await user.send(embed=dm_embed)
+                    except:
+                        pass  # Ignore if can't send DM
+
         except Exception as e:
             self.logger.error(f"연체된 대출 확인 중 오류 발생: {e}")
 
     # Slash commands
+    @app_commands.command(name="제한확인", description="현재 계정에 적용된 제한사항을 확인합니다.")
+    async def check_restrictions(self, interaction: discord.Interaction):
+        """Check current account restrictions due to overdue loans"""
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            coins_cog = self.bot.get_cog('CoinsCog')
+            if not coins_cog:
+                return await interaction.followup.send("⛔ 코인 시스템을 찾을 수 없습니다!", ephemeral=True)
+
+            # Check restrictions
+            restrictions = await coins_cog.check_user_loan_restrictions(interaction.user.id, interaction.guild.id)
+
+            if not restrictions['restricted']:
+                embed = discord.Embed(
+                    title="✅ 제한 없음",
+                    description="현재 계정에 적용된 제한사항이 없습니다.",
+                    color=discord.Color.green()
+                )
+                embed.add_field(
+                    name="이용 가능한 서비스",
+                    value="✅ 코인 송수신\n✅ 카지노 게임 참여\n✅ 모든 코인 관련 활동",
+                    inline=False
+                )
+            else:
+                embed = discord.Embed(
+                    title="🚨 계정 제한 중",
+                    description="연체된 대출로 인해 계정에 제한이 적용되어 있습니다.",
+                    color=discord.Color.red()
+                )
+                embed.add_field(
+                    name="⚠️ 제한 내용",
+                    value="❌ 다른 사용자로부터 코인을 받을 수 없음\n❌ 카지노 게임 참여 불가\n✅ 일일 코인 수령만 가능",
+                    inline=False
+                )
+                embed.add_field(
+                    name="💰 연체 대출 정보",
+                    value=f"대출 ID: {restrictions['loan_id']}\n남은 금액: {restrictions['remaining_amount']:,} 코인",
+                    inline=False
+                )
+                embed.add_field(
+                    name="📋 제한 해제 방법",
+                    value="연체된 모든 대출을 완전히 상환하면 자동으로 제한이 해제됩니다.",
+                    inline=False
+                )
+
+            embed.set_footer(text="제한 상태는 실시간으로 업데이트됩니다.")
+            await interaction.followup.send(embed=embed, ephemeral=True)
+
+        except Exception as e:
+            self.logger.error(f"제한 확인 중 오류 발생: {e}")
+            await interaction.followup.send(f"⛔ 제한 확인 중 오류가 발생했습니다: {e}", ephemeral=True)
+
     @app_commands.command(name="카테고리확인", description="카테고리 ID 확인 (관리자 전용)")
     async def verify_category(self, interaction: discord.Interaction):
         if not self.has_admin_permissions(interaction.user):
@@ -1954,6 +2103,52 @@ class LoanCog(commands.Cog):
         except Exception as e:
             self.logger.error(f"대출 통계 조회 중 오류 발생: {e}")
             await interaction.followup.send(f"❌ 대출 통계 조회 중 오류가 발생했습니다: {e}", ephemeral=True)
+
+    async def update_user_restrictions_on_payment(self, user_id: int, guild_id: int, loan_id: int):
+        """
+        Check if user's restrictions should be lifted after payment.
+        This is called after every loan payment.
+        """
+        try:
+            # Check if user still has any overdue loans
+            current_time = datetime.now(timezone.utc)
+
+            overdue_check_query = """
+                SELECT COUNT(*) FROM user_loans 
+                WHERE user_id = $1 AND guild_id = $2 
+                AND status IN ('active', 'defaulted') 
+                AND due_date < $3
+            """
+
+            overdue_count = await self.bot.pool.fetchval(overdue_check_query, user_id, guild_id, current_time)
+
+            if overdue_count == 0:
+                # User no longer has overdue loans, log the restriction lift
+                self.logger.info(
+                    f"User {user_id} in guild {guild_id} is no longer restricted - all overdue loans resolved",
+                    extra={'guild_id': guild_id})
+
+                # Send a notification to the user
+                user = self.bot.get_user(user_id)
+                if user:
+                    try:
+                        embed = discord.Embed(
+                            title="🎉 제한 해제!",
+                            description="연체된 대출이 모두 해결되어 모든 제한이 해제되었습니다!",
+                            color=discord.Color.green(),
+                            timestamp=datetime.now(timezone.utc)
+                        )
+                        embed.add_field(
+                            name="이제 가능한 활동",
+                            value="✅ 다른 사용자로부터 코인 받기\n✅ 카지노 게임 참여\n✅ 모든 코인 관련 활동",
+                            inline=False
+                        )
+                        await user.send(embed=embed)
+                    except:
+                        pass  # Ignore if can't send DM
+
+        except Exception as e:
+            self.logger.error(f"Error updating user restrictions after payment: {e}", extra={'guild_id': guild_id})
 
 
 async def setup(bot: commands.Bot):

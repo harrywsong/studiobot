@@ -10,7 +10,7 @@ from utils.config import (
     is_feature_enabled,
     get_server_setting
 )
-
+from cogs.coins import check_user_casino_eligibility
 
 class CoinflipCog(commands.Cog):
     """Coinflip casino game - Multi-server aware with standardized embeds"""
@@ -71,6 +71,12 @@ class CoinflipCog(commands.Cog):
         # Check if casino games are enabled for this server
         if not interaction.guild or not is_feature_enabled(interaction.guild.id, 'casino_games'):
             await interaction.response.send_message("❌ 이 서버에서는 카지노 게임이 비활성화되어 있습니다!", ephemeral=True)
+            return
+
+        # Check for overdue loan restrictions
+        restriction = await check_user_casino_eligibility(self.bot, interaction.user.id, interaction.guild.id)
+        if not restriction['allowed']:
+            await interaction.response.send_message(restriction['message'], ephemeral=True)
             return
 
         # Validate game start (but don't deduct coins yet)
