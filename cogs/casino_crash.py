@@ -436,6 +436,10 @@ class CrashView(discord.ui.View):
                 await coins_cog.add_coins(interaction.user.id, interaction.guild.id, net_payout, "crash_win",
                                           f"Crash cashout at {multiplier:.2f}x (after 5% fee)")
 
+                # Add house fee to lottery pot
+                from cogs.lottery import add_casino_fee_to_lottery
+                await add_casino_fee_to_lottery(self.cog.bot, interaction.guild.id, house_fee)
+
             await interaction.followup.send(
                 f"{interaction.user.mention}님이 **{multiplier:.2f}x**에서 캐시아웃!\n💰 받은 금액: {net_payout:,} 코인 (수수료 {house_fee:,} 코인 차감)\n📈 순이익: +{profit:,} 코인",
                 ephemeral=False
