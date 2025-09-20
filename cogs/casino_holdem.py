@@ -1,4 +1,4 @@
-# cogs/casino_holdem.py - Texas Hold'em Poker game with standardized embeds
+# cogs/casino_holdem.py - Texas Hold'em Poker game with fixed hand evaluation
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -6,13 +6,14 @@ import asyncio
 import random
 from typing import Dict, List, Optional, Tuple
 from enum import Enum
+from itertools import combinations
 
 from utils.logger import get_logger
 from utils.config import (
     is_feature_enabled,
     is_server_configured
 )
-from cogs.coins import check_user_casino_eligibility # <--- ADD THIS LINE
+from cogs.coins import check_user_casino_eligibility
 
 
 class Suit(Enum):
@@ -75,7 +76,7 @@ class HandRank(Enum):
 
 
 class PokerHand:
-    """Evaluate poker hands"""
+    """Fixed poker hand evaluation"""
 
     @staticmethod
     def evaluate_hand(cards: List[Card]) -> Tuple[HandRank, List[int]]:
@@ -83,79 +84,130 @@ class PokerHand:
         if len(cards) != 7:
             raise ValueError("Must have exactly 7 cards")
 
-        # Get all possible 5-card combinations
-        from itertools import combinations
         best_rank = HandRank.HIGH_CARD
         best_tiebreakers = []
 
+        # Get all possible 5-card combinations
         for combo in combinations(cards, 5):
             rank, tiebreakers = PokerHand._evaluate_5_cards(list(combo))
-            if rank.value > best_rank.value or (rank == best_rank and tiebreakers > best_tiebreakers):
+
+            # Compare hands - higher rank wins, or same rank with better tiebreakers
+            if (rank.value > best_rank.value or
+                    (rank == best_rank and PokerHand._compare_tiebreakers(tiebreakers, best_tiebreakers) > 0)):
                 best_rank = rank
                 best_tiebreakers = tiebreakers
 
         return best_rank, best_tiebreakers
 
     @staticmethod
+    def _compare_tiebreakers(tb1: List[int], tb2: List[int]) -> int:
+        """Compare two tiebreaker lists. Returns 1 if tb1 > tb2, -1 if tb1 < tb2, 0 if equal"""
+        for i in range(min(len(tb1), len(tb2))):
+            if tb1[i] > tb2[i]:
+                return 1
+            elif tb1[i] < tb2[i]:
+                return -1
+        return 0
+
+    @staticmethod
     def _evaluate_5_cards(cards: List[Card]) -> Tuple[HandRank, List[int]]:
-        """Evaluate exactly 5 cards"""
+        """Evaluate exactly 5 cards with fixed logic"""
+        # Sort cards by rank (highest first)
         cards.sort(key=lambda x: x.rank, reverse=True)
         ranks = [card.rank for card in cards]
         suits = [card.suit for card in cards]
 
-        # Count ranks
+        # Count each rank
         rank_counts = {}
         for rank in ranks:
             rank_counts[rank] = rank_counts.get(rank, 0) + 1
 
+        # Get counts in descending order
         counts = sorted(rank_counts.values(), reverse=True)
-        unique_ranks = sorted(rank_counts.keys(), reverse=True)
+
+        # Get ranks sorted by count (descending), then by rank value (descending)
+        ranks_by_count = sorted(rank_counts.keys(), key=lambda r: (rank_counts[r], r), reverse=True)
 
         # Check for flush
         is_flush = len(set(suits)) == 1
 
         # Check for straight
-        is_straight = False
-        straight_high = 0
-        if ranks == [14, 5, 4, 3, 2]:  # A-5 straight (wheel)
-            is_straight = True
-            straight_high = 5
-        elif all(ranks[i] - ranks[i + 1] == 1 for i in range(4)):
-            is_straight = True
-            straight_high = ranks[0]
+        is_straight, straight_high = PokerHand._check_straight(ranks)
 
-        # Determine hand rank
+        # Determine hand rank and tiebreakers
         if is_straight and is_flush:
-            if straight_high == 14:
+            if straight_high == 14 and ranks == [14, 13, 12, 11, 10]:  # Royal flush
                 return HandRank.ROYAL_FLUSH, [14]
             else:
                 return HandRank.STRAIGHT_FLUSH, [straight_high]
-        elif counts == [4, 1]:
-            four_kind = [r for r, c in rank_counts.items() if c == 4][0]
-            kicker = [r for r, c in rank_counts.items() if c == 1][0]
+
+        elif counts == [4, 1]:  # Four of a kind
+            four_kind = ranks_by_count[0]  # The rank with 4 cards
+            kicker = ranks_by_count[1]  # The rank with 1 card
             return HandRank.FOUR_KIND, [four_kind, kicker]
-        elif counts == [3, 2]:
-            trip = [r for r, c in rank_counts.items() if c == 3][0]
-            pair = [r for r, c in rank_counts.items() if c == 2][0]
-            return HandRank.FULL_HOUSE, [trip, pair]
+
+        elif counts == [3, 2]:  # Full house
+            three_kind = ranks_by_count[0]  # The rank with 3 cards
+            pair = ranks_by_count[1]  # The rank with 2 cards
+            return HandRank.FULL_HOUSE, [three_kind, pair]
+
         elif is_flush:
-            return HandRank.FLUSH, ranks
+            return HandRank.FLUSH, ranks  # All 5 ranks as tiebreakers
+
         elif is_straight:
             return HandRank.STRAIGHT, [straight_high]
-        elif counts == [3, 1, 1]:
-            trip = [r for r, c in rank_counts.items() if c == 3][0]
-            kickers = sorted([r for r, c in rank_counts.items() if c == 1], reverse=True)
-            return HandRank.THREE_KIND, [trip] + kickers
-        elif counts == [2, 2, 1]:
-            pairs = sorted([r for r, c in rank_counts.items() if c == 2], reverse=True)
-            kicker = [r for r, c in rank_counts.items() if c == 1][0]
+
+        elif counts == [3, 1, 1]:  # Three of a kind
+            three_kind = ranks_by_count[0]
+            kickers = sorted(ranks_by_count[1:3], reverse=True)
+            return HandRank.THREE_KIND, [three_kind] + kickers
+
+        elif counts == [2, 2, 1]:  # Two pair
+            pairs = sorted(ranks_by_count[0:2], reverse=True)
+            kicker = ranks_by_count[2]
             return HandRank.TWO_PAIR, pairs + [kicker]
-        elif counts == [2, 1, 1, 1]:
-            pair = [r for r, c in rank_counts.items() if c == 2][0]
-            kickers = sorted([r for r, c in rank_counts.items() if c == 1], reverse=True)
+
+        elif counts == [2, 1, 1, 1]:  # One pair
+            pair = ranks_by_count[0]
+            kickers = sorted(ranks_by_count[1:4], reverse=True)
             return HandRank.PAIR, [pair] + kickers
-        else:
+
+        else:  # High card
             return HandRank.HIGH_CARD, ranks
+
+    @staticmethod
+    def _check_straight(ranks: List[int]) -> Tuple[bool, int]:
+        """Check if ranks form a straight, return (is_straight, high_card)"""
+        # Remove duplicates and sort
+        unique_ranks = sorted(set(ranks), reverse=True)
+
+        # Check for A-5 straight (wheel)
+        if unique_ranks == [14, 5, 4, 3, 2]:
+            return True, 5
+
+        # Check for normal straight
+        if len(unique_ranks) >= 5:
+            for i in range(len(unique_ranks) - 4):
+                if all(unique_ranks[i] - unique_ranks[i + j] == j for j in range(5)):
+                    return True, unique_ranks[i]
+
+        return False, 0
+
+    @staticmethod
+    def compare_hands(hand1_data: Tuple[HandRank, List[int]],
+                      hand2_data: Tuple[HandRank, List[int]]) -> int:
+        """Compare two hands. Returns 1 if hand1 wins, -1 if hand2 wins, 0 if tie"""
+        rank1, tb1 = hand1_data
+        rank2, tb2 = hand2_data
+
+        # Compare hand ranks first
+        if rank1.value > rank2.value:
+            return 1
+        elif rank1.value < rank2.value:
+            return -1
+
+        # Same rank, compare tiebreakers
+        return PokerHand._compare_tiebreakers(tb1, tb2)
 
 
 class HoldemPlayer:
@@ -680,7 +732,7 @@ class HoldemGame:
         return -1
 
     def determine_winners(self):
-        """Determine winners and distribute pot"""
+        """Fixed winner determination with proper hand comparison"""
         active_players = [p for p in self.players if not p.folded]
 
         if len(active_players) == 1:
@@ -691,28 +743,49 @@ class HoldemGame:
             self.log_game_state("winner_by_elimination")
             return
 
-        # Evaluate hands
+        # Evaluate hands for all active players
         player_hands = []
         for player in active_players:
-            all_cards = player.hole_cards + self.community_cards
-            hand_rank, tiebreakers = PokerHand.evaluate_hand(all_cards)
-            player_hands.append((player, hand_rank, tiebreakers))
+            try:
+                all_cards = player.hole_cards + self.community_cards
+                if len(all_cards) != 7:
+                    self.logger.error(f"Player {player.username} has {len(all_cards)} cards instead of 7")
+                    continue
 
-        # Sort by hand strength (best first)
-        player_hands.sort(key=lambda x: (x[1].value, x[2]), reverse=True)
+                hand_rank, tiebreakers = PokerHand.evaluate_hand(all_cards)
+                player_hands.append((player, hand_rank, tiebreakers))
 
-        # Find winners (players with same best hand)
-        best_rank = player_hands[0][1]
-        best_tiebreakers = player_hands[0][2]
+                # Debug logging
+                self.logger.debug(f"Player {player.username}: {hand_rank.name} with tiebreakers {tiebreakers}")
 
-        winners = []
-        for player, rank, tiebreakers in player_hands:
-            if rank == best_rank and tiebreakers == best_tiebreakers:
-                winners.append(player)
-            else:
-                break
+            except Exception as e:
+                self.logger.error(f"Error evaluating hand for {player.username}: {e}")
+                # Give them high card with lowest possible tiebreakers
+                player_hands.append((player, HandRank.HIGH_CARD, [2, 3, 4, 5, 7]))
 
-        # Distribute pot
+        if not player_hands:
+            self.logger.error("No valid hands to evaluate!")
+            return
+
+        # Find the best hand(s)
+        best_players = [player_hands[0]]  # Start with first player
+
+        for i in range(1, len(player_hands)):
+            current_player_data = player_hands[i]
+            current_hand = (current_player_data[1], current_player_data[2])
+            best_hand = (best_players[0][1], best_players[0][2])
+
+            comparison = PokerHand.compare_hands(current_hand, best_hand)
+
+            if comparison > 0:  # Current hand is better
+                best_players = [current_player_data]
+            elif comparison == 0:  # Tie
+                best_players.append(current_player_data)
+
+        # Extract just the players from the best hands
+        winners = [player_data[0] for player_data in best_players]
+
+        # Distribute pot equally among winners
         pot_share = self.pot // len(winners)
         remainder = self.pot % len(winners)
 
@@ -721,7 +794,10 @@ class HoldemGame:
             winner.chips += share
 
         self.winners = winners
-        self.log_game_state("winner_by_showdown")
+
+        # Debug logging
+        winner_names = [w.username for w in winners]
+        self.logger.info(f"Winners: {winner_names}, pot: {self.pot}, shares: {pot_share}")
 
 
 class HoldemView(discord.ui.View):
