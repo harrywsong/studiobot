@@ -468,7 +468,7 @@ class CrashCog(commands.Cog):
 
         # More conservative limits for crash games due to their addictive potential
         min_bet = get_server_setting(interaction.guild.id, 'crash_min_bet', 10)
-        max_bet = get_server_setting(interaction.guild.id, 'crash_max_bet', 100)  # Lower max bet
+        max_bet = get_server_setting(interaction.guild.id, 'crash_max_bet', 200)  # Lower max bet
 
         return await casino_base.validate_game_start(interaction, "crash", bet, min_bet, max_bet)
 
