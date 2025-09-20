@@ -122,7 +122,7 @@ class LotteryCog(commands.Cog):
             inline=True
         )
 
-        min_pot = 1000  # Default minimum pot
+        min_pot = 2000
         embed.add_field(
             name="📊 최소 팟",
             value=f"{min_pot:,} 코인",
