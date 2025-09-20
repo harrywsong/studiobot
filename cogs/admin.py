@@ -107,14 +107,36 @@ class DevToolsCog(commands.Cog):
     @app_commands.command(name="load", description="Load a new cog")
     @app_commands.describe(cog="Name of the cog to load")
     async def load_cog(self, interaction: discord.Interaction, cog: str):
-        """Load a new cog"""
         guild_id = interaction.guild.id if interaction.guild else None
 
         try:
             await self.bot.load_extension(f'cogs.{cog}')
         except commands.ExtensionAlreadyLoaded:
-            await self.bot.reload_extension(f'cogs.{cog}')
-
+            embed = discord.Embed(
+                title="❌ Cog Already Loaded",
+                description=f"Cog `{cog}` is already loaded.\nUse `/reload {cog}` instead.",
+                color=discord.Color.orange()
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            self.logger.warning(f"Failed to load '{cog}' - already loaded.", extra={'guild_id': guild_id})
+        except commands.ExtensionNotFound:
+            embed = discord.Embed(
+                title="❌ Cog Not Found",
+                description=f"Cog `{cog}` does not exist.",
+                color=discord.Color.red()
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            self.logger.warning(f"Failed to load '{cog}' - not found.", extra={'guild_id': guild_id})
+        except Exception as e:
+            embed = discord.Embed(
+                title="❌ Load Failed",
+                description=f"Failed to load `{cog}`:\n```py\n{e}```",
+                color=discord.Color.red()
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            self.logger.error(f"Failed to load '{cog}'.", exc_info=True, extra={'guild_id': guild_id})
+        else:
+            # ✅ Only send success if no exception was raised
             embed = discord.Embed(
                 title="✅ Cog Loaded Successfully",
                 description=f"Successfully loaded `{cog}`",
@@ -123,33 +145,6 @@ class DevToolsCog(commands.Cog):
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
             self.logger.info(f"Cog '{cog}' loaded successfully.", extra={'guild_id': guild_id})
-
-        except commands.ExtensionAlreadyLoaded:
-            embed = discord.Embed(
-                title="❌ Cog Already Loaded",
-                description=f"Cog `{cog}` is already loaded.\nUse `/reload {cog}` to reload it.",
-                color=discord.Color.orange()
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            self.logger.warning(f"Failed to load '{cog}' - already loaded.", extra={'guild_id': guild_id})
-
-        except commands.ExtensionNotFound:
-            embed = discord.Embed(
-                title="❌ Cog Not Found",
-                description=f"Cog `{cog}` does not exist.\nCheck if the file `cogs/{cog}.py` exists.",
-                color=discord.Color.red()
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            self.logger.warning(f"Failed to load '{cog}' - not found.", extra={'guild_id': guild_id})
-
-        except Exception as e:
-            embed = discord.Embed(
-                title="❌ Load Failed",
-                description=f"Failed to load `{cog}`:\n```py\n{str(e)}\n```",
-                color=discord.Color.red()
-            )
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-            self.logger.error(f"Failed to load '{cog}'.", exc_info=True, extra={'guild_id': guild_id})
 
     @app_commands.command(name="unload", description="Unload a cog")
     @app_commands.describe(cog="Name of the cog to unload")
