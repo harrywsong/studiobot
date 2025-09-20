@@ -1,4 +1,4 @@
-# cogs/casino_lottery.py - Updated with consistent embed layout
+# cogs/casino_lottery.py - Updated with consistent embed layout and lottery pot contributions
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -11,6 +11,7 @@ from utils.config import (
     get_server_setting
 )
 from cogs.coins import check_user_casino_eligibility
+
 
 class CasinoLotteryCog(commands.Cog):
     """Lottery number matching game - Multi-server aware with standardized embeds"""
@@ -180,10 +181,19 @@ class CasinoLotteryCog(commands.Cog):
         payouts = {k: int(bet * v * multiplier_modifier) for k, v in base_payouts.items()}
 
         payout = payouts[match_count]
+        total_losses_to_lottery = 0
 
         if payout > 0:
             await coins_cog.add_coins(interaction.user.id, interaction.guild.id, payout, "lottery_win",
                                       f"Lottery win: {match_count} matches")
+        else:
+            # Add 50% of loss to lottery pot when player loses
+            total_losses_to_lottery = int(bet * 0.5)
+            try:
+                from cogs.lottery import add_casino_fee_to_lottery
+                await add_casino_fee_to_lottery(self.bot, interaction.guild.id, total_losses_to_lottery)
+            except ImportError:
+                self.logger.warning("복권 시스템을 찾을 수 없어 손실 기여금을 추가할 수 없습니다.")
 
         # Standardized title and color logic
         if match_count == 3:
@@ -227,6 +237,10 @@ class CasinoLotteryCog(commands.Cog):
             result_info = f"{result_text}\n\n💰 **수익:** {payout:,} 코인\n📈 **순이익:** +{profit:,} 코인"
         else:
             result_info = f"{result_text}\n\n💸 **손실:** {bet:,} 코인"
+
+            # Add lottery contribution info for losses
+            if total_losses_to_lottery > 0:
+                result_info += f"\n\n🎰 베팅 손실 중 {total_losses_to_lottery:,} 코인이 복권 팟에 추가되었습니다."
 
         embed.add_field(name="📊 게임 결과", value=result_info, inline=False)
 
