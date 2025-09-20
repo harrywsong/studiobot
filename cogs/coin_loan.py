@@ -809,7 +809,7 @@ class LoanCog(commands.Cog):
             return None
 
     async def update_loan_channel(self, channel: discord.TextChannel, loan_id: int):
-        """Update loan channel with current loan information"""
+        """Update loan channel with current loan information, sending a new message if the old one is deleted or unusable."""
         try:
             # Get loan details
             loan_query = "SELECT * FROM user_loans WHERE loan_id = $1"
@@ -822,48 +822,59 @@ class LoanCog(commands.Cog):
             if not user:
                 return
 
-            # Create embed
+            # Create the embed
             status_color = discord.Color.green() if loan['status'] == 'active' else discord.Color.red()
-            status_emoji = "🟢 활성" if loan['status'] == 'active' else "🔴 연체" if loan['status'] == 'defaulted' else "✅ 완료"
+            status_emoji = "🟢 활성" if loan['status'] == 'active' else "🔴 연체"
 
             embed = discord.Embed(
-                title=f"💰 {user.display_name}님의 대출 정보",
+                title=f"📋 {user.display_name}님의 대출 정보",
+                description=f"**상태:** {status_emoji}",
                 color=status_color,
                 timestamp=datetime.now(timezone.utc)
             )
-
-            embed.add_field(name="상태", value=status_emoji, inline=True)
             embed.add_field(name="원금", value=f"{loan['principal_amount']:,} 코인", inline=True)
             embed.add_field(name="남은 상환액", value=f"{loan['remaining_amount']:,} 코인", inline=True)
             embed.add_field(name="이자율", value=f"{loan['interest_rate']}%", inline=True)
+            embed.add_field(name="상환 기한", value=f"<t:{int(loan['due_date'].timestamp())}:R>", inline=True)
+            embed.add_field(name="발행일", value=f"<t:{int(loan['issued_at'].timestamp())}:F>", inline=True)
+            embed.add_field(name="대출 ID", value=f"{loan['loan_id']}", inline=True)
 
-            due_date = loan['due_date']
-            if due_date.tzinfo is None:
-                due_date = due_date.replace(tzinfo=timezone.utc)
+            # This is the new field to provide a fallback command.
+            embed.add_field(
+                name="🔧 버튼이 사라진 경우",
+                value=f"• 상환: `/대출상환 loan_id:{loan['loan_id']}`",
+                inline=False
+            )
 
-            embed.add_field(name="상환 기한", value=f"<t:{int(due_date.timestamp())}:R>", inline=True)
-            embed.add_field(name="발행일", value=f"<t:{int(loan['issued_at'].timestamp())}:f>", inline=True)
+            view = LoanChannelView(self, loan_id)
 
-            # Add fallback instructions
-            if loan['status'] == 'active':
-                embed.add_field(
-                    name="🔧 버튼이 작동하지 않는 경우",
-                    value=f"`/대출상환 {loan['remaining_amount']:,}` (전액 상환)\n또는 `/대출상환 원하는금액`",
-                    inline=False
-                )
+            # Check if there is an existing loan message to edit
+            existing_message = None
+            try:
+                async for message in channel.history(limit=5):
+                    if message.author == self.bot.user and message.embeds:
+                        if "대출 정보" in message.embeds[0].title:
+                            existing_message = message
+                            break
+            except discord.Forbidden:
+                self.logger.warning("Bot does not have permissions to read channel history to find the loan message.")
 
-            embed.set_thumbnail(url=user.display_avatar.url)
-            embed.set_footer(text=f"대출 ID: {loan['loan_id']}")
+            # If an existing message is found, try to edit it.
+            if existing_message:
+                try:
+                    await existing_message.edit(embed=embed, view=view)
+                    self.logger.info(f"Edited existing loan message in channel {channel.id}")
+                    return
+                except (discord.Forbidden, discord.HTTPException) as e:
+                    self.logger.error(
+                        f"Failed to edit existing loan message in channel {channel.id}: {e}. Sending new one instead.")
 
-            # Create view with repayment button
-            view = LoanChannelView(self, loan_id) if loan['status'] == 'active' else None
-
-            # Clear channel and post updated info
-            await channel.purge(limit=100)
-            await channel.send(embed=embed, view=view)
+            # If no existing message was found or editing failed, send a new one.
+            new_message = await channel.send(embed=embed, view=view)
+            self.logger.info(f"Sent new loan message with ID {new_message.id} in channel {channel.id}")
 
         except Exception as e:
-            self.logger.error(f"대출 채널 업데이트 실패: {e}")
+            self.logger.error(f"Failed to update loan channel {channel.id}: {e}")
 
     async def create_negotiation_channel(self, interaction: discord.Interaction, request_id: int,
                                          counter_amount: int, counter_interest: float, counter_days: int, note: str):
