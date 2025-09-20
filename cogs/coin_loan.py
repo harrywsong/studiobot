@@ -2162,7 +2162,7 @@ class LoanCog(commands.Cog):
                         )
                         embed.add_field(
                             name="이제 가능한 활동",
-                            value="✅ 다른 사용자로부터 코인 받기\\n✅ 카지노 게임 참여\\n✅ 모든 코인 관련 활동",
+                            value="✅ 다른 사용자로부터 코인 받기\n✅ 카지노 게임 참여\n✅ 모든 코인 관련 활동",
                             inline=False
                         )
                         await user.send(embed=embed)
