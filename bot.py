@@ -832,10 +832,10 @@ class MyBot(commands.Bot):
             'cogs.casino_minesweeper',
             'cogs.casino_slots',
             'cogs.casino_bingo',
-            'cogs.casino_tictactoe',
+            # 'cogs.casino_tictactoe',
             'cogs.casino_holdem',
             'cogs.casino_carddraw',
-            'cogs.casino_numberguess',
+            # 'cogs.casino_numberguess',
             'cogs.casino_rps',
             'cogs.lottery'
         ]

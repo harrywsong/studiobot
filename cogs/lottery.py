@@ -103,7 +103,7 @@ class LotteryCog(commands.Cog):
 
         embed = discord.Embed(
             title="🎰 복권 시스템",
-            description="카지노 게임 수수료로 쌓인 복권 팟에 참가하세요!\n아래 버튼을 눌러 1-35 중 5개 번호를 선택하세요.",
+            description="크래시 게임 수수료로 쌓인 복권 팟에 참가하세요!\n아래 버튼을 눌러 1-35 중 5개 번호를 선택하세요.",
             color=discord.Color.gold(),
             timestamp=datetime.now(timezone.utc)
         )
@@ -160,7 +160,7 @@ class LotteryCog(commands.Cog):
             inline=False
         )
 
-        embed.set_footer(text="카지노 게임 수수료가 자동으로 팟에 추가됩니다")
+        embed.set_footer(text="크래시 게임 수수료가 자동으로 팟에 추가됩니다")
 
         return embed
 
@@ -310,7 +310,7 @@ class LotteryCog(commands.Cog):
                 return False, error_msg
 
             # Check minimum pot amount
-            min_pot = get_server_setting(guild_id, 'lottery_min_pot', 1000)
+            min_pot = get_server_setting(guild_id, 'lottery_min_pot', 100)
             if lottery.pot_amount < min_pot:
                 return False, f"복권 팟이 최소 금액({min_pot:,} 코인)에 도달하지 않았습니다."
 
@@ -519,7 +519,7 @@ class LotteryCog(commands.Cog):
             inline=False
         )
 
-        embed.set_footer(text="카지노 게임 수수료로 팟이 쌓입니다")
+        embed.set_footer(text="크래시 게임 수수료로 팟이 쌓입니다")
         await interaction.response.send_message(embed=embed)
 
     @app_commands.command(name="복권추첨", description="복권 추첨을 실시합니다 (관리자 전용)")
