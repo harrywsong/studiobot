@@ -572,9 +572,16 @@ class BlackjackCog(commands.Cog):
             await interaction.response.send_message(restriction['message'], ephemeral=True)
             return
 
-        # Get server-specific bet limits
+        # Get booster-aware betting limits
+        booster_cog = self.bot.get_cog('BoosterPerks')
+        if booster_cog:
+            max_bet = booster_cog.get_betting_limit(interaction.user)
+        else:
+            # Fallback to server settings or default
+            max_bet = get_server_setting(interaction.guild.id, 'blackjack_max_bet', 200)
+
+        # Set minimum bet (same for everyone)
         min_bet = get_server_setting(interaction.guild.id, 'blackjack_min_bet', 20)
-        max_bet = get_server_setting(interaction.guild.id, 'blackjack_max_bet', 200)
 
         if bet < min_bet or bet > max_bet:
             await interaction.response.send_message(f"❌ 베팅은 {min_bet}~{max_bet:,} 코인 사이만 가능합니다.", ephemeral=True)

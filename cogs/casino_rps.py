@@ -102,29 +102,45 @@ class RPSView(discord.ui.View):
                 item.disabled = True
 
             # Handle coin rewards (no bet to deduct since it's free)
+            # Handle coin rewards (no bet to deduct since it's free)
             coins_cog = self.bot.get_cog('CoinsCog')
             payout = 0
 
             if coins_cog:
+                # Check if user is a booster for double rewards
+                user = self.bot.get_user(self.user_id)
+                guild = self.bot.get_guild(self.guild_id)
+                is_booster = False
+
+                if user and guild:
+                    member = guild.get_member(self.user_id)
+                    if member:
+                        booster_cog = self.bot.get_cog('BoosterPerks')
+                        if booster_cog:
+                            is_booster = booster_cog.is_server_booster(member)
+
+                # Calculate rewards with booster bonus
                 if self.result == "player":
-                    # Win: get 20 coins
-                    payout = 20
+                    # Win: get 20 coins (40 for boosters)
+                    base_reward = 20
+                    payout = base_reward * (2 if is_booster else 1)
                     success = await coins_cog.add_coins(
                         self.user_id,
                         self.guild_id,
                         payout,
                         "rps_win",
-                        f"가위바위보 승리 - {self.player_choice} vs {self.bot_choice}"
+                        f"가위바위보 승리 - {self.player_choice} vs {self.bot_choice}" + (" (부스터 보너스)" if is_booster else "")
                     )
                 elif self.result == "tie":
-                    # Tie: get 10 coins as consolation
-                    payout = 10
+                    # Tie: get 10 coins (20 for boosters) as consolation
+                    base_reward = 10
+                    payout = base_reward * (2 if is_booster else 1)
                     success = await coins_cog.add_coins(
                         self.user_id,
                         self.guild_id,
                         payout,
                         "rps_tie",
-                        f"가위바위보 무승부 - {self.player_choice} vs {self.bot_choice}"
+                        f"가위바위보 무승부 - {self.player_choice} vs {self.bot_choice}" + (" (부스터 보너스)" if is_booster else "")
                     )
                 # Loss: no reward but no loss either
 
@@ -222,10 +238,26 @@ class RPSView(discord.ui.View):
             inline=False
         )
 
-        # Game rules
+        # Check if current user is a booster for display
+        user = self.bot.get_user(self.user_id)
+        guild = self.bot.get_guild(self.guild_id)
+        is_booster = False
+
+        if user and guild:
+            member = guild.get_member(self.user_id)
+            if member:
+                booster_cog = self.bot.get_cog('BoosterPerks')
+                if booster_cog:
+                    is_booster = booster_cog.is_server_booster(member)
+
+        if is_booster:
+            rewards_text = "• 승리: 40코인 💰 (부스터 보너스!)\n• 무승부: 20코인 🤝 (부스터 보너스!)\n• 패배: 0코인 😞"
+        else:
+            rewards_text = "• 승리: 20코인 💰\n• 무승부: 10코인 🤝\n• 패배: 0코인 😞\n\n🌟 **서버 부스터는 2배 보상!**"
+
         embed.add_field(
             name="📋 게임 규칙",
-            value="• 🪨 바위는 ✂️ 가위를 이김\n• 📄 보는 🪨 바위를 이김\n• ✂️ 가위는 📄 보를 이김\n\n**보상:**\n• 승리: 20코인 💰\n• 무승부: 10코인 🤝\n• 패배: 0코인 😞\n\n**쿨다운:** 2분",
+            value=f"• 🪨 바위는 ✂️ 가위를 이김\n• 📄 보는 🪨 바위를 이김\n• ✂️ 가위는 📄 보를 이김\n\n**보상:**\n{rewards_text}\n\n**쿨다운:** 2분",
             inline=False
         )
 

@@ -1139,11 +1139,28 @@ class HoldemView(discord.ui.View):
             return
         # =================================================================
 
-        # Validate player can afford buy-in
+        # FIXED: Proper booster limit validation for joining players
         casino_base = self.bot.get_cog('CasinoBaseCog')
         if casino_base:
+            # Get the user's betting limit (considers booster status)
+            booster_cog = self.bot.get_cog('BoosterPerks')
+            if booster_cog:
+                user_max_bet = booster_cog.get_betting_limit(interaction.user)
+            else:
+                user_max_bet = 1000  # Default max for hold'em
+
+            # Check if user can afford the buy-in within their limits
+            if self.game.buy_in > user_max_bet:
+                await interaction.response.send_message(
+                    f"❌ 이 게임의 바이인({self.game.buy_in:,}코인)이 당신의 베팅 한도({user_max_bet:,}코인)를 초과합니다!\n"
+                    f"{'서버 부스터가 되면 베팅 한도가 증가합니다!' if user_max_bet < 1000 else ''}",
+                    ephemeral=True
+                )
+                return
+
+            # Standard casino validation (balance check, etc.)
             can_start, error_msg = await casino_base.validate_game_start(
-                interaction, "holdem", self.game.buy_in, self.game.buy_in, self.game.buy_in
+                interaction, "holdem", self.game.buy_in, 100, user_max_bet  # Use user's actual limit
             )
             if not can_start:
                 await interaction.response.send_message(error_msg, ephemeral=True)
@@ -1348,11 +1365,19 @@ class HoldemCog(commands.Cog):
                 await interaction.response.send_message(restriction['message'], ephemeral=True)
                 return
 
-            # Validate game using casino base
+            # FIXED: Apply booster limits to buy-in validation
             casino_base = self.bot.get_cog('CasinoBaseCog')
             if casino_base:
+                # Get the user's betting limit (considers booster status)
+                booster_cog = self.bot.get_cog('BoosterPerks')
+                if booster_cog:
+                    user_max_bet = booster_cog.get_betting_limit(interaction.user)
+                else:
+                    user_max_bet = 1000  # Default max for hold'em
+
+                # Validate with user's actual limits
                 can_start, error_msg = await casino_base.validate_game_start(
-                    interaction, "holdem", buy_in, 100, 1000
+                    interaction, "holdem", buy_in, 100, user_max_bet  # Use user's actual limit
                 )
                 if not can_start:
                     await interaction.response.send_message(error_msg, ephemeral=True)

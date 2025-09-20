@@ -416,11 +416,19 @@ class CardDrawView(discord.ui.View):
             return
         # =================================================================
 
-        # Validate bet
+        # Validate game using casino base with booster limits
         casino_base = self.bot.get_cog('CasinoBaseCog')
         if casino_base:
+            # Get booster-aware betting limits
+            booster_cog = self.bot.get_cog('BoosterPerks')
+            if booster_cog:
+                max_bet = booster_cog.get_betting_limit(interaction.user)
+            else:
+                # Fallback to default
+                max_bet = 200
+
             can_start, error_msg = await casino_base.validate_game_start(
-                interaction, "carddraw", self.bet, self.bet, self.bet
+                interaction, "carddraw", self.bet, self.bet, max_bet
             )
             if not can_start:
                 await interaction.followup.send(error_msg, ephemeral=True)
@@ -570,11 +578,18 @@ class CardDrawCog(commands.Cog):
 
         await interaction.response.defer()
 
-        # Validate game using casino base
+        # Validate game using casino base with booster limits
         casino_base = self.bot.get_cog('CasinoBaseCog')
         if casino_base:
+            # Get booster-aware betting limits
+            booster_cog = self.bot.get_cog('BoosterPerks')
+            if booster_cog:
+                max_bet = booster_cog.get_betting_limit(interaction.user)
+            else:
+                max_bet = 200
+
             can_start, error_msg = await casino_base.validate_game_start(
-                interaction, "carddraw", bet, 20, 200
+                interaction, "carddraw", bet, 20, max_bet
             )
             if not can_start:
                 await interaction.followup.send(error_msg, ephemeral=True)

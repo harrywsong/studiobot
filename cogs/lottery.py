@@ -418,7 +418,7 @@ class LotteryCog(commands.Cog):
         return True, ""
 
     async def enter_lottery(self, user_id: int, guild_id: int, numbers: List[int]) -> tuple[bool, str]:
-        """Enter user into lottery"""
+        """Enter user into lottery with improved error handling"""
         try:
             lottery = self.get_lottery(guild_id)
 
@@ -440,19 +440,40 @@ class LotteryCog(commands.Cog):
             entry = LotteryEntry(user_id, numbers, datetime.now(timezone.utc))
             lottery.entries[user_id] = entry
 
-            # Update database
-            await self.bot.pool.execute("""
-                INSERT INTO lottery_entries (guild_id, user_id, numbers)
-                VALUES ($1, $2, $3)
-                ON CONFLICT (guild_id, user_id)
-                DO UPDATE SET numbers = $3, entry_time = NOW()
-            """, guild_id, user_id, json.dumps(numbers))
+            # Update database with better error handling
+            if self.bot.pool:
+                try:
+                    await self.bot.pool.execute("""
+                        INSERT INTO lottery_entries (guild_id, user_id, numbers)
+                        VALUES ($1, $2, $3)
+                        ON CONFLICT (guild_id, user_id)
+                        DO UPDATE SET numbers = $3, entry_time = NOW()
+                    """, guild_id, user_id, json.dumps(numbers))
+
+                    self.logger.info(f"사용자 {user_id}가 길드 {guild_id}에서 복권에 참가했습니다: {numbers}")
+
+                except Exception as db_error:
+                    self.logger.error(f"데이터베이스 업데이트 실패: {db_error}", exc_info=True)
+                    # Remove from memory if DB update failed
+                    if user_id in lottery.entries:
+                        del lottery.entries[user_id]
+                    return False, "데이터베이스 오류로 참가에 실패했습니다. 다시 시도해주세요."
+            else:
+                self.logger.warning("데이터베이스 풀이 없어 메모리에만 저장됩니다.")
 
             return True, f"복권에 성공적으로 참가했습니다! 선택 번호: {sorted(numbers)}"
 
         except Exception as e:
-            self.logger.error(f"복권 참가 실패: {e}")
-            return False, "복권 참가 중 오류가 발생했습니다."
+            self.logger.error(f"복권 참가 중 오류: {e}", exc_info=True)
+
+            # Clean up memory entry if it was added
+            try:
+                if user_id in lottery.entries:
+                    del lottery.entries[user_id]
+            except:
+                pass
+
+            return False, "복권 참가 중 시스템 오류가 발생했습니다."
 
     def calculate_matches(self, user_numbers: List[int], winning_numbers: List[int]) -> int:
         """Calculate number of matches"""
@@ -794,50 +815,111 @@ class LotteryEntryModal(discord.ui.Modal, title="복권 번호 선택"):
         self.add_item(self.number5)
 
     async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-
         try:
-            # Parse numbers
+            await interaction.response.defer(ephemeral=True)
+
+            # Parse numbers with better error handling
             numbers = []
-            for field in [self.number1, self.number2, self.number3, self.number4, self.number5]:
+            for i, field in enumerate([self.number1, self.number2, self.number3, self.number4, self.number5], 1):
                 try:
-                    num = int(field.value.strip())
+                    value = field.value.strip()
+                    if not value:
+                        await interaction.followup.send(f"번호 {i}가 비어있습니다.", ephemeral=True)
+                        return
+
+                    num = int(value)
+                    if not (1 <= num <= 35):
+                        await interaction.followup.send(f"번호는 1부터 35 사이여야 합니다. (입력된 값: {num})", ephemeral=True)
+                        return
+
                     numbers.append(num)
                 except ValueError:
-                    await interaction.followup.send("모든 번호는 숫자여야 합니다.", ephemeral=True)
+                    await interaction.followup.send(f"'{field.value}'는 유효한 숫자가 아닙니다.", ephemeral=True)
                     return
 
-            # Enter lottery
-            success, message = await self.cog.enter_lottery(interaction.user.id, interaction.guild.id, numbers)
+            # Check for duplicates
+            if len(set(numbers)) != len(numbers):
+                await interaction.followup.send("중복된 번호는 선택할 수 없습니다.", ephemeral=True)
+                return
+
+            # Ensure we have a valid guild
+            if not interaction.guild:
+                await interaction.followup.send("서버에서만 사용할 수 있습니다.", ephemeral=True)
+                return
+
+            # Enter lottery with additional error checking
+            try:
+                success, message = await self.cog.enter_lottery(
+                    interaction.user.id,
+                    interaction.guild.id,
+                    numbers
+                )
+            except Exception as lottery_error:
+                self.cog.logger.error(f"복권 참가 함수에서 오류: {lottery_error}", exc_info=True)
+                await interaction.followup.send("복권 시스템에 일시적인 오류가 있습니다. 잠시 후 다시 시도해주세요.", ephemeral=True)
+                return
 
             if success:
-                lottery = self.cog.get_lottery(interaction.guild.id)
-                embed = discord.Embed(
-                    title="🎫 복권 참가 완료!",
-                    description=message,
-                    color=discord.Color.green(),
-                    timestamp=datetime.now(timezone.utc)
-                )
-                embed.add_field(name="현재 팟", value=f"{lottery.pot_amount:,} 코인", inline=True)
-                embed.add_field(name="총 참가자", value=f"{len(lottery.entries)}명", inline=True)
-                embed.set_footer(text="행운을 빕니다!")
+                try:
+                    lottery = self.cog.get_lottery(interaction.guild.id)
+                    embed = discord.Embed(
+                        title="🎫 복권 참가 완료!",
+                        description=message,
+                        color=discord.Color.green(),
+                        timestamp=datetime.now(timezone.utc)
+                    )
+                    embed.add_field(name="현재 팟", value=f"{lottery.pot_amount:,} 코인", inline=True)
+                    embed.add_field(name="총 참가자", value=f"{len(lottery.entries)}명", inline=True)
+                    embed.set_footer(text="행운을 빕니다!")
 
-                await interaction.followup.send(embed=embed, ephemeral=True)
+                    await interaction.followup.send(embed=embed, ephemeral=True)
 
-                # Update the main lottery interface
-                await self.cog.update_lottery_interface()
+                    # Update the main lottery interface safely
+                    try:
+                        await self.cog.update_lottery_interface(interaction.guild.id)
+                    except Exception as update_error:
+                        self.cog.logger.error(f"로또 인터페이스 업데이트 오류: {update_error}")
+                        # Don't fail the whole operation if interface update fails
 
+                except Exception as display_error:
+                    self.cog.logger.error(f"성공 메시지 표시 오류: {display_error}", exc_info=True)
+                    # Still send a basic success message
+                    await interaction.followup.send("복권 참가가 완료되었습니다!", ephemeral=True)
             else:
                 embed = discord.Embed(
-                    title="❌ 복권 참가 실패",
+                    title="⌘ 복권 참가 실패",
                     description=message,
                     color=discord.Color.red()
                 )
                 await interaction.followup.send(embed=embed, ephemeral=True)
 
+        except discord.errors.InteractionResponded:
+            # Interaction was already responded to
+            self.cog.logger.warning("인터랙션이 이미 응답되었습니다.")
+
+        except discord.errors.NotFound:
+            # Interaction expired or not found
+            self.cog.logger.warning("인터랙션을 찾을 수 없습니다 (만료됨)")
+
         except Exception as e:
-            self.cog.logger.error(f"복권 참가 모달 오류: {e}")
-            await interaction.followup.send("복권 참가 중 오류가 발생했습니다.", ephemeral=True)
+            self.cog.logger.error(f"복권 참가 모달에서 예상치 못한 오류: {e}", exc_info=True)
+
+            # Try to send error message if interaction hasn't been responded to
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(
+                        "복권 참가 중 오류가 발생했습니다. 관리자에게 문의해주세요.",
+                        ephemeral=True
+                    )
+                else:
+                    await interaction.followup.send(
+                        "복권 참가 중 오류가 발생했습니다. 관리자에게 문의해주세요.",
+                        ephemeral=True
+                    )
+            except:
+                # If we can't even send an error message, just log it
+                self.cog.logger.error("오류 메시지 전송도 실패했습니다.")
+                pass
 class LotteryInterfaceView(discord.ui.View):
     """Persistent view for the main lottery interface"""
 

@@ -45,14 +45,21 @@ class CoinflipCog(commands.Cog):
             return "🪙 **동전 던지기 준비**"
 
     async def validate_game(self, interaction: discord.Interaction, bet: int):
-        """Validate game using casino base"""
+        """Validate game using casino base with booster limits"""
         casino_base = self.bot.get_cog('CasinoBaseCog')
         if not casino_base:
             return False, "카지노 시스템을 찾을 수 없습니다!"
 
-        # Get server-specific limits
+        # Get booster-aware betting limits
+        booster_cog = self.bot.get_cog('BoosterPerks')
+        if booster_cog:
+            max_bet = booster_cog.get_betting_limit(interaction.user)
+        else:
+            # Fallback to server settings or default
+            max_bet = get_server_setting(interaction.guild.id, 'coinflip_max_bet', 200)
+
+        # Set minimum bet (same for everyone)
         min_bet = get_server_setting(interaction.guild.id, 'coinflip_min_bet', 5)
-        max_bet = get_server_setting(interaction.guild.id, 'coinflip_max_bet', 200)
 
         return await casino_base.validate_game_start(
             interaction, "coinflip", bet, min_bet, max_bet

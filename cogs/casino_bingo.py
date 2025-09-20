@@ -520,13 +520,21 @@ class BingoCog(commands.Cog):
         self.logger.info("빙고 게임 시스템이 초기화되었습니다.")
 
     async def validate_game(self, interaction: discord.Interaction, bet: int):
-        """Validate game using casino base"""
+        """Validate game using casino base with booster limits"""
         casino_base = self.bot.get_cog('CasinoBaseCog')
         if not casino_base:
             return False, "카지노 시스템을 찾을 수 없습니다!"
 
+        # Get booster-aware betting limits
+        booster_cog = self.bot.get_cog('BoosterPerks')
+        if booster_cog:
+            max_bet = booster_cog.get_betting_limit(interaction.user)
+        else:
+            # Fallback to default
+            max_bet = 500
+
         return await casino_base.validate_game_start(
-            interaction, "bingo", bet, 30, 500
+            interaction, "bingo", bet, 30, max_bet
         )
 
     @app_commands.command(name="빙고", description="멀티플레이어 빙고 게임을 시작하거나 참가합니다")

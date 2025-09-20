@@ -363,7 +363,16 @@ class MinesweeperCog(commands.Cog):
 
         # Get server-specific limits
         min_bet = get_server_setting(interaction.guild.id, 'minesweeper_min_bet', 10)
-        max_bet = get_server_setting(interaction.guild.id, 'minesweeper_max_bet', 500)
+        server_max_bet = get_server_setting(interaction.guild.id, 'minesweeper_max_bet', 200)  # Changed from 500
+
+        # Apply booster limit
+        booster_cog = self.bot.get_cog('BoosterPerks')
+        if booster_cog:
+            max_bet = booster_cog.get_betting_limit(interaction.user)
+            # Use the lower of server setting or booster limit
+            max_bet = min(server_max_bet, max_bet)
+        else:
+            max_bet = server_max_bet
 
         return await casino_base.validate_game_start(
             interaction, "minesweeper", bet, min_bet, max_bet

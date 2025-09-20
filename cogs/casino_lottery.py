@@ -60,14 +60,23 @@ class CasinoLotteryCog(commands.Cog):
             return f"🎯 **선택한 번호**\n{self.create_lottery_balls_display(chosen_numbers)}"
 
     async def validate_game(self, interaction: discord.Interaction, bet: int):
-        """Validate game using casino base"""
+        """Validate game using casino base with booster limits"""
         casino_base = self.bot.get_cog('CasinoBaseCog')
         if not casino_base:
             return False, "카지노 시스템을 찾을 수 없습니다!"
 
         # Get server-specific limits
         min_bet = get_server_setting(interaction.guild.id, 'lottery_min_bet', 50)
-        max_bet = get_server_setting(interaction.guild.id, 'lottery_max_bet', 200)
+        server_max_bet = get_server_setting(interaction.guild.id, 'lottery_max_bet', 200)
+
+        # Apply booster limit
+        booster_cog = self.bot.get_cog('BoosterPerks')
+        if booster_cog:
+            max_bet = booster_cog.get_betting_limit(interaction.user)
+            # Use the lower of server setting or booster limit
+            max_bet = min(server_max_bet, max_bet)
+        else:
+            max_bet = server_max_bet
 
         return await casino_base.validate_game_start(
             interaction, "lottery", bet, min_bet, max_bet
@@ -89,6 +98,11 @@ class CasinoLotteryCog(commands.Cog):
             await interaction.response.send_message(restriction['message'], ephemeral=True)
             return
 
+        # Get server-specific limits
+        min_bet = get_server_setting(interaction.guild.id, 'lottery_min_bet', 50)
+        server_max_bet = get_server_setting(interaction.guild.id, 'lottery_max_bet', 200)
+
+        # Apply booster limit
         can_start, error_msg = await self.validate_game(interaction, bet)
         if not can_start:
             await interaction.response.send_message(error_msg, ephemeral=True)

@@ -66,27 +66,38 @@ class RouletteSimpleCog(commands.Cog):
             return
 
         # Validation based on bet type
-        if bet_type == "color":
-            if value.lower() not in ["red", "black"]:
-                await interaction.response.send_message("색깔은 'red' 또는 'black'만 가능합니다!", ephemeral=True)
-                return
-            # Get server-specific limits for color bets
-            min_bet = get_server_setting(interaction.guild.id, 'roulette_color_min_bet', 20)
-            max_bet = get_server_setting(interaction.guild.id, 'roulette_color_max_bet', 200)
-        else:  # number
-            try:
-                num_value = int(value)
-                if not (0 <= num_value <= 36):
-                    await interaction.response.send_message("숫자는 0-36 사이만 가능합니다!", ephemeral=True)
+            # Validation based on bet type
+            if bet_type == "color":
+                if value.lower() not in ["red", "black"]:
+                    await interaction.response.send_message("색깔은 'red' 또는 'black'만 가능합니다!", ephemeral=True)
                     return
-            except ValueError:
-                await interaction.response.send_message("유효한 숫자를 입력해주세요!", ephemeral=True)
-                return
-            # Get server-specific limits for number bets
-            min_bet = get_server_setting(interaction.guild.id, 'roulette_number_min_bet', 10)
-            max_bet = get_server_setting(interaction.guild.id, 'roulette_number_max_bet', 500)
+                # Get server-specific limits for color bets
+                min_bet = get_server_setting(interaction.guild.id, 'roulette_color_min_bet', 20)
+                server_max_bet = get_server_setting(interaction.guild.id, 'roulette_color_max_bet', 200)
+            else:  # number
+                try:
+                    num_value = int(value)
+                    if not (0 <= num_value <= 36):
+                        await interaction.response.send_message("숫자는 0-36 사이만 가능합니다!", ephemeral=True)
+                        return
+                except ValueError:
+                    await interaction.response.send_message("유효한 숫자를 입력해주세요!", ephemeral=True)
+                    return
+                # Get server-specific limits for number bets
+                min_bet = get_server_setting(interaction.guild.id, 'roulette_number_min_bet', 10)
+                server_max_bet = get_server_setting(interaction.guild.id, 'roulette_number_max_bet',
+                                                    200)  # Changed from 500
 
-        can_start, error_msg = await self.validate_game(interaction, bet, min_bet, max_bet)
+            # Apply booster limit
+            booster_cog = self.bot.get_cog('BoosterPerks')
+            if booster_cog:
+                max_bet = booster_cog.get_betting_limit(interaction.user)
+                # Use the lower of server setting or booster limit
+                max_bet = min(server_max_bet, max_bet)
+            else:
+                max_bet = server_max_bet
+
+            can_start, error_msg = await self.validate_game(interaction, bet, min_bet, max_bet)
         if not can_start:
             await interaction.response.send_message(error_msg, ephemeral=True)
             return

@@ -56,14 +56,23 @@ class HiLowCog(commands.Cog):
         return f"{dice_display}\n\n🎯 **합계: {total}** {color_emoji}\n{indicator}"
 
     async def validate_game(self, interaction: discord.Interaction, bet: int):
-        """Validate game using casino base"""
+        """Validate game using casino base with booster limits"""
         casino_base = self.bot.get_cog('CasinoBaseCog')
         if not casino_base:
             return False, "카지노 시스템을 찾을 수 없습니다!"
 
         # Get server-specific limits
         min_bet = get_server_setting(interaction.guild.id, 'hilow_min_bet', 10)
-        max_bet = get_server_setting(interaction.guild.id, 'hilow_max_bet', 200)
+        server_max_bet = get_server_setting(interaction.guild.id, 'hilow_max_bet', 200)
+
+        # Apply booster limit
+        booster_cog = self.bot.get_cog('BoosterPerks')
+        if booster_cog:
+            max_bet = booster_cog.get_betting_limit(interaction.user)
+            # Use the lower of server setting or booster limit
+            max_bet = min(server_max_bet, max_bet)
+        else:
+            max_bet = server_max_bet
 
         return await casino_base.validate_game_start(
             interaction, "hilow", bet, min_bet, max_bet

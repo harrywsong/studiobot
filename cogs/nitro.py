@@ -67,12 +67,8 @@ class BoosterPerks(commands.Cog):
         self.booster_message_id = None  # Track the booster message
         self.booster_channel_id = 1366767855462518825  # Your specified channel
         self.betting_limits = {
-            'normal': 1000,
-            'booster': 5000
-        }
-        self.daily_limits = {
-            'normal': 500,
-            'booster': 1500
+            'normal': 200,
+            'booster': 500
         }
 
         # 지속적인 데이터 로드
@@ -148,8 +144,7 @@ class BoosterPerks(commands.Cog):
         embed.add_field(
             name="💰 향상된 게임 한도",
             value=(
-                "• **베팅 한도**: 5,000 코인 (일반 회원: 1,000)\n"
-                "• **일일 보상**: 1,500 코인 (일반 회원: 500)\n"
+                "• **베팅 한도**: 500 코인 (일반 회원: 200)\n"
                 "• **우선 지원**: 빠른 문의 응답"
             ),
             inline=False
@@ -470,7 +465,6 @@ class BoosterPerks(commands.Cog):
             name="💰 향상된 게임 한도",
             value=(
                 "• **베팅 한도**: 5,000 코인 (일반 회원: 1,000)\n"
-                "• **일일 보상**: 1,500 코인 (일반 회원: 500)\n"
                 "• **우선 지원**: 빠른 문의 응답"
             ),
             inline=False
@@ -503,7 +497,7 @@ class BoosterPerks(commands.Cog):
             icon_url=ctx.guild.icon.url if ctx.guild.icon else None
         )
 
-        embed.set_thumbnail(url="https://cdn3.emoji.gg/emojis/39561-server-boost-level-3-alt.png")  # Boost emoji
+        embed.set_thumbnail(url="https://cdn.discordapp.com/emojis/852881418382819348.png")  # Boost emoji
 
         # Send the embed with persistent view
         try:
@@ -580,12 +574,6 @@ class BoosterPerks(commands.Cog):
         if self.is_server_booster(member):
             return self.betting_limits['booster']
         return self.betting_limits['normal']
-
-    def get_daily_limit(self, member: discord.Member) -> int:
-        """부스터 상태에 따라 멤버의 일일 코인 한도 가져오기."""
-        if self.is_server_booster(member):
-            return self.daily_limits['booster']
-        return self.daily_limits['normal']
 
     @commands.Cog.listener()
     async def on_member_update(self, before: discord.Member, after: discord.Member):
