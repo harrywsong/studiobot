@@ -47,46 +47,46 @@ class LotteryCog(commands.Cog):
 
         # cogs/lottery.py
 
-        async def setup_lottery_interface(self):
-            """Setup the persistent lottery interface in the designated channel"""
-            try:
-                channel = self.bot.get_channel(self.lottery_channel_id)
-                if not channel:
-                    self.logger.error(f"복권 채널을 찾을 수 없습니다: {self.lottery_channel_id}")
-                    return
+    async def setup_lottery_interface(self):
+        """Setup the persistent lottery interface in the designated channel"""
+        try:
+            channel = self.bot.get_channel(self.lottery_channel_id)
+            if not channel:
+                self.logger.error(f"복권 채널을 찾을 수 없습니다: {self.lottery_channel_id}")
+                return
 
-                # Get the guild ID directly from the channel object
-                guild_id = channel.guild.id
+            # Get the guild ID directly from the channel object
+            guild_id = channel.guild.id
 
-                # Look for existing interface message
-                async for message in channel.history(limit=20):
-                    if (message.author == self.bot.user and
-                            message.embeds and
-                            "복권 시스템" in message.embeds[0].title):
-                        self.lottery_interface_message = message
-                        # Add the view to existing message
-                        view = LotteryInterfaceView(self)
-                        try:
-                            # When editing, also update the embed with current data for the correct guild
-                            updated_embed = self.create_lottery_interface_embed(target_guild_id=guild_id)
-                            await message.edit(embed=updated_embed, view=view)
-                            self.logger.info("기존 복권 인터페이스에 뷰를 연결하고 업데이트했습니다.")
-                            return
-                        except discord.HTTPException:
-                            # If edit fails, delete and create new
-                            await message.delete()
-                            break
+            # Look for existing interface message
+            async for message in channel.history(limit=20):
+                if (message.author == self.bot.user and
+                        message.embeds and
+                        "복권 시스템" in message.embeds[0].title):
+                    self.lottery_interface_message = message
+                    # Add the view to existing message
+                    view = LotteryInterfaceView(self)
+                    try:
+                        # When editing, also update the embed with current data for the correct guild
+                        updated_embed = self.create_lottery_interface_embed(target_guild_id=guild_id)
+                        await message.edit(embed=updated_embed, view=view)
+                        self.logger.info("기존 복권 인터페이스에 뷰를 연결하고 업데이트했습니다.")
+                        return
+                    except discord.HTTPException:
+                        # If edit fails, delete and create new
+                        await message.delete()
+                        break
 
-                # Create new interface
-                # Pass the guild_id to the embed creation function
-                embed = self.create_lottery_interface_embed(target_guild_id=guild_id)
-                view = LotteryInterfaceView(self)
+            # Create new interface
+            # Pass the guild_id to the embed creation function
+            embed = self.create_lottery_interface_embed(target_guild_id=guild_id)
+            view = LotteryInterfaceView(self)
 
-                self.lottery_interface_message = await channel.send(embed=embed, view=view)
-                self.logger.info(f"새로운 복권 인터페이스를 생성했습니다: {self.lottery_interface_message.id}")
+            self.lottery_interface_message = await channel.send(embed=embed, view=view)
+            self.logger.info(f"새로운 복권 인터페이스를 생성했습니다: {self.lottery_interface_message.id}")
 
-            except Exception as e:
-                self.logger.error(f"복권 인터페이스 설정 실패: {e}")
+        except Exception as e:
+            self.logger.error(f"복권 인터페이스 설정 실패: {e}")
     def create_lottery_interface_embed(self, target_guild_id: int = None) -> discord.Embed:
         """Create the main lottery interface embed"""
         # If no target guild specified, try to determine from channel context or use first available
