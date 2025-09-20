@@ -556,7 +556,7 @@ class CardDrawCog(commands.Cog):
         self.logger.info("카드 뽑기 대결 게임 시스템이 초기화되었습니다.")
 
     @app_commands.command(name="카드뽑기", description="카드 뽑기 대결 게임을 시작합니다")
-    @app_commands.describe(bet="베팅 금액 (20-500코인)")
+    @app_commands.describe(bet="베팅 금액 (20-200코인)")
     async def carddraw(self, interaction: discord.Interaction, bet: int = 50):
         # Check if casino games are enabled for this server
         if not interaction.guild or not is_feature_enabled(interaction.guild.id, 'casino_games'):
@@ -574,7 +574,7 @@ class CardDrawCog(commands.Cog):
         casino_base = self.bot.get_cog('CasinoBaseCog')
         if casino_base:
             can_start, error_msg = await casino_base.validate_game_start(
-                interaction, "carddraw", bet, 20, 500
+                interaction, "carddraw", bet, 20, 200
             )
             if not can_start:
                 await interaction.followup.send(error_msg, ephemeral=True)
