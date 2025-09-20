@@ -12,7 +12,7 @@ from utils.config import (
 )
 from cogs.coins import check_user_casino_eligibility
 
-class LotteryCog(commands.Cog):
+class CasinoLotteryCog(commands.Cog):
     """Lottery number matching game - Multi-server aware with standardized embeds"""
 
     def __init__(self, bot):
@@ -246,4 +246,4 @@ class LotteryCog(commands.Cog):
 
 
 async def setup(bot):
-    await bot.add_cog(LotteryCog(bot))
+    await bot.add_cog(CasinoLotteryCog(bot))
