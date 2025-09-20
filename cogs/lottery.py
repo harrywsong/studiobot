@@ -187,7 +187,7 @@ class LotteryCog(commands.Cog):
 
         embed.add_field(
             name="🏆 상금 구조",
-            value="5개 일치: 팟의 500% (분할)\n4개 일치: 팟의 300% (분할)\n3개 일치: 팟의 100% (분할)",
+            value="5개 일치: 팟의 60% (분할)\n4개 일치: 팟의 30% (분할)\n3개 일치: 팟의 10% (분할)\n\n💡 당첨자가 없으면 팟이 다음 추첨으로 이월됩니다",
             inline=False
         )
 
@@ -544,7 +544,7 @@ class LotteryCog(commands.Cog):
         return len(set(user_numbers) & set(winning_numbers))
 
     async def conduct_draw(self, guild_id: int) -> tuple[bool, str, Dict]:
-        """Conduct lottery draw"""
+        """Conduct lottery draw with balanced payouts"""
         try:
             lottery = self.get_lottery(guild_id)
 
@@ -568,39 +568,49 @@ class LotteryCog(commands.Cog):
                 if matches >= 3:  # 3+ matches win prizes
                     results[matches].append((user_id, entry.numbers))
 
-            # Calculate prizes (100% of pot distributed)
+            # More balanced prize distribution (uses existing pot only)
             prize_pool = lottery.pot_amount
-            remaining_pot = 0
 
-            # Calculate inflated prizes (create new coins for excitement)
-            prize_multipliers = {
-                5: 5.0,  # 500% of pot for perfect match
-                4: 3.0,  # 300% of pot for 4 matches
-                3: 1.0  # 100% of pot for 3 matches
+            # Distribute the pot across winners - no money creation
+            prize_percentages = {
+                5: 0.60,  # 60% of pot for perfect match
+                4: 0.30,  # 30% of pot for 4 matches
+                3: 0.10  # 10% of pot for 3 matches
             }
 
             winners = {}
             total_awarded = 0
+            remaining_pot = prize_pool
 
-            for match_count in [5, 4, 3]:
-                if results[match_count]:
-                    # Calculate total prize for this category
-                    category_total_prize = int(prize_pool * prize_multipliers[match_count])
-                    # Split among all winners in this category
-                    per_winner = category_total_prize // len(results[match_count])
+            # Distribute prizes only if there are actually winners
+            total_winners = sum(len(results[match_count]) for match_count in [5, 4, 3])
 
-                    if per_winner > 0:
-                        for user_id, numbers in results[match_count]:
-                            winners[user_id] = {
-                                'matches': match_count,
-                                'numbers': numbers,
-                                'prize': per_winner
-                            }
-                            total_awarded += per_winner
+            if total_winners > 0:
+                for match_count in [5, 4, 3]:
+                    if results[match_count]:
+                        # Calculate total prize for this category
+                        category_total_prize = int(prize_pool * prize_percentages[match_count])
+                        # Split among all winners in this category
+                        per_winner = category_total_prize // len(results[match_count])
+
+                        if per_winner > 0:
+                            for user_id, numbers in results[match_count]:
+                                winners[user_id] = {
+                                    'matches': match_count,
+                                    'numbers': numbers,
+                                    'prize': per_winner
+                                }
+                                total_awarded += per_winner
+
+                # Calculate remaining pot (what wasn't awarded)
+                remaining_pot = prize_pool - total_awarded
+            else:
+                # No winners - pot rolls over to next draw
+                remaining_pot = prize_pool
 
             # Award prizes
             coins_cog = self.bot.get_cog('CoinsCog')
-            if coins_cog:
+            if coins_cog and winners:
                 for user_id, win_data in winners.items():
                     await coins_cog.add_coins(
                         user_id, guild_id, win_data['prize'],
@@ -615,20 +625,20 @@ class LotteryCog(commands.Cog):
                                         list(winners.keys())[0] if winners else None,
                                         total_awarded, len(lottery.entries))
 
-            # Reset for next draw (pot goes to zero after full payout)
-            lottery.pot_amount = 0
+            # Update pot (keep remaining amount for rollover)
+            lottery.pot_amount = remaining_pot
             lottery.entries.clear()
             lottery.last_draw_time = datetime.now(timezone.utc)
             lottery.last_prize_amount = total_awarded
 
-            # Update database (pot reset to zero)
+            # Update database with remaining pot
             await self.bot.pool.execute("""
                 UPDATE lottery_state 
-                SET pot_amount = 0, winning_numbers = $1, last_draw_time = NOW(), last_prize_amount = $2
+                SET pot_amount = $4, winning_numbers = $1, last_draw_time = NOW(), last_prize_amount = $2
                 WHERE guild_id = $3
-            """, json.dumps(winning_numbers), total_awarded, guild_id)
+            """, json.dumps(winning_numbers), total_awarded, guild_id, remaining_pot)
 
-            # Clear entries
+            # Clear entries for next draw
             await self.bot.pool.execute("DELETE FROM lottery_entries WHERE guild_id = $1", guild_id)
 
             draw_results = {
@@ -636,18 +646,17 @@ class LotteryCog(commands.Cog):
                 'winners': winners,
                 'total_entries': len(lottery.entries),
                 'total_awarded': total_awarded,
-                'remaining_pot': 0
+                'remaining_pot': remaining_pot
             }
 
             # Update the lottery interface after successful draw
-            await self.update_lottery_interface()
+            await self.update_lottery_interface(guild_id)
 
             return True, "추첨이 완료되었습니다.", draw_results
 
         except Exception as e:
             self.logger.error(f"복권 추첨 실패: {e}")
             return False, f"추첨 중 오류가 발생했습니다: {e}", {}
-
     @app_commands.command(name="복권참가", description="복권에 참가합니다 (1-35 중 5개 번호 선택)")
     @app_commands.describe(
         n1="첫 번째 번호 (1-35)", n2="두 번째 번호", n3="세 번째 번호", n4="네 번째 번호", n5="다섯 번째 번호"
@@ -719,10 +728,10 @@ class LotteryCog(commands.Cog):
                 inline=True
             )
 
-        # Prize structure info
+        # Updated prize structure info
         embed.add_field(
             name="🏆 상금 구조",
-            value="5개 일치: 팟의 500% (분할)\n4개 일치: 팟의 300% (분할)\n3개 일치: 팟의 100% (분할)\n*가상 화폐 생성으로 높은 보상*",
+            value="5개 일치: 팟의 60% (분할)\n4개 일치: 팟의 30% (분할)\n3개 일치: 팟의 10% (분할)\n\n📈 당첨자 없으면 팟 이월로 더 큰 잭팟!",
             inline=False
         )
 
