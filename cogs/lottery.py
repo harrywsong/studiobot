@@ -652,8 +652,8 @@ class LotteryCog(commands.Cog):
     @app_commands.describe(
         n1="첫 번째 번호 (1-35)", n2="두 번째 번호", n3="세 번째 번호", n4="네 번째 번호", n5="다섯 번째 번호"
     )
-    async def enter_lottery(self, interaction: discord.Interaction,
-                            n1: int, n2: int, n3: int, n4: int, n5: int):
+    async def lottery_participate(self, interaction: discord.Interaction,
+                                  n1: int, n2: int, n3: int, n4: int, n5: int):
         """Enter the lottery with 5 numbers"""
         await interaction.response.defer(ephemeral=True)
 
@@ -674,7 +674,7 @@ class LotteryCog(commands.Cog):
 
         else:
             embed = discord.Embed(
-                title="❌ 복권 참가 실패",
+                title="⌘ 복권 참가 실패",
                 description=message,
                 color=discord.Color.red()
             )
