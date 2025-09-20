@@ -122,7 +122,7 @@ class LotteryCog(commands.Cog):
             inline=True
         )
 
-        min_pot = 2000
+        min_pot = get_server_setting(target_guild_id, 'lottery_min_pot', 1000) # Use a consistent default
         embed.add_field(
             name="📊 최소 팟",
             value=f"{min_pot:,} 코인",
