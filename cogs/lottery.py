@@ -797,12 +797,51 @@ class LotteryCog(commands.Cog):
         )
 
         await interaction.followup.send(embed=embed, ephemeral=True)
+
+    async def repost_lottery_interface(self, guild_id: int):
+        """Delete the old lottery interface and create a new one as the latest message"""
+        try:
+            # Get the lottery channel
+            channel = self.bot.get_channel(self.lottery_channel_id)
+            if not channel:
+                self.logger.error(f"복권 채널을 찾을 수 없습니다: {self.lottery_channel_id}")
+                return
+
+            # Ensure we have permission to send messages
+            if not channel.permissions_for(channel.guild.me).send_messages:
+                self.logger.error(f"복권 채널에 메시지 전송 권한이 없습니다: {channel.name}")
+                return
+
+            # Delete the old interface message if it exists
+            if self.lottery_interface_message:
+                try:
+                    await self.lottery_interface_message.delete()
+                    self.logger.info(f"기존 복권 인터페이스 메시지 삭제: {self.lottery_interface_message.id}")
+                except discord.HTTPException as e:
+                    self.logger.warning(f"기존 메시지 삭제 실패 (이미 삭제되었을 수 있음): {e}")
+                except Exception as e:
+                    self.logger.error(f"기존 메시지 삭제 중 오류: {e}")
+
+            # Create new interface embed and view
+            embed = self.create_lottery_interface_embed(target_guild_id=guild_id)
+            view = LotteryInterfaceView(self)
+
+            # Send the new interface message
+            try:
+                self.lottery_interface_message = await channel.send(embed=embed, view=view)
+                self.logger.info(f"새로운 복권 인터페이스를 생성했습니다: {self.lottery_interface_message.id}")
+            except discord.HTTPException as e:
+                self.logger.error(f"복권 인터페이스 메시지 생성 실패: {e}")
+                return
+
+        except Exception as e:
+            self.logger.error(f"복권 인터페이스 재게시 실패: {e}", exc_info=True)
     @app_commands.command(name="복권추첨", description="복권 추첨을 실시합니다 (관리자 전용)")
     async def conduct_lottery_draw(self, interaction: discord.Interaction):
         """Conduct lottery draw (admin only)"""
         # Check admin permissions
         if not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message("❌ 관리자만 사용할 수 있습니다.", ephemeral=True)
+            await interaction.response.send_message("⛔ 관리자만 사용할 수 있습니다.", ephemeral=True)
             return
 
         await interaction.response.defer()
@@ -810,7 +849,7 @@ class LotteryCog(commands.Cog):
         success, message, results = await self.conduct_draw(interaction.guild.id)
 
         if not success:
-            embed = discord.Embed(title="❌ 추첨 실패", description=message, color=discord.Color.red())
+            embed = discord.Embed(title="⛔ 추첨 실패", description=message, color=discord.Color.red())
             await interaction.followup.send(embed=embed)
             return
 
@@ -852,7 +891,12 @@ class LotteryCog(commands.Cog):
             embed.add_field(name="😢 당첨자", value="이번 추첨에는 당첨자가 없습니다.", inline=False)
 
         embed.set_footer(text="다음 추첨을 위해 새로 참가해주세요!")
+
+        # Send the draw results first
         await interaction.followup.send(embed=embed)
+
+        # Now repost the lottery interface as the latest message
+        await self.repost_lottery_interface(interaction.guild.id)
 
     @app_commands.command(name="복권내역", description="복권 추첨 이력을 확인합니다")
     async def lottery_history(self, interaction: discord.Interaction):
