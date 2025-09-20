@@ -851,13 +851,15 @@ class LoanCog(commands.Cog):
             # Check if there is an existing loan message to edit
             existing_message = None
             try:
-                async for message in channel.history(limit=5):
-                    if message.author == self.bot.user and message.embeds:
-                        if "대출 정보" in message.embeds[0].title:
-                            existing_message = message
-                            break
-            except discord.Forbidden:
-                self.logger.warning("Bot does not have permissions to read channel history to find the loan message.")
+                # Look for the bot's most recent message with loan info
+                async for message in channel.history(limit=10):
+                    if (message.author == self.bot.user and
+                            message.embeds and
+                            any("대출 정보" in embed.title for embed in message.embeds if embed.title)):
+                        existing_message = message
+                        break
+            except (discord.Forbidden, discord.HTTPException) as e:
+                self.logger.warning(f"Bot does not have permissions to read channel history: {e}")
 
             # If an existing message is found, try to edit it.
             if existing_message:
@@ -865,16 +867,20 @@ class LoanCog(commands.Cog):
                     await existing_message.edit(embed=embed, view=view)
                     self.logger.info(f"Edited existing loan message in channel {channel.id}")
                     return
-                except (discord.Forbidden, discord.HTTPException) as e:
-                    self.logger.error(
+                except (discord.Forbidden, discord.HTTPException, discord.NotFound) as e:
+                    self.logger.warning(
                         f"Failed to edit existing loan message in channel {channel.id}: {e}. Sending new one instead.")
 
             # If no existing message was found or editing failed, send a new one.
-            new_message = await channel.send(embed=embed, view=view)
-            self.logger.info(f"Sent new loan message with ID {new_message.id} in channel {channel.id}")
+            try:
+                new_message = await channel.send(embed=embed, view=view)
+                self.logger.info(f"Sent new loan message with ID {new_message.id} in channel {channel.id}")
+            except (discord.Forbidden, discord.HTTPException) as e:
+                self.logger.error(f"Failed to send loan message to channel {channel.id}: {e}")
 
         except Exception as e:
             self.logger.error(f"Failed to update loan channel {channel.id}: {e}")
+            # Don't try to send anything if there's an exception to avoid the embed object error
 
     async def create_negotiation_channel(self, interaction: discord.Interaction, request_id: int,
                                          counter_amount: int, counter_interest: float, counter_days: int, note: str):
