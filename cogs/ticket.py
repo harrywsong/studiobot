@@ -124,7 +124,7 @@ class HelpView(View):
         content_mention = f"{member.mention} {staff_role.mention}"
 
         try:
-            await ticket_chan.send(embed=embed, view=CloseTicketView(self.bot, self.logger))
+            await ticket_chan.send(content=content_mention, embed=embed, view=CloseTicketView(self.bot, self.logger))
             # extra={'guild_id': guild_id} 추가
             self.logger.info(
                 f"🎫 {member.display_name} ({member.id})님이 `{ticket_chan.name}` (ID: {ticket_chan.id}) 티켓을 생성했습니다.",
