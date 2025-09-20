@@ -814,7 +814,7 @@ class MyBot(commands.Bot):
             'cogs.message_history',
             # 'cogs.recording',
             'cogs.admin',
-            'cogs.setup',
+            # 'cogs.setup',
             'cogs.scrim',
             'cogs.coin_loan',
             'cogs.nitro',
