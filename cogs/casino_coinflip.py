@@ -147,8 +147,8 @@ class CoinflipCog(commands.Cog):
         # Determine result first
         result = random.choice(["heads", "tails"])
         won = result == choice
+        total_losses_to_lottery = 0
 
-        # Calculate net change and apply atomically
         if won:
             payout = int(bet * payout_multiplier)
             net_change = payout - bet  # This is the profit (could be 0 if payout = bet)
@@ -185,6 +185,11 @@ class CoinflipCog(commands.Cog):
             )
             payout = 0
             net_change = -bet
+
+            # Add 50% of loss to lottery pot
+            total_losses_to_lottery = int(bet * 0.5)
+            from cogs.lottery import add_casino_fee_to_lottery
+            await add_casino_fee_to_lottery(self.bot, interaction.guild.id, total_losses_to_lottery)
 
         # Check if coin operation succeeded
         if not success:
@@ -241,6 +246,10 @@ class CoinflipCog(commands.Cog):
         else:
             result_text = f"❌ **빗나감!**"
             result_info = f"{result_text}\n\n💸 **손실:** {bet:,} 코인"
+
+            # Add lottery contribution info
+            if total_losses_to_lottery > 0:
+                result_info += f"\n\n🎰 베팅 손실 중 {total_losses_to_lottery:,} 코인이 복권 팟에 추가되었습니다."
 
         embed.add_field(name="📊 게임 결과", value=result_info, inline=False)
 

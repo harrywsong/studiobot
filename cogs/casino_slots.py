@@ -164,6 +164,7 @@ class SlotMachineCog(commands.Cog):
         # Final spin result
         reel1, reel2, reel3 = self.spin_reels()
         payout, result_text = self.calculate_payout(reel1, reel2, reel3, bet, interaction.guild.id)
+        total_losses_to_lottery = 0
 
         # Determine result color and title
         if payout == 0:
@@ -198,7 +199,8 @@ class SlotMachineCog(commands.Cog):
         result_info = f"{result_text}\n\n"
 
         if payout > 0:
-            await coins_cog.add_coins(interaction.user.id, interaction.guild.id, payout, "slot_machine_win", f"Slot machine win: {reel1}{reel2}{reel3}")
+            await coins_cog.add_coins(interaction.user.id, interaction.guild.id, payout, "slot_machine_win",
+                                      f"Slot machine win: {reel1}{reel2}{reel3}")
 
             profit = payout - bet
             result_info += f"💰 **수익:** {payout:,} 코인\n"
@@ -208,6 +210,15 @@ class SlotMachineCog(commands.Cog):
                 result_info += f"📉 **순손실:** {profit:,} 코인"
         else:
             result_info += f"💸 **손실:** {bet:,} 코인"
+
+            # Add 50% of loss to lottery pot
+            total_losses_to_lottery = int(bet * 0.5)
+            from cogs.lottery import add_casino_fee_to_lottery
+            await add_casino_fee_to_lottery(self.bot, interaction.guild.id, total_losses_to_lottery)
+
+            # Add lottery contribution info
+            if total_losses_to_lottery > 0:
+                result_info += f"\n\n🎰 베팅 손실 중 {total_losses_to_lottery:,} 코인이 복권 팟에 추가되었습니다."
 
         embed.add_field(
             name="📊 게임 결과",

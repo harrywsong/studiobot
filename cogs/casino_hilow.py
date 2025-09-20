@@ -159,6 +159,7 @@ class HiLowCog(commands.Cog):
         won = False
         result_type = ""
         payout = 0
+        total_losses_to_lottery = 0
 
         if choice == "high" and total > 7:
             won = True
@@ -173,6 +174,10 @@ class HiLowCog(commands.Cog):
             await coins_cog.add_coins(interaction.user.id, interaction.guild.id, bet, "hilow_push", "Hi-Low push (7)")
         else:
             result_type = "loss"
+            # Add 50% of loss to lottery pot
+            total_losses_to_lottery = int(bet * 0.5)
+            from cogs.lottery import add_casino_fee_to_lottery
+            await add_casino_fee_to_lottery(self.bot, interaction.guild.id, total_losses_to_lottery)
 
         if won:
             # Get server-specific payout multiplier
@@ -220,6 +225,10 @@ class HiLowCog(commands.Cog):
         else:
             result_text = f"❌ **예상 실패!**"
             result_info = f"{result_text}\n\n💸 **손실:** {bet:,} 코인"
+
+            # Add lottery contribution info
+            if total_losses_to_lottery > 0:
+                result_info += f"\n\n🎰 베팅 손실 중 {total_losses_to_lottery:,} 코인이 복권 팟에 추가되었습니다."
 
         embed.add_field(name="📊 게임 결과", value=result_info, inline=False)
 

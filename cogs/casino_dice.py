@@ -141,6 +141,7 @@ class DiceGameCog(commands.Cog):
         die2 = random.randint(1, 6)
         total = die1 + die2
         won = total == guess
+        total_losses_to_lottery = 0
 
         # Payout calculation (higher multiplier for harder guesses) - server configurable
         base_multipliers = {2: 35, 3: 17, 4: 11, 5: 8, 6: 6, 7: 5, 8: 6, 9: 8, 10: 11, 11: 17, 12: 35}
@@ -152,6 +153,11 @@ class DiceGameCog(commands.Cog):
             payout = bet * payout_multipliers[guess]
             await coins_cog.add_coins(interaction.user.id, interaction.guild.id, payout, "dice_game_win",
                                       f"Dice win: {total}")
+        else:
+            # Add 50% of loss to lottery pot
+            total_losses_to_lottery = int(bet * 0.5)
+            from cogs.lottery import add_casino_fee_to_lottery
+            await add_casino_fee_to_lottery(self.bot, interaction.guild.id, total_losses_to_lottery)
 
         # Standardized title and color logic
         if won:
@@ -185,6 +191,10 @@ class DiceGameCog(commands.Cog):
         else:
             result_text = f"❌ **예상 실패!** (실제: {total})"
             result_info = f"{result_text}\n\n💸 **손실:** {bet:,} 코인"
+
+            # Add lottery contribution info
+            if total_losses_to_lottery > 0:
+                result_info += f"\n\n🎰 베팅 손실 중 {total_losses_to_lottery:,} 코인이 복권 팟에 추가되었습니다."
 
         embed.add_field(name="📊 게임 결과", value=result_info, inline=False)
 

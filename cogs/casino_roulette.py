@@ -156,6 +156,7 @@ class RouletteSimpleCog(commands.Cog):
 
         won = False
         payout = 0
+        total_losses_to_lottery = 0
 
         # Get server-specific payout multipliers
         color_multiplier = get_server_setting(interaction.guild.id, 'roulette_color_multiplier', 2)
@@ -171,6 +172,11 @@ class RouletteSimpleCog(commands.Cog):
         if won:
             await coins_cog.add_coins(interaction.user.id, interaction.guild.id, payout, "roulette_win",
                                       f"Roulette win: {winning_number}")
+        else:
+            # Add 50% of loss to lottery pot
+            total_losses_to_lottery = int(bet * 0.5)
+            from cogs.lottery import add_casino_fee_to_lottery
+            await add_casino_fee_to_lottery(self.bot, interaction.guild.id, total_losses_to_lottery)
 
         # Standardized title and color logic
         if won:
@@ -212,6 +218,10 @@ class RouletteSimpleCog(commands.Cog):
             winning_display = f"🟢 **{winning_number}**" if winning_color == "green" else f"🔴 **{winning_number}**" if winning_color == "red" else f"⚫ **{winning_number}**"
             result_text = f"❌ **예상 실패!** (결과: {winning_display})"
             result_info = f"{result_text}\n\n💸 **손실:** {bet:,} 코인"
+
+            # Add lottery contribution info
+            if total_losses_to_lottery > 0:
+                result_info += f"\n\n🎰 베팅 손실 중 {total_losses_to_lottery:,} 코인이 복권 팟에 추가되었습니다."
 
         embed.add_field(name="📊 게임 결과", value=result_info, inline=False)
 

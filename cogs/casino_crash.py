@@ -573,7 +573,7 @@ class CrashCog(commands.Cog):
         await self.end_crash_game(guild_id)
 
     async def end_crash_game(self, guild_id: int):
-        """End the crash game with final results"""
+        """End the crash game with final results and loss-based lottery contributions"""
         current_game = self.server_games.get(guild_id)
         game_message = self.server_messages.get(guild_id)
         game_view = self.server_views.get(guild_id)
@@ -582,6 +582,23 @@ class CrashCog(commands.Cog):
             return
 
         current_game.game_over = True
+
+        # Process losing players (add 50% of their bet to lottery pot)
+        coins_cog = self.bot.get_cog('CoinsCog')
+        total_losses_to_lottery = 0
+
+        for user_id, player_data in current_game.players.items():
+            if not player_data['cashed_out']:  # Player lost their bet
+                loss_contribution = int(player_data['bet'] * 0.5)  # 50% of lost bet
+                total_losses_to_lottery += loss_contribution
+
+                # Add loss contribution to lottery pot
+                from cogs.lottery import add_casino_fee_to_lottery
+                await add_casino_fee_to_lottery(self.bot, guild_id, loss_contribution)
+
+        if total_losses_to_lottery > 0:
+            self.logger.info(
+                f"Added {total_losses_to_lottery} coins from crash losses to lottery pot (guild: {guild_id})")
 
         if game_message and game_view:
             try:
@@ -593,6 +610,15 @@ class CrashCog(commands.Cog):
 
                 game_view.update_button_states()
                 embed = await game_view.create_embed(mock_interaction, final=True)
+
+                # Add loss contribution info to final embed if there were losses
+                if total_losses_to_lottery > 0:
+                    embed.add_field(
+                        name="🎰 복권 기여금",
+                        value=f"패배 플레이어의 베팅 금액 중 {total_losses_to_lottery:,} 코인이 복권 팟에 추가되었습니다.",
+                        inline=False
+                    )
+
                 chart_file = await game_view.create_chart()
                 await game_message.edit(embed=embed, view=game_view, attachments=[chart_file] if chart_file else [])
             except Exception as e:

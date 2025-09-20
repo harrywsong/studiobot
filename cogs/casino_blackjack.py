@@ -219,6 +219,7 @@ class BlackjackView(discord.ui.View):
         player_value = self.calculate_hand_value(self.player_hand)
         dealer_value = self.calculate_hand_value(self.dealer_hand)
         total_payout = 0
+        is_loss = False
 
         # Calculate main bet payout
         if self.player_blackjack and not self.dealer_blackjack:
@@ -230,6 +231,7 @@ class BlackjackView(discord.ui.View):
         elif player_value > 21:
             total_payout = 0
             result_text = f"💥 **버스트!**"
+            is_loss = True
         elif dealer_value > 21 or player_value > dealer_value:
             multiplier = 4 if self.doubled_down else 2
             total_payout = self.bet * multiplier
@@ -241,15 +243,32 @@ class BlackjackView(discord.ui.View):
         else:
             total_payout = 0
             result_text = f"😞 **패배!**"
+            is_loss = True
 
         # Handle insurance bet
+        insurance_won = False
         if self.insurance_bet > 0:
             if self.dealer_blackjack:
                 insurance_payout = self.insurance_bet * 3
                 total_payout += insurance_payout
                 result_text += f"\n💡 **보험 적중!**"
+                insurance_won = True
             else:
                 result_text += f"\n❌ **보험 실패**"
+
+        # Add loss contribution to lottery if player lost
+        total_losses_to_lottery = 0
+        if is_loss:
+            total_bet_lost = self.bet * (2 if self.doubled_down else 1)
+            if self.insurance_bet > 0 and not insurance_won:
+                total_bet_lost += self.insurance_bet
+
+            loss_contribution = int(total_bet_lost * 0.5)
+            total_losses_to_lottery = loss_contribution
+
+            # Add loss contribution to lottery pot
+            from cogs.lottery import add_casino_fee_to_lottery
+            await add_casino_fee_to_lottery(self.bot, interaction.guild.id, loss_contribution)
 
         # Only add coins if there's actually a payout
         if total_payout > 0:
@@ -269,6 +288,10 @@ class BlackjackView(discord.ui.View):
                 result_info += f"📉 **순손실:** {profit:,} 코인"
         else:
             result_info = f"{result_text}\n\n💸 **손실:** {total_bet:,} 코인"
+
+        # Add lottery contribution info if applicable
+        if total_losses_to_lottery > 0:
+            result_info += f"\n\n🎰 베팅 손실 중 {total_losses_to_lottery:,} 코인이 복권 팟에 추가되었습니다."
 
         embed.add_field(name="📊 게임 결과", value=result_info, inline=False)
 
