@@ -125,10 +125,16 @@ class BoosterVoiceCog(commands.Cog):
         except Exception as e:
             self.logger.error(f"❌ Error creating booster message: {e}", exc_info=True)
 
+    def get_system(self, guild_id: int) -> BoosterVoiceSystem:
+        """Get or create booster voice system for guild"""
+        if guild_id not in self.guild_systems:
+            self.guild_systems[guild_id] = BoosterVoiceSystem(guild_id)
+        return self.guild_systems[guild_id]
+
     def is_eligible_creator(self, member: discord.Member) -> bool:
         """Check if member is a booster or has the designated role"""
         is_booster = member.premium_since is not None
-        has_special_role = member.get_role(self.voice_creator_role_id) is not None
+        has_special_role = any(role.id == self.voice_creator_role_id for role in member.roles)
         return is_booster or has_special_role
 
     async def create_booster_channel(self, member: discord.Member, interaction: discord.Interaction = None) -> Optional[
