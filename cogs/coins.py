@@ -928,7 +928,7 @@ class CoinsCog(commands.Cog):
 
             # Post a public message to a specific channel and tag the role
             try:
-                target_channel_id = 1059248496730976307
+                target_channel_id = 1418553048724406455
                 target_role_id = 1417771791384051823
 
                 channel = self.bot.get_channel(target_channel_id)
