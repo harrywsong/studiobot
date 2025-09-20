@@ -120,7 +120,7 @@ class LotteryCog(commands.Cog):
             inline=True
         )
 
-        min_pot = 1000  # Default minimum pot
+        min_pot = 100  # Default minimum pot
         embed.add_field(
             name="📊 최소 팟",
             value=f"{min_pot:,} 코인",
@@ -488,7 +488,7 @@ class LotteryCog(commands.Cog):
         embed.add_field(name="💰 현재 팟", value=f"{lottery.pot_amount:,} 코인", inline=True)
         embed.add_field(name="👥 참가자 수", value=f"{len(lottery.entries)}명", inline=True)
 
-        min_pot = get_server_setting(interaction.guild.id, 'lottery_min_pot', 1000)
+        min_pot = get_server_setting(interaction.guild.id, 'lottery_min_pot', 100)
         embed.add_field(name="📊 최소 팟", value=f"{min_pot:,} 코인", inline=True)
 
         if lottery.last_draw_time:
@@ -737,7 +737,7 @@ class LotteryInterfaceView(discord.ui.View):
             return
 
         # Check minimum pot
-        min_pot = get_server_setting(interaction.guild.id, 'lottery_min_pot', 1000)
+        min_pot = get_server_setting(interaction.guild.id, 'lottery_min_pot', 100)
         if lottery.pot_amount < min_pot:
             await interaction.response.send_message(
                 f"복권 팟이 최소 금액({min_pot:,} 코인)에 도달하지 않았습니다.",
