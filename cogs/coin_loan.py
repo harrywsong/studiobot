@@ -680,6 +680,7 @@ class LoanCog(commands.Cog):
             await interaction.followup.send(f"✅ 대출이 승인되었습니다. 채널: {channel.mention}", ephemeral=True)
 
             # Send DM to user
+            # Send DM to user
             try:
                 dm_embed = discord.Embed(
                     title="✅ 대출 승인",
@@ -692,8 +693,12 @@ class LoanCog(commands.Cog):
                 dm_embed.add_field(name="전용 채널", value=channel.mention, inline=False)
 
                 await user.send(embed=dm_embed)
-            except:
-                pass
+                self.logger.info(f"Loan approval DM sent to user {user.id}")
+            except discord.Forbidden:
+                self.logger.warning(
+                    f"Could not send loan approval DM to user {user.id} - DMs are disabled or user blocked bot.")
+            except Exception as e:
+                self.logger.error(f"Failed to send loan approval DM to user {user.id}: {e}")
 
         except Exception as e:
             self.logger.error(f"대출 승인 처리 중 오류: {e}")
@@ -2140,12 +2145,16 @@ class LoanCog(commands.Cog):
                         )
                         embed.add_field(
                             name="이제 가능한 활동",
-                            value="✅ 다른 사용자로부터 코인 받기\n✅ 카지노 게임 참여\n✅ 모든 코인 관련 활동",
+                            value="✅ 다른 사용자로부터 코인 받기\\n✅ 카지노 게임 참여\\n✅ 모든 코인 관련 활동",
                             inline=False
                         )
                         await user.send(embed=embed)
-                    except:
-                        pass  # Ignore if can't send DM
+                        self.logger.info(f"Overdue loan restriction lift DM sent to user {user.id}")
+                    except discord.Forbidden:
+                        self.logger.warning(
+                            f"Could not send restriction lift DM to user {user.id} - DMs disabled or user blocked bot.")
+                    except Exception as e:
+                        self.logger.error(f"Failed to send restriction lift DM to user {user.id}: {e}")
 
         except Exception as e:
             self.logger.error(f"Error updating user restrictions after payment: {e}", extra={'guild_id': guild_id})
