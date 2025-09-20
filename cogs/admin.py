@@ -112,6 +112,8 @@ class DevToolsCog(commands.Cog):
 
         try:
             await self.bot.load_extension(f'cogs.{cog}')
+        except commands.ExtensionAlreadyLoaded:
+            await self.bot.reload_extension(f'cogs.{cog}')
 
             embed = discord.Embed(
                 title="✅ Cog Loaded Successfully",
