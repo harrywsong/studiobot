@@ -163,9 +163,6 @@ class BoosterVoiceCog(commands.Cog):
                     await interaction.followup.send("음성 채널 카테고리를 찾을 수 없습니다. 관리자에게 문의하세요.", ephemeral=True)
                 return None
 
-            # Get the channel to position the new one above
-            after_channel = guild.get_channel(1207988341698592788)
-
             # New channel name format
             channel_name = f"╠❔┆{member.display_name}의 채널"
 
@@ -184,17 +181,24 @@ class BoosterVoiceCog(commands.Cog):
                     move_members=True,  # Can move/kick members
                     mute_members=True,  # Can mute members
                     deafen_members=True,  # Can deafen members
-                    priority_speaker=True
                 )
             }
 
+            # 1. Create the channel first
             voice_channel = await guild.create_voice_channel(
                 name=channel_name,
                 category=category,
                 overwrites=overwrites,
-                position=after_channel.position if after_channel else None,
                 reason=f"부스터/특별 역할을 위한 전용 음성 채널"
             )
+
+            # 2. Get the position of the channel we need to be above
+            target_channel = guild.get_channel(1207988341698592788)
+            if target_channel and target_channel.category == category:
+                # 3. Edit the new channel's position to be above the target
+                new_position = target_channel.position
+                await voice_channel.edit(position=new_position)
+
 
             # Store the mapping
             system.user_channels[member.id] = voice_channel.id
