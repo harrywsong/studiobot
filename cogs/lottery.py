@@ -729,6 +729,65 @@ class LotteryCog(commands.Cog):
         embed.set_footer(text="크래시 게임 수수료로 팟이 쌓입니다")
         await interaction.response.send_message(embed=embed)
 
+    @app_commands.command(name="복권디버그", description="복권 시스템 디버깅 (관리자 전용)")
+    async def debug_lottery(self, interaction: discord.Interaction):
+        """Debug lottery system"""
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("관리자만 사용할 수 있습니다.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        debug_info = []
+
+        try:
+            # Test 1: Basic system check
+            debug_info.append("시스템 체크:")
+            debug_info.append(f"- Bot ready: {self.bot.is_ready()}")
+            debug_info.append(f"- Database pool: {'있음' if self.bot.pool else '없음'}")
+            debug_info.append(f"- Guild lotteries: {len(self.guild_lotteries)}")
+
+            # Test 2: Guild lottery check
+            try:
+                lottery = self.get_lottery(interaction.guild.id)
+                debug_info.append(f"- 길드 복권 시스템: 정상")
+                debug_info.append(f"- 현재 팟: {lottery.pot_amount}")
+                debug_info.append(f"- 현재 참가자: {len(lottery.entries)}")
+            except Exception as e:
+                debug_info.append(f"- 길드 복권 시스템: 오류 ({e})")
+
+            # Test 3: Database connection
+            if self.bot.pool:
+                try:
+                    result = await self.bot.pool.fetchval("SELECT 1")
+                    debug_info.append(f"- DB 연결: 정상")
+                except Exception as e:
+                    debug_info.append(f"- DB 연결: 오류 ({e})")
+
+            # Test 4: Settings check
+            try:
+                min_pot = get_server_setting(interaction.guild.id, 'lottery_min_pot', 1000)
+                debug_info.append(f"- 최소 팟 설정: {min_pot}")
+            except Exception as e:
+                debug_info.append(f"- 설정 확인: 오류 ({e})")
+
+            # Test 5: Number validation
+            try:
+                valid, msg = self.validate_lottery_numbers([1, 2, 3, 4, 5])
+                debug_info.append(f"- 번호 검증: {'정상' if valid else '오류'} ({msg})")
+            except Exception as e:
+                debug_info.append(f"- 번호 검증: 오류 ({e})")
+
+        except Exception as e:
+            debug_info.append(f"디버그 중 오류: {e}")
+
+        embed = discord.Embed(
+            title="복권 시스템 디버그",
+            description="\n".join(debug_info),
+            color=discord.Color.blue()
+        )
+
+        await interaction.followup.send(embed=embed, ephemeral=True)
     @app_commands.command(name="복권추첨", description="복권 추첨을 실시합니다 (관리자 전용)")
     async def conduct_lottery_draw(self, interaction: discord.Interaction):
         """Conduct lottery draw (admin only)"""
@@ -830,66 +889,6 @@ class LotteryCog(commands.Cog):
             self.logger.error(f"복권 이력 조회 실패: {e}")
             await interaction.response.send_message("이력 조회 중 오류가 발생했습니다.", ephemeral=True)
 
-
-@app_commands.command(name="복권디버그", description="복권 시스템 디버깅 (관리자 전용)")
-async def debug_lottery(self, interaction: discord.Interaction):
-    """Debug lottery system"""
-    if not interaction.user.guild_permissions.administrator:
-        await interaction.response.send_message("⛔ 관리자만 사용할 수 있습니다.", ephemeral=True)
-        return
-
-    await interaction.response.defer(ephemeral=True)
-
-    debug_info = []
-
-    try:
-        # Test 1: Basic system check
-        debug_info.append("🔍 **시스템 체크:**")
-        debug_info.append(f"- Bot ready: {self.bot.is_ready()}")
-        debug_info.append(f"- Database pool: {'✅' if self.bot.pool else '❌'}")
-        debug_info.append(f"- Guild lotteries: {len(self.guild_lotteries)}")
-
-        # Test 2: Guild lottery check
-        try:
-            lottery = self.get_lottery(interaction.guild.id)
-            debug_info.append(f"- 길드 복권 시스템: ✅")
-            debug_info.append(f"- 현재 팟: {lottery.pot_amount}")
-            debug_info.append(f"- 현재 참가자: {len(lottery.entries)}")
-        except Exception as e:
-            debug_info.append(f"- 길드 복권 시스템: ❌ ({e})")
-
-        # Test 3: Database connection
-        if self.bot.pool:
-            try:
-                result = await self.bot.pool.fetchval("SELECT 1")
-                debug_info.append(f"- DB 연결: ✅")
-            except Exception as e:
-                debug_info.append(f"- DB 연결: ❌ ({e})")
-
-        # Test 4: Settings check
-        try:
-            min_pot = get_server_setting(interaction.guild.id, 'lottery_min_pot', 1000)
-            debug_info.append(f"- 최소 팟 설정: {min_pot}")
-        except Exception as e:
-            debug_info.append(f"- 설정 확인: ❌ ({e})")
-
-        # Test 5: Number validation
-        try:
-            valid, msg = self.validate_lottery_numbers([1, 2, 3, 4, 5])
-            debug_info.append(f"- 번호 검증: {'✅' if valid else '❌'} ({msg})")
-        except Exception as e:
-            debug_info.append(f"- 번호 검증: ❌ ({e})")
-
-    except Exception as e:
-        debug_info.append(f"디버그 중 오류: {e}")
-
-    embed = discord.Embed(
-        title="🔧 복권 시스템 디버그",
-        description="\n".join(debug_info),
-        color=discord.Color.blue()
-    )
-
-    await interaction.followup.send(embed=embed, ephemeral=True)
 
 class LotteryEntryModal(discord.ui.Modal, title="복권 번호 선택"):
     """Modal for entering lottery numbers"""
