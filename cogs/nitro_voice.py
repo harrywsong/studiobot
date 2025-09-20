@@ -33,6 +33,7 @@ class BoosterVoiceCog(commands.Cog):
         self.data_file = 'booster_voice_data.json'
         self.booster_message_id = None
         self.booster_channel_id = 1366767855462518825  # The specific channel ID from user's request
+        self.voice_creator_role_id = 1417771791384051823 # New role ID
         self.load_data()
 
         # Initialize the persistent view
@@ -124,19 +125,15 @@ class BoosterVoiceCog(commands.Cog):
         except Exception as e:
             self.logger.error(f"❌ Error creating booster message: {e}", exc_info=True)
 
-    def get_system(self, guild_id: int) -> BoosterVoiceSystem:
-        """Get or create booster voice system for guild"""
-        if guild_id not in self.guild_systems:
-            self.guild_systems[guild_id] = BoosterVoiceSystem(guild_id)
-        return self.guild_systems[guild_id]
-
-    def is_booster(self, member: discord.Member) -> bool:
-        """Check if member is currently boosting the server"""
-        return member.premium_since is not None
+    def is_eligible_creator(self, member: discord.Member) -> bool:
+        """Check if member is a booster or has the designated role"""
+        is_booster = member.premium_since is not None
+        has_special_role = member.get_role(self.voice_creator_role_id) is not None
+        return is_booster or has_special_role
 
     async def create_booster_channel(self, member: discord.Member, interaction: discord.Interaction = None) -> Optional[
         discord.VoiceChannel]:
-        """Create a voice channel for a booster with full permissions"""
+        """Create a voice channel for an eligible creator with full permissions"""
         try:
             guild = member.guild
             system = self.get_system(guild.id)
@@ -166,7 +163,7 @@ class BoosterVoiceCog(commands.Cog):
             # New channel name format
             channel_name = f"╠❔┆{member.display_name}의 채널"
 
-            # Set up permissions - booster gets full control
+            # Set up permissions - creator gets full control
             overwrites = {
                 guild.default_role: discord.PermissionOverwrite(
                     view_channel=True,
@@ -190,7 +187,7 @@ class BoosterVoiceCog(commands.Cog):
                 category=category,
                 overwrites=overwrites,
                 position=after_channel.position if after_channel else None,
-                reason=f"부스터 {member.display_name}를 위한 전용 음성 채널"
+                reason=f"부스터/특별 역할을 위한 전용 음성 채널"
             )
 
             # Store the mapping
@@ -212,10 +209,10 @@ class BoosterVoiceCog(commands.Cog):
                 )
                 embed.add_field(
                     name="⚠️ 주의사항",
-                    value="서버 부스트를 중단하면 채널이 자동으로 삭제됩니다.",
+                    value="서버 부스트를 중단하거나 특별 역할이 제거되면 채널이 자동으로 삭제됩니다.",
                     inline=False
                 )
-                embed.set_footer(text="부스터 특권을 즐겨보세요!")
+                embed.set_footer(text="특별한 채널을 즐겨보세요!")
                 await interaction.followup.send(embed=embed, ephemeral=True)
 
             return voice_channel
@@ -226,8 +223,8 @@ class BoosterVoiceCog(commands.Cog):
                 await interaction.followup.send("음성 채널 생성 중 오류가 발생했습니다.", ephemeral=True)
             return None
 
-    async def delete_booster_channel(self, member: discord.Member, reason: str = "부스트 종료") -> bool:
-        """Delete a booster's voice channel"""
+    async def delete_booster_channel(self, member: discord.Member, reason: str = "자격 상실") -> bool:
+        """Delete a user's voice channel"""
         try:
             guild = member.guild
             system = self.get_system(guild.id)
@@ -283,15 +280,14 @@ class BoosterVoiceCog(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_update(self, before: discord.Member, after: discord.Member):
-        """Handle booster status changes"""
-        # Check if boost status changed
-        was_booster = before.premium_since is not None
-        is_booster = after.premium_since is not None
+        """Handle status changes that may affect channel eligibility"""
+        was_eligible = self.is_eligible_creator(before)
+        is_eligible = self.is_eligible_creator(after)
 
-        if was_booster and not is_booster:
-            # Lost booster status - delete their channel
-            await self.delete_booster_channel(after, "부스트 중단")
-            self.logger.info(f"{after.display_name}이 부스트를 중단하여 음성 채널이 삭제되었습니다.")
+        if was_eligible and not is_eligible:
+            # Lost eligibility - delete their channel
+            await self.delete_booster_channel(after, "자격 상실")
+            self.logger.info(f"{after.display_name}의 자격이 상실되어 음성 채널이 삭제되었습니다.")
 
     @commands.Cog.listener()
     async def on_voice_state_update(self, member: discord.Member, before: discord.VoiceState,
@@ -300,7 +296,7 @@ class BoosterVoiceCog(commands.Cog):
         system = self.get_system(member.guild.id)
 
         # If someone left a booster channel and it's now empty, we could auto-delete
-        # But for now, we'll let boosters keep their channels even when empty
+        # But for now, we'll let eligible creators keep their channels even when empty
         pass
 
     @app_commands.command(name="부스터음성생성", description="부스터 전용 음성 채널을 생성합니다")
@@ -308,11 +304,11 @@ class BoosterVoiceCog(commands.Cog):
         """Create a booster voice channel"""
         await interaction.response.defer(ephemeral=True)
 
-        # Check if user is a booster
-        if not self.is_booster(interaction.user):
+        # Check if user is an eligible creator
+        if not self.is_eligible_creator(interaction.user):
             embed = discord.Embed(
-                title="❌ 부스터 전용 기능",
-                description="이 기능은 서버 부스터만 사용할 수 있습니다.\n서버를 부스트해주시면 전용 음성 채널을 생성할 수 있습니다!",
+                title="❌ 권한 부족",
+                description="이 기능은 **서버 부스터** 또는 **특별 역할**을 가진 분만 사용할 수 있습니다.",
                 color=discord.Color.red()
             )
             await interaction.followup.send(embed=embed, ephemeral=True)
@@ -375,8 +371,8 @@ class BoosterVoiceCog(commands.Cog):
 
                 if user and channel:
                     member_count = len(channel.members)
-                    booster_status = "🌟" if self.is_booster(user) else "❌"
-                    channel_list.append(f"{booster_status} {user.display_name}: <#{channel_id}> ({member_count}명)")
+                    status_emoji = "🌟" if self.is_eligible_creator(user) else "❌"
+                    channel_list.append(f"{status_emoji} {user.display_name}: <#{channel_id}> ({member_count}명)")
                 else:
                     # Clean up dead references
                     if user_id in system.user_channels:
@@ -426,10 +422,10 @@ class BoosterVoiceControlView(discord.ui.View):
     async def create_voice_channel(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
 
-        if not self.cog.is_booster(interaction.user):
+        if not self.cog.is_eligible_creator(interaction.user):
             embed = discord.Embed(
-                title="❌ 부스터 전용 기능",
-                description="서버를 부스트해야 전용 음성 채널을 생성할 수 있습니다!",
+                title="❌ 권한 부족",
+                description="이 기능은 **서버 부스터** 또는 **특별 역할**을 가진 분만 사용할 수 있습니다.",
                 color=discord.Color.red()
             )
             await interaction.followup.send(embed=embed, ephemeral=True)
