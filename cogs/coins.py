@@ -925,6 +925,25 @@ class CoinsCog(commands.Cog):
             self.logger.info(
                 f"Admin {interaction.user.id} added {amount} coins to user {user.id} in guild {guild_id}: {reason}",
                 extra={'guild_id': guild_id})
+
+            # Post a public message to a specific channel and tag the role
+            try:
+                target_channel_id = 1059248496730976307
+                target_role_id = 1417771791384051823
+
+                channel = self.bot.get_channel(target_channel_id)
+                if channel:
+                    role_mention = f"<@&{target_role_id}>"
+                    public_message = (
+                        f"🎉 {role_mention}! **{user.display_name}**님에게 **{amount:,} 코인**이 "
+                        f"관리자에 의해 추가되었습니다!\n"
+                        f"현재 잔액: **{new_balance:,} 코인**\n"
+                        f"이유: {reason}"
+                    )
+                    await channel.send(public_message)
+            except Exception as e:
+                self.logger.error(f"Failed to post public admin coin addition message: {e}",
+                                  extra={'guild_id': guild_id})
         else:
             await interaction.followup.send("❌ 코인 추가 중 오류가 발생했습니다.", ephemeral=True)
 
