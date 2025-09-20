@@ -44,7 +44,6 @@ class LotteryCog(commands.Cog):
         self.guild_lotteries: Dict[int, LotterySystem] = {}
         self.lottery_interface_message = None  # Store the interface message
         self.lottery_channel_id = 1418763263721869403
-        self.setup_lottery_tables.start()
 
     async def setup_lottery_interface(self):
         """Setup the persistent lottery interface in the designated channel"""
@@ -197,6 +196,12 @@ class LotteryCog(commands.Cog):
         except discord.HTTPException as e:
             self.logger.error(f"복권 인터페이스 업데이트 실패: {e}")
 
+    @commands.Cog.listener()
+    async def on_ready(self):
+        """Run setup tasks once the bot is ready."""
+        # The task is set to count=1, so it will only run once automatically.
+        # No need for an extra flag to prevent it from running again.
+        self.setup_lottery_tables.start()
     @tasks.loop(count=1)
     async def setup_lottery_tables(self):
         """Create lottery database tables and setup interface"""
