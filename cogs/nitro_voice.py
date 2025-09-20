@@ -5,8 +5,8 @@ from discord import app_commands
 from typing import Dict, Optional
 import asyncio
 from datetime import datetime, timezone
-import json # New import for data persistence
-import os # New import for data persistence
+import json
+import os
 
 from utils.logger import get_logger
 from utils.config import get_server_setting
@@ -28,7 +28,8 @@ class BoosterVoiceCog(commands.Cog):
         self.bot = bot
         self.logger = get_logger("부스터음성")
         self.guild_systems: Dict[int, BoosterVoiceSystem] = {}
-        self.booster_voice_category_id = None  # Set this to your desired category ID
+        # New Category ID
+        self.booster_voice_category_id = 1207987828370440192
         self.data_file = 'booster_voice_data.json'
         self.booster_message_id = None
         self.booster_channel_id = 1366767855462518825  # The specific channel ID from user's request
@@ -151,22 +152,19 @@ class BoosterVoiceCog(commands.Cog):
                     # Clean up dead reference
                     del system.user_channels[member.id]
 
-            # Get or create category
-            category = None
-            if self.booster_voice_category_id:
-                category = guild.get_channel(self.booster_voice_category_id)
-
+            # Get the category
+            category = guild.get_channel(self.booster_voice_category_id)
             if not category:
-                # Create booster voice category if it doesn't exist
-                category = await guild.create_category_channel(
-                    name="🌟 부스터 음성채널",
-                    reason="부스터 전용 음성 채널 카테고리"
-                )
-                self.booster_voice_category_id = category.id
-                self.logger.info(f"부스터 음성 카테고리 생성됨: {category.id}")
+                self.logger.error(f"부스터 음성 채널 카테고리를 찾을 수 없습니다: {self.booster_voice_category_id}")
+                if interaction:
+                    await interaction.followup.send("음성 채널 카테고리를 찾을 수 없습니다. 관리자에게 문의하세요.", ephemeral=True)
+                return None
 
-            # Create the voice channel with booster's name
-            channel_name = f"{member.display_name}의 채널"
+            # Get the channel to position the new one above
+            after_channel = guild.get_channel(1207988341698592788)
+
+            # New channel name format
+            channel_name = f"╠❔┆{member.display_name}의 채널"
 
             # Set up permissions - booster gets full control
             overwrites = {
@@ -191,6 +189,7 @@ class BoosterVoiceCog(commands.Cog):
                 name=channel_name,
                 category=category,
                 overwrites=overwrites,
+                position=after_channel.position if after_channel else None,
                 reason=f"부스터 {member.display_name}를 위한 전용 음성 채널"
             )
 
@@ -409,6 +408,7 @@ class BoosterVoiceCog(commands.Cog):
 
         await self._create_booster_message(channel)
         await ctx.send(f"✅ 부스터 음성 채널 메시지가 {channel.mention}에 성공적으로 설정되었습니다!", ephemeral=True)
+
 
 # Create a view with buttons for easy channel creation
 class BoosterVoiceControlView(discord.ui.View):
