@@ -174,8 +174,21 @@ class SimpleBettingCog(commands.Cog):
             # 임베드 생성
             embed = await self.create_betting_embed(event_id, options, event)
 
-            # 동적 버튼이 있는 뷰 생성
+            # 정적 버튼이 있는 뷰 생성
             view = BettingEventView(event_id, options)
+
+            # 버튼 레이블을 옵션 이름으로 업데이트
+            for i, child in enumerate(view.children):
+                if hasattr(child, 'custom_id') and child.custom_id.startswith('bet_'):
+                    option_index = int(child.custom_id.split('_')[1])
+                    if option_index < len(options):
+                        option_name = options[option_index][:15]  # 길이 제한
+                        child.label = f"{option_index + 1}. {option_name}"
+                        child.disabled = False
+                    else:
+                        child.disabled = True
+                        child.style = discord.ButtonStyle.gray
+
             message = await channel.send(embed=embed, view=view)
 
             # 데이터베이스에 메시지 ID 업데이트
@@ -691,36 +704,50 @@ class BettingEventView(discord.ui.View):
         self.event_id = event_id
         self.options = options
 
-        # 옵션 수에 따라 동적으로 버튼 생성
-        colors = [
-            discord.ButtonStyle.primary,  # 파란색
-            discord.ButtonStyle.secondary,  # 회색
-            discord.ButtonStyle.success,  # 초록색
-            discord.ButtonStyle.danger,  # 빨간색
-        ]
+    @discord.ui.button(label="1", style=discord.ButtonStyle.primary, emoji="💰", custom_id="bet_0")
+    async def bet_option_0(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.handle_bet_option(interaction, 0)
 
-        for i, option in enumerate(options):
-            if i >= 20:  # Discord 제한 (5행 x 5버튼 = 25개, 하지만 안전하게 20개로 제한)
-                break
+    @discord.ui.button(label="2", style=discord.ButtonStyle.secondary, emoji="💰", custom_id="bet_1")
+    async def bet_option_1(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.handle_bet_option(interaction, 1)
 
-            # 버튼 생성
-            button = discord.ui.Button(
-                label=f"{i + 1}. {option[:20]}...",  # 버튼 레이블 길이 제한
-                style=colors[i % len(colors)],
-                custom_id=f"bet_option_{self.event_id}_{i}",
-                emoji="💰",
-                row=i // 4  # 4개씩 한 줄에 배치
-            )
+    @discord.ui.button(label="3", style=discord.ButtonStyle.success, emoji="💰", custom_id="bet_2")
+    async def bet_option_2(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.handle_bet_option(interaction, 2)
 
-            # 동적 콜백 생성
-            async def create_callback(option_index):
-                async def callback(interaction):
-                    await self.handle_bet_option(interaction, option_index)
+    @discord.ui.button(label="4", style=discord.ButtonStyle.danger, emoji="💰", custom_id="bet_3")
+    async def bet_option_3(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.handle_bet_option(interaction, 3)
 
-                return callback
+    @discord.ui.button(label="5", style=discord.ButtonStyle.primary, emoji="💰", custom_id="bet_4", row=1)
+    async def bet_option_4(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.handle_bet_option(interaction, 4)
 
-            button.callback = create_callback(i)
-            self.add_item(button)
+    @discord.ui.button(label="6", style=discord.ButtonStyle.secondary, emoji="💰", custom_id="bet_5", row=1)
+    async def bet_option_5(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.handle_bet_option(interaction, 5)
+
+    @discord.ui.button(label="7", style=discord.ButtonStyle.success, emoji="💰", custom_id="bet_6", row=1)
+    async def bet_option_6(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.handle_bet_option(interaction, 6)
+
+    @discord.ui.button(label="8", style=discord.ButtonStyle.danger, emoji="💰", custom_id="bet_7", row=1)
+    async def bet_option_7(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.handle_bet_option(interaction, 7)
+
+    async def on_ready(self):
+        """View가 준비되면 버튼 레이블을 옵션명으로 업데이트"""
+        for i, child in enumerate(self.children):
+            if hasattr(child, 'custom_id') and child.custom_id.startswith('bet_'):
+                option_index = int(child.custom_id.split('_')[1])
+                if option_index < len(self.options):
+                    option_name = self.options[option_index][:15]  # 길이 제한
+                    child.label = f"{option_index + 1}. {option_name}"
+                    child.disabled = False
+                else:
+                    child.disabled = True
+                    child.style = discord.ButtonStyle.gray
 
     async def handle_bet_option(self, interaction: discord.Interaction, option_index: int):
         """베팅 옵션 버튼 클릭 처리"""
