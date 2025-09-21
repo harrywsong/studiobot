@@ -68,11 +68,11 @@ class SpecialRoleControlView(discord.ui.View):
         )
         await interaction.followup.send(embed=embed, ephemeral=True)
 
-    @discord.ui.button(label="[ UOFTS ] 역할 받기", style=discord.ButtonStyle.primary, custom_id="get_special_role_one")
+    @discord.ui.button(label="[ 키키 <a:30671jiji:1417778842818314300> ] 역할 받기", style=discord.ButtonStyle.primary, custom_id="get_special_role_one")
     async def get_role_one(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self._handle_role_selection(interaction, ROLE_ONE_ID)
 
-    @discord.ui.button(label="[ UT ] 역할 받기", style=discord.ButtonStyle.primary, custom_id="get_special_role_two")
+    @discord.ui.button(label="[ 석탄이 <:4995sootsprite:1417779584845217832> ] 역할 받기", style=discord.ButtonStyle.primary, custom_id="get_special_role_two")
     async def get_role_two(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self._handle_role_selection(interaction, ROLE_TWO_ID)
 
