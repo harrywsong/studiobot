@@ -70,7 +70,7 @@ class GameSelectView(discord.ui.View):
     async def game_selected(self, interaction: discord.Interaction):
         """게임 선택 처리"""
         try:
-            await interaction.response.defer()  # ADD THIS LINE FIRST
+            await interaction.response.defer()
 
             selection = self.game_select.values[0]
             game_name, role_id = selection.split(":")
@@ -97,7 +97,7 @@ class GameSelectView(discord.ui.View):
             )
 
             # CHANGE THIS LINE:
-            await interaction.followup.edit_message(embed=embed, view=gamemode_view)
+            await interaction.edit_original_response(embed=embed, view=gamemode_view)
 
         except Exception as e:
             self.logger.error(f"Game selection error: {e}")
@@ -105,7 +105,6 @@ class GameSelectView(discord.ui.View):
                 await interaction.followup.send("❌ 오류가 발생했습니다.", ephemeral=True)
             except:
                 pass
-
 class GameModeSelectView(discord.ui.View):
     """게임 모드 선택 뷰"""
 
@@ -171,7 +170,7 @@ class GameModeSelectView(discord.ui.View):
     async def gamemode_selected(self, interaction: discord.Interaction):
         """게임 모드 선택 처리"""
         try:
-            await interaction.response.defer()  # ADD THIS LINE FIRST
+            await interaction.response.defer()
 
             self.selected_gamemode = self.gamemode_select.values[0]
 
@@ -186,7 +185,7 @@ class GameModeSelectView(discord.ui.View):
             )
 
             # CHANGE THIS LINE:
-            await interaction.followup.edit_message(embed=embed, view=tier_view)
+            await interaction.edit_original_response(embed=embed, view=tier_view)
 
         except Exception as e:
             self.logger.error(f"Gamemode selection error: {e}")
@@ -198,7 +197,7 @@ class GameModeSelectView(discord.ui.View):
     async def back_to_game_selection(self, interaction: discord.Interaction):
         """게임 선택으로 돌아가기"""
         try:
-            await interaction.response.defer()  # ADD THIS
+            await interaction.response.defer()
 
             game_view = GameSelectView(self.bot, self.guild_id)
 
@@ -208,7 +207,8 @@ class GameModeSelectView(discord.ui.View):
                 color=discord.Color.green()
             )
 
-            await interaction.followup.edit_message(embed=embed, view=game_view)  # CHANGED
+            # CHANGE THIS LINE:
+            await interaction.edit_original_response(embed=embed, view=game_view)
         except Exception as e:
             self.logger.error(f"Back to game selection error: {e}")
             try:
@@ -263,7 +263,7 @@ class TierSelectView(discord.ui.View):
     async def tier_selected(self, interaction: discord.Interaction):
         """티어 선택 처리"""
         try:
-            await interaction.response.defer()  # ADD THIS LINE FIRST
+            await interaction.response.defer()
 
             self.selected_tier = self.tier_select.values[0]
 
@@ -279,7 +279,7 @@ class TierSelectView(discord.ui.View):
             )
 
             # CHANGE THIS LINE:
-            await interaction.followup.edit_message(embed=embed, view=time_view)
+            await interaction.edit_original_response(embed=embed, view=time_view)
 
         except Exception as e:
             self.logger.error(f"Tier selection error: {e}")
