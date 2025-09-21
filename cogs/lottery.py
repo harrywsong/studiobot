@@ -303,7 +303,7 @@ class LotteryCog(commands.Cog):
                                                      'daily_lottery_draw') and self.daily_lottery_draw.is_running() else "🔴 수동 추첨만"
         embed.add_field(
             name="🤖 추첨 시스템",
-            value=f"{automation_status}\n매일 오전 12시 (EST) 자동 추첨",
+            value=f"{automation_status}\n6시간마다 자동 추첨",
             inline=True
         )
 
@@ -1027,7 +1027,7 @@ class LotteryCog(commands.Cog):
                 self.daily_lottery_draw.start()
                 embed = discord.Embed(
                     title="✅ 자동 복권 시스템 시작",
-                    description="매일 오전 12시 (EST)에 자동으로 복권 추첨이 진행됩니다.",
+                    description="6시간마다 자동으로 복권 추첨이 진행됩니다.",
                     color=discord.Color.green()
                 )
             else:
