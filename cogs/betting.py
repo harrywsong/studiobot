@@ -153,23 +153,21 @@ class BettingCreationModal(discord.ui.Modal):
 
 
 class BettingView(discord.ui.View):
-    """Interactive view for betting on events"""
-
     def __init__(self, bot, event_data: dict):
-        super().__init__(timeout=None)
+        super().__init__(timeout=None)  # Never timeout
         self.bot = bot
         self.event_data = event_data
         self.logger = get_logger("베팅 시스템")
 
-        # Create buttons for each option (max 25 buttons, but we limit to 8 options)
+        # Create buttons with STATIC custom_ids (this is crucial!)
         for i, option in enumerate(event_data['options'][:8]):
             button = discord.ui.Button(
                 label=f"{option['name']} (0명)",
                 style=discord.ButtonStyle.primary,
-                custom_id=f"bet_{event_data['event_id']}_{i}",
+                custom_id=f"bet_{event_data['event_id']}_{i}",  # Keep this format
                 emoji="💰"
             )
-            button.callback = self.create_bet_callback(i)
+            # Don't set callback here - handle in on_interaction instead
             self.add_item(button)
 
         # Add status button
@@ -179,7 +177,6 @@ class BettingView(discord.ui.View):
             custom_id=f"betting_status_{event_data['event_id']}",
             emoji="📊"
         )
-        status_button.callback = self.show_betting_status
         self.add_item(status_button)
 
     def create_bet_callback(self, option_index):
@@ -316,21 +313,18 @@ class BettingModal(discord.ui.Modal):
 
 
 class AdminBettingView(discord.ui.View):
-    """Admin controls for active betting events"""
-
     def __init__(self, bot, event_id: int):
-        super().__init__(timeout=None)
+        super().__init__(timeout=None)  # Never timeout
         self.bot = bot
         self.event_id = event_id
 
-        # Close betting button
+        # Use static custom_id
         close_button = discord.ui.Button(
             label="베팅 즉시 종료",
             style=discord.ButtonStyle.danger,
             custom_id=f"admin_close_bet_{event_id}",
             emoji="⏹️"
         )
-        close_button.callback = self.close_betting
         self.add_item(close_button)
 
     async def close_betting(self, interaction: discord.Interaction):
@@ -395,21 +389,31 @@ class BettingCog(commands.Cog):
         self.logger = get_logger("베팅 시스템")
 
         # Store active betting events per guild
-        self.active_events = {}  # guild_id: {event_id: event_data}
+        self.active_events = {}
+        self.betting_displays = {}
 
-        # Store betting display message IDs per guild
-        self.betting_displays = {}  # guild_id: {event_id: message_id}
+        # IMPORTANT: Add persistent views immediately in __init__
+        self.setup_persistent_views()
 
         self.logger.info("베팅 시스템이 초기화되었습니다.")
-
-        # Start tasks after bot is ready
         self.bot.loop.create_task(self.wait_and_start_tasks())
+
+    def setup_persistent_views(self):
+        """Setup persistent views that survive bot restarts"""
+        # Add persistent views to bot immediately
+        control_view = BettingControlView(self.bot)
+        control_view.timeout = None
+        self.bot.add_view(control_view, message_id=None)  # No specific message_id for general use
 
     async def wait_and_start_tasks(self):
         """Wait for bot to be ready then start tasks"""
         await self.bot.wait_until_ready()
         await self.setup_database()
         await self.load_active_events()
+
+        # IMPORTANT: Reload persistent views after bot restart
+        await self.reload_persistent_views()
+
         await self.setup_control_panel()
         self.cleanup_expired_events.start()
         self.update_graphs.start()
@@ -476,54 +480,34 @@ class BettingCog(commands.Cog):
                 self.logger.warning(f"베팅 제어 채널 {BETTING_CONTROL_CHANNEL_ID}를 찾을 수 없습니다.")
                 return
 
-            # Check for existing control panel message and clean up duplicates
-            found_control_panel = False
-            control_panel_messages = []
-
-            async for message in channel.history(limit=100):
+            # Check for existing control panel message
+            control_message = None
+            async for message in channel.history(limit=50):
                 if (message.author == self.bot.user and
                         message.embeds and
                         message.embeds[0].title and
                         "베팅 제어 패널" in message.embeds[0].title):
-                    control_panel_messages.append(message)
+                    control_message = message
+                    break
 
-            # If we found control panel messages
-            if control_panel_messages:
-                # Keep the most recent one and delete the rest
-                most_recent = control_panel_messages[0]  # First in history is most recent
+            embed = self.create_control_panel_embed()
+            view = BettingControlView(self.bot)
+            view.timeout = None
 
-                # Delete duplicate messages
-                for message in control_panel_messages[1:]:
-                    try:
-                        await message.delete()
-                        self.logger.info(f"중복된 베팅 제어 패널 메시지를 삭제했습니다: {message.id}")
-                    except discord.NotFound:
-                        pass  # Already deleted
-                    except Exception as e:
-                        self.logger.warning(f"중복 메시지 삭제 실패: {e}")
-
-                # Update the remaining message
+            if control_message:
                 try:
-                    embed = self.create_control_panel_embed()
-                    view = BettingControlView(self.bot)
-                    await most_recent.edit(embed=embed, view=view)
-                    found_control_panel = True
+                    await control_message.edit(embed=embed, view=view)
+                    # Add the view with the specific message ID
+                    self.bot.add_view(view, message_id=control_message.id)
                     self.logger.info("기존 베팅 제어 패널을 업데이트했습니다.")
                 except discord.NotFound:
                     # Message was deleted, create new one
-                    found_control_panel = False
-                except Exception as e:
-                    self.logger.error(f"기존 제어 패널 업데이트 실패: {e}")
-                    found_control_panel = False
-
-            # Create new control panel if not found or update failed
-            if not found_control_panel:
-                embed = self.create_control_panel_embed()
-                view = BettingControlView(self.bot)
-                # Make control panel persistent
-                view.timeout = None
-                self.bot.add_view(view)
-                await channel.send(embed=embed, view=view)
+                    control_message = await channel.send(embed=embed, view=view)
+                    self.bot.add_view(view, message_id=control_message.id)
+                    self.logger.info("새로운 베팅 제어 패널을 생성했습니다.")
+            else:
+                control_message = await channel.send(embed=embed, view=view)
+                self.bot.add_view(view, message_id=control_message.id)
                 self.logger.info("새로운 베팅 제어 패널을 생성했습니다.")
 
         except Exception as e:
@@ -764,16 +748,14 @@ class BettingCog(commands.Cog):
 
             # Create persistent view
             view = BettingView(self.bot, event_data)
-            # Make the view persistent (no timeout)
-            view.timeout = None
 
-            # Add the view to the bot's persistent views
-            self.bot.add_view(view)
+            # IMPORTANT: Add view to bot's persistent views BEFORE sending message
+            self.bot.add_view(view, message_id=None)
 
             # Create admin controls
             admin_view = AdminBettingView(self.bot, event_data['event_id'])
             admin_view.timeout = None
-            self.bot.add_view(admin_view)
+            self.bot.add_view(admin_view, message_id=None)
 
             # Send betting message
             betting_message = await channel.send(embed=embed, view=view)
@@ -784,7 +766,18 @@ class BettingCog(commands.Cog):
                 description="베팅을 수동으로 종료하려면 아래 버튼을 사용하세요.",
                 color=discord.Color.orange()
             )
-            await channel.send(embed=admin_embed, view=admin_view)
+            admin_message = await channel.send(embed=admin_embed, view=admin_view)
+
+            # NOW update the views with the specific message IDs
+            # Remove old views and add new ones with message IDs
+            for view_to_remove in list(self.bot._view_store._views.values()):
+                if hasattr(view_to_remove, 'event_data') and view_to_remove.event_data['event_id'] == event_data[
+                    'event_id']:
+                    self.bot._view_store.remove_view(view_to_remove)
+
+            # Re-add with proper message IDs
+            self.bot.add_view(view, message_id=betting_message.id)
+            self.bot.add_view(admin_view, message_id=admin_message.id)
 
             # Update database with message ID
             await self.bot.pool.execute("""
@@ -808,6 +801,58 @@ class BettingCog(commands.Cog):
         except Exception as e:
             self.logger.error(f"초기 베팅 디스플레이 생성 실패: {e}", extra={'guild_id': channel.guild.id})
 
+    async def reload_persistent_views(self):
+        """Reload persistent views for active betting events"""
+        try:
+            # Get all active betting events
+            active_events = await self.bot.pool.fetch("""
+                SELECT event_id, guild_id, title, options, message_id, betting_channel_id
+                FROM betting_events 
+                WHERE status IN ('active', 'expired')
+            """)
+
+            for event_row in active_events:
+                if not event_row['message_id'] or not event_row['betting_channel_id']:
+                    continue
+
+                channel = self.bot.get_channel(event_row['betting_channel_id'])
+                if not channel:
+                    continue
+
+                try:
+                    # Try to fetch the message to see if it exists
+                    message = await channel.fetch_message(event_row['message_id'])
+
+                    # Create event data structure
+                    event_data = {
+                        'event_id': event_row['event_id'],
+                        'title': event_row['title'],
+                        'options': event_row['options'],
+                        'message_id': event_row['message_id']
+                    }
+
+                    # Create and add persistent view
+                    view = BettingView(self.bot, event_data)
+                    self.bot.add_view(view, message_id=event_row['message_id'])
+
+                    # Also add admin view if it exists
+                    admin_view = AdminBettingView(self.bot, event_row['event_id'])
+                    self.bot.add_view(admin_view, message_id=None)  # Admin messages don't have stored IDs
+
+                    self.logger.info(f"Reloaded persistent view for event {event_row['event_id']}")
+
+                except discord.NotFound:
+                    # Message was deleted, clean up database
+                    await self.bot.pool.execute("""
+                        UPDATE betting_events 
+                        SET message_id = NULL 
+                        WHERE event_id = $1
+                    """, event_row['event_id'])
+                except Exception as e:
+                    self.logger.warning(f"Failed to reload view for event {event_row['event_id']}: {e}")
+
+        except Exception as e:
+            self.logger.error(f"Failed to reload persistent views: {e}")
     @commands.Cog.listener()
     async def on_interaction(self, interaction: discord.Interaction):
         """Handle all interactions for betting system"""
