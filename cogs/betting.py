@@ -696,19 +696,17 @@ class BettingCog(commands.Cog):
             if not category:
                 return {'success': False, 'reason': '베팅 카테고리를 찾을 수 없습니다.'}
 
-            # Calculate end time - ensure it's timezone-aware using UTC
+            # Calculate end time
             current_time_utc = datetime.now(timezone.utc)
             duration_delta = timedelta(minutes=duration_minutes)
             end_time = current_time_utc + duration_delta
 
-            # Ensure end_time is definitely timezone-aware
             if end_time.tzinfo is None:
                 end_time = end_time.replace(tzinfo=timezone.utc)
 
-            # Create dedicated betting channel with proper formatting
-            channel_name = f"╠ 📋┆베팅{title.replace(' ', '-')[:20]}"
+            # Create dedicated betting channel
+            channel_name = f"╠ 📋┆베팅-{title.replace(' ', '-')[:20]}"
 
-            # First create the channel without specifying position
             betting_channel = await guild.create_text_channel(
                 name=channel_name,
                 category=category,
@@ -716,17 +714,14 @@ class BettingCog(commands.Cog):
                 reason=f"베팅 이벤트 채널 생성: {title}"
             )
 
-            # Then move it to the correct position (directly after the reference channel)
+            # Position the channel
             if reference_channel and reference_channel.category_id == category.id:
                 try:
-                    # Move to position right after the reference channel
                     await betting_channel.edit(position=reference_channel.position + 1)
                 except discord.HTTPException:
-                    # If positioning fails, just log it but continue
-                    self.logger.warning(f"채널 위치 조정 실패, 기본 위치 사용")
-                    pass
+                    self.logger.warning("채널 위치 조정 실패, 기본 위치 사용")
 
-            # Set permissions - users can't send messages, only interact with buttons
+            # Set permissions
             overwrites = {
                 guild.default_role: discord.PermissionOverwrite(
                     send_messages=False,
@@ -742,7 +737,7 @@ class BettingCog(commands.Cog):
                 )
             }
 
-            # Allow admins to send messages
+            # Add admin permissions
             admin_role_id = config.get_role_id(guild_id, 'admin_role')
             if admin_role_id:
                 admin_role = guild.get_role(admin_role_id)
@@ -768,7 +763,6 @@ class BettingCog(commands.Cog):
                                                         BETTING_CONTROL_CHANNEL_ID, betting_channel.id)
             except Exception as db_error:
                 self.logger.error(f"Database insert failed: {db_error}")
-                # Clean up the created channel
                 try:
                     await betting_channel.delete()
                 except:
@@ -793,8 +787,11 @@ class BettingCog(commands.Cog):
                 self.active_events[guild_id] = {}
             self.active_events[guild_id][event_id] = event_data
 
-            # Create initial betting display in the new channel
+            # Create initial betting display
             await self.create_initial_betting_display(event_data, betting_channel)
+
+            # Small delay to ensure everything is properly set up
+            await asyncio.sleep(0.5)
 
             self.logger.info(f"베팅 이벤트 '{title}' 및 채널 생성됨 (ID: {event_id})", extra={'guild_id': guild_id})
 
@@ -807,6 +804,8 @@ class BettingCog(commands.Cog):
 
         except Exception as e:
             self.logger.error(f"베팅 이벤트 및 채널 생성 실패: {e}", extra={'guild_id': guild_id})
+            import traceback
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
             return {'success': False, 'reason': str(e)}
 
     async def create_initial_betting_display(self, event_data: dict, channel: discord.TextChannel):
@@ -884,91 +883,93 @@ class BettingCog(commands.Cog):
             import traceback
             self.logger.error(f"Traceback: {traceback.format_exc()}")
             raise  # Re-raise so the calling function knows it failed
+
     async def reload_persistent_views(self):
         """Reload persistent views for active betting events"""
         try:
-            # Get all active betting events with their message IDs
+            self.logger.info("Starting to reload persistent views...")
+
+            # Clear existing views for betting events to avoid duplicates
+            views_to_remove = []
+            for view in self.bot.persistent_views:
+                if hasattr(view, 'event_id') or 'bet_' in str(getattr(view, 'custom_id', '')):
+                    views_to_remove.append(view)
+
+            for view in views_to_remove:
+                try:
+                    self.bot.persistent_views.remove(view)
+                except ValueError:
+                    pass  # View was already removed
+
+            self.logger.info(f"Removed {len(views_to_remove)} old betting views")
+
+            # Get all active betting events with valid channels and messages
             active_events = await self.bot.pool.fetch("""
                 SELECT event_id, guild_id, title, options, message_id, betting_channel_id
                 FROM betting_events 
-                WHERE status IN ('active', 'expired') AND message_id IS NOT NULL
+                WHERE status IN ('active', 'expired') 
+                AND message_id IS NOT NULL 
+                AND betting_channel_id IS NOT NULL
             """)
 
             views_reloaded = 0
             admin_views_reloaded = 0
 
             for event_row in active_events:
-                if not event_row['message_id'] or not event_row['betting_channel_id']:
-                    continue
+                event_id = event_row['event_id']
+                guild_id = event_row['guild_id']
+                message_id = event_row['message_id']
+                channel_id = event_row['betting_channel_id']
 
-                channel = self.bot.get_channel(event_row['betting_channel_id'])
+                # Check if channel exists
+                channel = self.bot.get_channel(channel_id)
                 if not channel:
-                    # Channel was deleted, mark event as resolved
-                    await self.bot.pool.execute("""
-                        UPDATE betting_events 
-                        SET status = 'resolved' 
-                        WHERE event_id = $1
-                    """, event_row['event_id'])
+                    self.logger.warning(f"Channel {channel_id} not found for event {event_id}, skipping")
                     continue
 
                 try:
                     # Try to fetch the main betting message
-                    betting_message = await channel.fetch_message(event_row['message_id'])
+                    betting_message = await channel.fetch_message(message_id)
 
-                    # Create event data structure with all required fields
+                    # Create complete event data structure
                     event_data = {
-                        'event_id': event_row['event_id'],
+                        'event_id': event_id,
                         'title': event_row['title'],
                         'options': event_row['options'],
-                        'message_id': event_row['message_id'],
-                        'betting_channel_id': event_row['betting_channel_id']
+                        'message_id': message_id,
+                        'betting_channel_id': channel_id,
+                        'guild_id': guild_id
                     }
 
-                    # Create and add persistent view for betting buttons
+                    # Create and register betting view
                     betting_view = BettingView(self.bot, event_data)
-                    self.bot.add_view(betting_view, message_id=event_row['message_id'])
+                    self.bot.add_view(betting_view, message_id=message_id)
                     views_reloaded += 1
 
-                    # Add to tracking
-                    guild_id = event_row['guild_id']
+                    self.logger.info(f"Registered betting view for event {event_id}, message {message_id}")
+
+                    # Update tracking
                     if guild_id not in self.betting_displays:
                         self.betting_displays[guild_id] = {}
-                    self.betting_displays[guild_id][event_row['event_id']] = event_row['message_id']
+                    self.betting_displays[guild_id][event_id] = message_id
 
-                    # Try to find and reload admin view message
+                    # Search for admin control message
                     try:
-                        # Search for admin control message (usually comes after the betting message)
                         admin_message = None
-                        async for msg in channel.history(after=betting_message, limit=10):
+                        async for msg in channel.history(after=betting_message, limit=5):
                             if (msg.author == self.bot.user and msg.embeds and
                                     msg.embeds[0].title and "관리자 제어" in msg.embeds[0].title):
                                 admin_message = msg
                                 break
 
                         if admin_message:
-                            admin_view = AdminBettingView(self.bot, event_row['event_id'])
+                            admin_view = AdminBettingView(self.bot, event_id)
                             self.bot.add_view(admin_view, message_id=admin_message.id)
                             admin_views_reloaded += 1
-                            self.logger.debug(f"Reloaded admin view for event {event_row['event_id']}")
+                            self.logger.info(f"Registered admin view for event {event_id}, message {admin_message.id}")
+
                     except Exception as admin_error:
-                        # Admin view reload is not critical
-                        self.logger.debug(
-                            f"Could not reload admin view for event {event_row['event_id']}: {admin_error}")
-
-                    # Update the view with current betting stats to ensure buttons show correct counts
-                    try:
-                        stats = await self.get_betting_stats(event_row['event_id'], event_row['guild_id'])
-                        betting_view.update_button_labels(stats)
-
-                        # Update the message with the current view state
-                        embed = await self.create_betting_embed(event_data, event_row['guild_id'])
-                        await betting_message.edit(embed=embed, view=betting_view)
-                    except Exception as update_error:
-                        # If update fails, the view is still registered so it's not critical
-                        self.logger.debug(
-                            f"Could not update betting display for event {event_row['event_id']}: {update_error}")
-
-                    self.logger.debug(f"Reloaded persistent view for event {event_row['event_id']}")
+                        self.logger.debug(f"Could not reload admin view for event {event_id}: {admin_error}")
 
                 except discord.NotFound:
                     # Message was deleted, clean up database
@@ -976,19 +977,21 @@ class BettingCog(commands.Cog):
                         UPDATE betting_events 
                         SET message_id = NULL 
                         WHERE event_id = $1
-                    """, event_row['event_id'])
-                    self.logger.info(f"Cleaned up deleted message for event {event_row['event_id']}")
-                except discord.Forbidden:
-                    # No permission to access message, skip
-                    self.logger.warning(f"No permission to access message for event {event_row['event_id']}")
-                except Exception as e:
-                    self.logger.warning(f"Failed to reload view for event {event_row['event_id']}: {e}")
+                    """, event_id)
+                    self.logger.info(f"Message {message_id} not found for event {event_id}, cleaned up database")
 
-            if views_reloaded > 0:
-                self.logger.info(
-                    f"Successfully reloaded {views_reloaded} betting views and {admin_views_reloaded} admin views")
-            else:
-                self.logger.info("No persistent views to reload")
+                except discord.Forbidden:
+                    self.logger.warning(f"No permission to access message {message_id} for event {event_id}")
+
+                except Exception as e:
+                    self.logger.warning(f"Failed to reload view for event {event_id}: {e}")
+
+            self.logger.info(
+                f"Successfully reloaded {views_reloaded} betting views and {admin_views_reloaded} admin views")
+
+            # Log current persistent views count for verification
+            betting_views = sum(1 for view in self.bot.persistent_views if hasattr(view, 'event_id'))
+            self.logger.info(f"Total betting persistent views after reload: {betting_views}")
 
         except Exception as e:
             self.logger.error(f"Failed to reload persistent views: {e}")
@@ -2014,6 +2017,77 @@ class BettingCog(commands.Cog):
             await interaction.followup.send(f"디버그 정보 조회 실패: {e}", ephemeral=True)
             self.logger.error(f"Debug command failed: {e}")
 
+    @app_commands.command(name="베팅정리", description="베팅 시스템 데이터를 정리합니다. (관리자 전용)")
+    async def cleanup_betting_data(self, interaction: discord.Interaction):
+        """Clean up inconsistent betting data"""
+        if not self.has_admin_permissions(interaction.user):
+            await interaction.response.send_message("이 명령어를 사용할 권한이 없습니다.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            guild_id = interaction.guild.id
+            cleaned_events = 0
+
+            # Get all active events for this guild
+            active_events = await self.bot.pool.fetch("""
+                SELECT event_id, betting_channel_id, message_id
+                FROM betting_events 
+                WHERE guild_id = $1 AND status IN ('active', 'expired')
+            """, guild_id)
+
+            for event in active_events:
+                event_id = event['event_id']
+                channel_id = event['betting_channel_id']
+                message_id = event['message_id']
+
+                should_clean = False
+
+                # Check if channel exists
+                if channel_id:
+                    channel = self.bot.get_channel(channel_id)
+                    if not channel:
+                        self.logger.info(f"Channel {channel_id} not found for event {event_id}, marking as resolved")
+                        should_clean = True
+                    else:
+                        # Check if message exists
+                        if message_id:
+                            try:
+                                await channel.fetch_message(message_id)
+                            except discord.NotFound:
+                                self.logger.info(
+                                    f"Message {message_id} not found for event {event_id}, clearing message_id")
+                                await self.bot.pool.execute("""
+                                    UPDATE betting_events SET message_id = NULL WHERE event_id = $1
+                                """, event_id)
+                else:
+                    should_clean = True
+
+                if should_clean:
+                    # Mark event as resolved and clean up
+                    await self.bot.pool.execute("""
+                        UPDATE betting_events 
+                        SET status = 'resolved', resolved_at = $1
+                        WHERE event_id = $2
+                    """, datetime.now(timezone.utc), event_id)
+
+                    # Remove from memory
+                    if guild_id in self.active_events and event_id in self.active_events[guild_id]:
+                        del self.active_events[guild_id][event_id]
+
+                    # Remove from displays tracking
+                    if guild_id in self.betting_displays and event_id in self.betting_displays[guild_id]:
+                        del self.betting_displays[guild_id][event_id]
+
+                    cleaned_events += 1
+
+            await interaction.followup.send(f"✅ {cleaned_events}개의 이벤트가 정리되었습니다.", ephemeral=True)
+            self.logger.info(f"Cleaned up {cleaned_events} betting events for guild {guild_id}")
+
+        except Exception as e:
+            await interaction.followup.send(f"정리 실패: {e}", ephemeral=True)
+            self.logger.error(f"Cleanup failed: {e}")
     @app_commands.command(name="뷰재등록", description="베팅 뷰를 강제로 재등록합니다. (관리자 전용)")
     @app_commands.describe(event_id="재등록할 이벤트 ID (선택사항)")
     async def force_reregister_views(self, interaction: discord.Interaction, event_id: Optional[int] = None):
