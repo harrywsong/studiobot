@@ -85,7 +85,7 @@ class WelcomeCog(commands.Cog):
 
             font = FONT
             welcome_message_format = get_server_setting(guild_id, 'welcome_message_format',
-                                                        '{username}님! 모험의 시작을 함께해요')
+                                                        '{username}님! 모험의 시작을 함께해요!')
             text = welcome_message_format.format(username=member.display_name)
 
             bbox = draw.textbbox((0, 0), text, font=font)
