@@ -199,30 +199,10 @@ class SimpleBettingCog(commands.Cog):
             # 뷰 등록
             self.bot.add_view(view, message_id=message.id)
 
-            # 관리자 제어 메시지 추가
-            await self.create_admin_controls(event_id, channel)
-
             self.logger.info(f"이벤트 {event_id} 베팅 메시지 생성 완료")
 
         except Exception as e:
             self.logger.error(f"베팅 메시지 생성 실패: {e}")
-
-    async def create_admin_controls(self, event_id: int, channel: discord.TextChannel):
-        """관리자 제어 메시지 생성"""
-        try:
-            embed = discord.Embed(
-                title="🔧 관리자 제어",
-                description="베팅을 수동으로 종료하려면 아래 명령어를 사용하세요:",
-                color=discord.Color.orange()
-            )
-            embed.add_field(
-                name="베팅 종료 명령어",
-                value=f"`/endbet event_id:{event_id} winner_option:[1-8]`",
-                inline=False
-            )
-            await channel.send(embed=embed)
-        except Exception as e:
-            self.logger.error(f"관리자 제어 생성 실패: {e}")
 
     async def create_betting_embed(self, event_id: int, options: List[str], event) -> discord.Embed:
         """베팅 임베드 생성"""
@@ -686,7 +666,9 @@ class CreateBettingModal(discord.ui.Modal, title="베팅 이벤트 생성"):
                 await interaction.followup.send(
                     f"✅ 베팅 이벤트가 생성되었습니다!\n"
                     f"채널: <#{result['channel_id']}>\n"
-                    f"종료: <t:{int(result['ends_at'].timestamp())}:R>",
+                    f"종료: <t:{int(result['ends_at'].timestamp())}:R>\n\n"
+                    f"🔧 **관리자 제어**\n"
+                    f"베팅을 수동으로 종료하려면: `/베팅종료 event_id:{result['event_id']} winner_option:[1-8]`",
                     ephemeral=True
                 )
             else:
