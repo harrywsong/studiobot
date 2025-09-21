@@ -159,45 +159,132 @@ class BettingView(discord.ui.View):
         self.event_data = event_data
         self.logger = get_logger("베팅 시스템")
 
-        # Create buttons for each betting option using decorators
-        for i, option in enumerate(event_data['options'][:8]):
-            button = discord.ui.Button(
-                label=f"{option['name']} (0명)",
-                style=discord.ButtonStyle.primary,
-                custom_id=f"bet_{event_data['event_id']}_{i}",
-                emoji="💰"
-            )
+    @discord.ui.button(label="1 (0명)", style=discord.ButtonStyle.primary, custom_id="bet_option_0", emoji="💰")
+    async def bet_option_0(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.handle_bet(interaction, 0)
 
-            # Store the option index in the button for later retrieval
-            button.option_index = i
+    @discord.ui.button(label="2 (0명)", style=discord.ButtonStyle.primary, custom_id="bet_option_1", emoji="💰")
+    async def bet_option_1(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.handle_bet(interaction, 1)
 
-            # Assign the callback function
-            button.callback = self.betting_button_callback
+    @discord.ui.button(label="3 (0명)", style=discord.ButtonStyle.primary, custom_id="bet_option_2", emoji="💰")
+    async def bet_option_2(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.handle_bet(interaction, 2)
 
-            self.add_item(button)
+    @discord.ui.button(label="4 (0명)", style=discord.ButtonStyle.primary, custom_id="bet_option_3", emoji="💰")
+    async def bet_option_3(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.handle_bet(interaction, 3)
 
-        # Add status button
-        status_button = discord.ui.Button(
-            label="내 베팅 현황",
-            style=discord.ButtonStyle.secondary,
-            custom_id=f"betting_status_{event_data['event_id']}",
-            emoji="📊"
+    @discord.ui.button(label="5 (0명)", style=discord.ButtonStyle.primary, custom_id="bet_option_4", emoji="💰")
+    async def bet_option_4(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.handle_bet(interaction, 4)
+
+    @discord.ui.button(label="6 (0명)", style=discord.ButtonStyle.primary, custom_id="bet_option_5", emoji="💰")
+    async def bet_option_5(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.handle_bet(interaction, 5)
+
+    @discord.ui.button(label="7 (0명)", style=discord.ButtonStyle.primary, custom_id="bet_option_6", emoji="💰")
+    async def bet_option_6(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.handle_bet(interaction, 6)
+
+    @discord.ui.button(label="8 (0명)", style=discord.ButtonStyle.primary, custom_id="bet_option_7", emoji="💰")
+    async def bet_option_7(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.handle_bet(interaction, 7)
+
+    @discord.ui.button(label="내 베팅 현황", style=discord.ButtonStyle.secondary, custom_id="betting_status", emoji="📊")
+    async def show_betting_status(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Show user's current bets on this event"""
+        guild_id = interaction.guild.id
+        user_id = interaction.user.id
+
+        betting_cog = self.bot.get_cog('BettingCog')
+        if not betting_cog:
+            await interaction.response.send_message("⛔ 베팅 시스템을 찾을 수 없습니다.", ephemeral=True)
+            return
+
+        user_bets = await betting_cog.get_user_bets(user_id, self.event_data['event_id'], guild_id)
+
+        if not user_bets:
+            await interaction.response.send_message("📊 이 이벤트에 베팅하지 않았습니다.", ephemeral=True)
+            return
+
+        embed = discord.Embed(
+            title="📊 내 베팅 현황",
+            description=f"**이벤트:** {self.event_data['title']}",
+            color=discord.Color.blue(),
+            timestamp=datetime.now(timezone.utc)
         )
-        status_button.callback = self.show_betting_status
-        self.add_item(status_button)
 
-    async def betting_button_callback(self, interaction: discord.Interaction):
-        """Common callback for all betting buttons"""
-        # Find which button was clicked by checking the custom_id
-        custom_id = interaction.data['custom_id']
+        total_bet = 0
+        for bet in user_bets:
+            option_name = self.event_data['options'][bet['option_index']]['name']
+            embed.add_field(
+                name=f"🎯 {option_name}",
+                value=f"{bet['amount']:,} 코인",
+                inline=True
+            )
+            total_bet += bet['amount']
 
-        try:
-            # Extract option index from custom_id (format: bet_{event_id}_{option_index})
-            option_index = int(custom_id.split('_')[-1])
-            await self.handle_bet(interaction, option_index)
-        except (ValueError, IndexError) as e:
-            self.logger.error(f"Failed to parse option index from custom_id {custom_id}: {e}")
-            await interaction.response.send_message("버튼 처리 중 오류가 발생했습니다.", ephemeral=True)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    async def handle_bet(self, interaction: discord.Interaction, option_index: int):
+        """Handle betting on an option"""
+        guild_id = interaction.guild.id
+        user_id = interaction.user.id
+
+        # Check if the option index is valid for this event
+        if option_index >= len(self.event_data['options']):
+            await interaction.response.send_message("⛔ 유효하지 않은 베팅 옵션입니다.", ephemeral=True)
+            return
+
+        # Check if casino games are enabled
+        if not config.is_feature_enabled(guild_id, 'casino_games'):
+            await interaction.response.send_message(
+                "⛔ 이 서버에서는 베팅 시스템이 비활성화되어 있습니다.",
+                ephemeral=True
+            )
+            return
+
+        # Get betting cog
+        betting_cog = self.bot.get_cog('BettingCog')
+        if not betting_cog:
+            await interaction.response.send_message("⛔ 베팅 시스템을 찾을 수 없습니다.", ephemeral=True)
+            return
+
+        # Check if event is still active
+        event = await betting_cog.get_event(self.event_data['event_id'], guild_id)
+        if not event or event['status'] != 'active':
+            await interaction.response.send_message("⛔ 이 베팅은 더 이상 활성화되어 있지 않습니다.", ephemeral=True)
+            return
+
+        # Show betting modal
+        modal = BettingModal(betting_cog, event, option_index)
+        await interaction.response.send_modal(modal)
+
+    def update_button_labels(self, stats: dict):
+        """Update button labels with current betting stats"""
+        button_mapping = [
+            'bet_option_0', 'bet_option_1', 'bet_option_2', 'bet_option_3',
+            'bet_option_4', 'bet_option_5', 'bet_option_6', 'bet_option_7'
+        ]
+
+        for i, custom_id in enumerate(button_mapping):
+            if i < len(self.event_data['options']):
+                option_stats = stats['option_stats'].get(i, {'bettors': 0})
+                option_name = self.event_data['options'][i]['name']
+
+                # Find the button and update its label
+                for child in self.children:
+                    if hasattr(child, 'custom_id') and child.custom_id == custom_id:
+                        child.label = f"{option_name} ({option_stats['bettors']}명)"
+                        child.disabled = False
+                        break
+            else:
+                # Disable unused buttons
+                for child in self.children:
+                    if hasattr(child, 'custom_id') and child.custom_id == custom_id:
+                        child.disabled = True
+                        break
 
     async def handle_bet(self, interaction: discord.Interaction, option_index: int):
         """Handle betting on an option"""
@@ -1220,11 +1307,8 @@ class BettingCog(commands.Cog):
                 stats = await self.get_betting_stats(event_id, guild_id)
                 view = BettingView(self.bot, event_data)
 
-                # FIXED: Update button labels correctly
-                for i, button in enumerate(view.children[:-1]):  # Exclude status button
-                    if i < len(event_data['options']):
-                        option_stats = stats['option_stats'].get(i, {'bettors': 0})
-                        button.label = f"{event_data['options'][i]['name']} ({option_stats['bettors']}명)"
+                # Update the view with current stats
+                view.update_button_labels(stats)
 
                 await message.edit(embed=embed, view=view)
 
