@@ -18,7 +18,7 @@ class GameSelectView(discord.ui.View):
     """게임 선택 뷰 (역할 태그 지원)"""
 
     def __init__(self, bot, guild_id: int):
-        super().__init__(timeout=1800)  # 생성 흐름을 위한 30분 타임아웃
+        super().__init__(timeout=900)
         self.bot = bot
         self.guild_id = guild_id
         self.selected_game = None
@@ -101,7 +101,7 @@ class GameModeSelectView(discord.ui.View):
     """게임 모드 선택 뷰"""
 
     def __init__(self, bot, guild_id: int, game: str, role_id: int):
-        super().__init__(timeout=1800)  # 생성 흐름을 위한 30분 타임아웃
+        super().__init__(timeout=900)
         self.bot = bot
         self.guild_id = guild_id
         self.game = game
@@ -192,7 +192,7 @@ class TierSelectView(discord.ui.View):
     """티어 범위 선택 뷰"""
 
     def __init__(self, bot, guild_id: int, game: str, gamemode: str, role_id: int):
-        super().__init__(timeout=1800)  # 생성 흐름을 위한 30분 타임아웃
+        super().__init__(timeout=900)
         self.bot = bot
         self.guild_id = guild_id
         self.game = game
@@ -265,7 +265,7 @@ class TimeSelectView(discord.ui.View):
     """빠른 옵션과 함께하는 시간 선택 뷰"""
 
     def __init__(self, bot, guild_id: int, game: str, gamemode: str, tier: str, role_id: int):
-        super().__init__(timeout=1800)  # 생성 흐름을 위한 30분 타임아웃
+        super().__init__(timeout=900)
         self.bot = bot
         self.guild_id = guild_id
         self.game = game
@@ -364,7 +364,7 @@ class CustomTimeModal(discord.ui.Modal):
     """사용자 지정 시간 입력을 위한 모달"""
 
     def __init__(self, bot, guild_id: int, game: str, gamemode: str, tier: str, role_id: int):
-        super().__init__(title="사용자 지정 시간", timeout=1800)  # 생성 흐름을 위한 30분 타임아웃
+        super().__init__(title="사용자 지정 시간", timeout=300)
         self.bot = bot
         self.guild_id = guild_id
         self.game = game
@@ -458,7 +458,7 @@ class PlayerCountSelectView(discord.ui.View):
     """플레이어 수 선택 뷰"""
 
     def __init__(self, bot, guild_id: int, game: str, gamemode: str, tier: str, start_time: datetime, role_id: int):
-        super().__init__(timeout=1800)  # 생성 흐름을 위한 30분 타임아웃
+        super().__init__(timeout=900)
         self.bot = bot
         self.guild_id = guild_id
         self.game = game
@@ -514,43 +514,75 @@ class PlayerCountSelectView(discord.ui.View):
         await self.create_scrim(interaction, max_players)
 
     async def create_scrim(self, interaction: discord.Interaction, max_players: int):
-        """선택된 모든 옵션으로 스크림 생성"""
-        await interaction.response.defer(ephemeral=True)
+        """Create scrim with selected options"""
+        try:
+            await interaction.response.defer(ephemeral=True)
 
-        # 스크림 Cog 가져오고 스크림 생성
-        scrim_cog = self.bot.get_cog('ScrimCog')
-        if scrim_cog:
-            scrim_id = await scrim_cog.create_scrim(
-                guild_id=self.guild_id,
-                organizer_id=interaction.user.id,
-                game=self.game,
-                gamemode=self.gamemode,
-                tier_range=self.tier,
-                start_time=self.start_time,
-                max_players=max_players,
-                channel_id=interaction.channel_id
-            )
+            scrim_cog = self.bot.get_cog('ScrimCog')
+            if scrim_cog:
+                scrim_id = await scrim_cog.create_scrim(
+                    guild_id=self.guild_id,
+                    organizer_id=interaction.user.id,
+                    game=self.game,
+                    gamemode=self.gamemode,
+                    tier_range=self.tier,
+                    start_time=self.start_time,
+                    max_players=max_players,
+                    channel_id=interaction.channel_id
+                )
 
-            if scrim_id:
-                await interaction.followup.send("✅ 스크림이 성공적으로 생성되었습니다!", ephemeral=True)
+                if scrim_id:
+                    await interaction.followup.send("✅ 스크림이 성공적으로 생성되었습니다!", ephemeral=True)
 
-                # 스크림 메시지 게시 및 역할 태그
-                await scrim_cog.post_scrim_message(interaction.channel, scrim_id)
-
-                # 적절한 역할 태그
-                role = interaction.guild.get_role(self.role_id)
-                if role:
-                    role_mention = f"{role.mention}"
-                    embed = discord.Embed(
-                        title="🔔 새로운 스크림 생성됨!",
-                        description=f"**{self.game}** 스크림이 새로 생성되었습니다!",
-                        color=discord.Color.green()
-                    )
-                    await interaction.channel.send(content=role_mention, embed=embed)
+                    # Small delay then do background work
+                    await asyncio.sleep(0.1)
+                    asyncio.create_task(self.post_scrim_and_notify(scrim_cog, scrim_id))
+                else:
+                    await interaction.followup.send("❌ 스크림 생성 중 오류가 발생했습니다.", ephemeral=True)
             else:
-                await interaction.followup.send("❌ 스크림 생성 중 오류가 발생했습니다.", ephemeral=True)
-        else:
-            await interaction.followup.send("❌ 스크림 시스템을 찾을 수 없습니다.", ephemeral=True)
+                await interaction.followup.send("❌ 스크림 시스템을 찾을 수 없습니다.", ephemeral=True)
+
+        except Exception as e:
+            logger = get_logger("내부 매치")
+            logger.error(f"Create scrim error: {e}")
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message("❌ 오류가 발생했습니다.", ephemeral=True)
+                else:
+                    await interaction.followup.send("❌ 오류가 발생했습니다.", ephemeral=True)
+            except:
+                pass
+
+    async def post_scrim_and_notify(self, scrim_cog, scrim_id):
+        """Background task to post scrim message and send role notifications"""
+        try:
+            # Get scrim data
+            scrim_data = scrim_cog.scrims_data.get(scrim_id)
+            if not scrim_data:
+                return
+
+            # Post scrim message to channel
+            guild = self.bot.get_guild(scrim_data['guild_id'])
+            if guild:
+                channel = guild.get_channel(scrim_data['channel_id'])
+                if channel:
+                    await scrim_cog.post_scrim_message(channel, scrim_id)
+
+            # Send role notification if role_id is set
+            if self.role_id and guild:
+                role = guild.get_role(self.role_id)
+                if role and channel:
+                    try:
+                        mention_msg = await channel.send(f"{role.mention} 새로운 스크림이 생성되었습니다!")
+                        # Delete the mention after 5 seconds to avoid spam
+                        await asyncio.sleep(5)
+                        await mention_msg.delete()
+                    except Exception:
+                        pass  # If deletion fails, continue
+
+        except Exception as e:
+            logger = get_logger("내부 매치")
+            logger.error(f"Background task error: {e}")
 
     async def back_to_time_selection(self, interaction: discord.Interaction):
         """시간 선택으로 돌아가기"""
@@ -571,7 +603,7 @@ class CustomPlayerCountModal(discord.ui.Modal):
     """사용자 지정 플레이어 수 입력을 위한 모달"""
 
     def __init__(self, bot, guild_id: int, game: str, gamemode: str, tier: str, start_time: datetime, role_id: int):
-        super().__init__(title="사용자 지정 플레이어 수", timeout=1800)  # 생성 흐름을 위한 30분 타임아웃
+        super().__init__(title="사용자 지정 플레이어 수", timeout=300)
         self.bot = bot
         self.guild_id = guild_id
         self.game = game
@@ -716,16 +748,30 @@ class ScrimView(discord.ui.View):
         emoji="✅"
     )
     async def join_scrim(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """스크림 참가"""
-        await interaction.response.defer(ephemeral=True)
+        """Join scrim with proper error handling"""
+        try:
+            await interaction.response.defer(ephemeral=True)
 
-        scrim_cog = self.bot.get_cog('ScrimCog')
-        if scrim_cog:
+            scrim_cog = self.bot.get_cog('ScrimCog')
+            if not scrim_cog:
+                await interaction.followup.send("❌ 스크림 시스템을 찾을 수 없습니다.", ephemeral=True)
+                return
+
             success, message = await scrim_cog.join_scrim(interaction.user.id, self.scrim_id)
             await interaction.followup.send(message, ephemeral=True)
 
             if success:
                 await scrim_cog.update_scrim_message(interaction.message, self.scrim_id)
+
+        except Exception as e:
+            self.logger.error(f"Join scrim error: {e}")
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message("❌ 오류가 발생했습니다.", ephemeral=True)
+                else:
+                    await interaction.followup.send("❌ 오류가 발생했습니다.", ephemeral=True)
+            except:
+                pass
 
     @discord.ui.button(
         label="나가기",
@@ -734,16 +780,30 @@ class ScrimView(discord.ui.View):
         emoji="❌"
     )
     async def leave_scrim(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """스크림 나가기"""
-        await interaction.response.defer(ephemeral=True)
+        """Leave scrim with proper error handling"""
+        try:
+            await interaction.response.defer(ephemeral=True)
 
-        scrim_cog = self.bot.get_cog('ScrimCog')
-        if scrim_cog:
+            scrim_cog = self.bot.get_cog('ScrimCog')
+            if not scrim_cog:
+                await interaction.followup.send("❌ 스크림 시스템을 찾을 수 없습니다.", ephemeral=True)
+                return
+
             success, message = await scrim_cog.leave_scrim(interaction.user.id, self.scrim_id)
             await interaction.followup.send(message, ephemeral=True)
 
             if success:
                 await scrim_cog.update_scrim_message(interaction.message, self.scrim_id)
+
+        except Exception as e:
+            self.logger.error(f"Leave scrim error: {e}")
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message("❌ 오류가 발생했습니다.", ephemeral=True)
+                else:
+                    await interaction.followup.send("❌ 오류가 발생했습니다.", ephemeral=True)
+            except:
+                pass
 
     @discord.ui.button(
         label="대기열 참가",
@@ -752,16 +812,30 @@ class ScrimView(discord.ui.View):
         emoji="⏳"
     )
     async def join_queue(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """대기열 참가"""
-        await interaction.response.defer(ephemeral=True)
+        """Join queue with proper error handling"""
+        try:
+            await interaction.response.defer(ephemeral=True)
 
-        scrim_cog = self.bot.get_cog('ScrimCog')
-        if scrim_cog:
+            scrim_cog = self.bot.get_cog('ScrimCog')
+            if not scrim_cog:
+                await interaction.followup.send("❌ 스크림 시스템을 찾을 수 없습니다.", ephemeral=True)
+                return
+
             success, message = await scrim_cog.join_queue(interaction.user.id, self.scrim_id)
             await interaction.followup.send(message, ephemeral=True)
 
             if success:
                 await scrim_cog.update_scrim_message(interaction.message, self.scrim_id)
+
+        except Exception as e:
+            self.logger.error(f"Join queue error: {e}")
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message("❌ 오류가 발생했습니다.", ephemeral=True)
+                else:
+                    await interaction.followup.send("❌ 오류가 발생했습니다.", ephemeral=True)
+            except:
+                pass
 
     @discord.ui.button(
         label="대기열 나가기",
@@ -770,16 +844,30 @@ class ScrimView(discord.ui.View):
         emoji="🚪"
     )
     async def leave_queue(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """대기열 나가기"""
-        await interaction.response.defer(ephemeral=True)
+        """Leave queue with proper error handling"""
+        try:
+            await interaction.response.defer(ephemeral=True)
 
-        scrim_cog = self.bot.get_cog('ScrimCog')
-        if scrim_cog:
+            scrim_cog = self.bot.get_cog('ScrimCog')
+            if not scrim_cog:
+                await interaction.followup.send("❌ 스크림 시스템을 찾을 수 없습니다.", ephemeral=True)
+                return
+
             success, message = await scrim_cog.leave_queue(interaction.user.id, self.scrim_id)
             await interaction.followup.send(message, ephemeral=True)
 
             if success:
                 await scrim_cog.update_scrim_message(interaction.message, self.scrim_id)
+
+        except Exception as e:
+            self.logger.error(f"Leave queue error: {e}")
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message("❌ 오류가 발생했습니다.", ephemeral=True)
+                else:
+                    await interaction.followup.send("❌ 오류가 발생했습니다.", ephemeral=True)
+            except:
+                pass
 
     @discord.ui.button(
         label="취소",
@@ -788,49 +876,70 @@ class ScrimView(discord.ui.View):
         emoji="🗑️"
     )
     async def cancel_scrim(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """스크림 취소"""
-        scrim_cog = self.bot.get_cog('ScrimCog')
-        if not scrim_cog:
-            await interaction.response.send_message("❌ 스크림 시스템을 찾을 수 없습니다.", ephemeral=True)
-            return
+        """Cancel scrim with proper error handling"""
+        try:
+            scrim_cog = self.bot.get_cog('ScrimCog')
+            if not scrim_cog:
+                await interaction.response.send_message("❌ 스크림 시스템을 찾을 수 없습니다.", ephemeral=True)
+                return
 
-        # 권한 확인
-        is_organizer = interaction.user.id == self.scrim_data['organizer_id']
-        is_staff = scrim_cog.has_staff_permissions(interaction.user)
+            # 권한 확인
+            is_organizer = interaction.user.id == self.scrim_data['organizer_id']
+            is_staff = scrim_cog.has_staff_permissions(interaction.user)
 
-        if not (is_organizer or is_staff):
-            await interaction.response.send_message("❌ 이 스크림을 취소할 권한이 없습니다.", ephemeral=True)
-            return
+            if not (is_organizer or is_staff):
+                await interaction.response.send_message("❌ 이 스크림을 취소할 권한이 없습니다.", ephemeral=True)
+                return
 
-        # 확인 임베드
-        embed = discord.Embed(
-            title="⚠️ 스크림 취소 확인",
-            description="이 스크림을 정말 취소하시겠습니까?\n모든 참가자에게 알림이 전송됩니다.",
-            color=discord.Color.red()
-        )
+            # 확인 임베드
+            embed = discord.Embed(
+                title="⚠️ 스크림 취소 확인",
+                description="이 스크림을 정말 취소하시겠습니까?\n모든 참가자에게 알림이 전송됩니다.",
+                color=discord.Color.red()
+            )
 
-        view = discord.ui.View(timeout=60)
-        confirm_button = discord.ui.Button(label="확인", style=discord.ButtonStyle.danger)
-        cancel_button = discord.ui.Button(label="취소", style=discord.ButtonStyle.secondary)
+            view = discord.ui.View(timeout=60)
+            confirm_button = discord.ui.Button(label="확인", style=discord.ButtonStyle.danger)
+            cancel_button = discord.ui.Button(label="취소", style=discord.ButtonStyle.secondary)
 
-        async def confirm_callback(confirm_interaction):
-            await confirm_interaction.response.defer()
-            success = await scrim_cog.cancel_scrim(self.scrim_id, interaction.user.id)
-            if success:
-                await confirm_interaction.followup.send("✅ 스크림이 취소되었습니다.", ephemeral=True)
-                await scrim_cog.update_scrim_message(interaction.message, self.scrim_id)
-            else:
-                await confirm_interaction.followup.send("❌ 스크림 취소 중 오류가 발생했습니다.", ephemeral=True)
+            async def confirm_callback(confirm_interaction):
+                try:
+                    await confirm_interaction.response.defer()
+                    success = await scrim_cog.cancel_scrim(self.scrim_id, interaction.user.id)
+                    if success:
+                        await confirm_interaction.followup.send("✅ 스크림이 취소되었습니다.", ephemeral=True)
+                        await scrim_cog.update_scrim_message(interaction.message, self.scrim_id)
+                    else:
+                        await confirm_interaction.followup.send("❌ 스크림 취소 중 오류가 발생했습니다.", ephemeral=True)
+                except Exception as e:
+                    self.logger.error(f"Confirm cancel error: {e}")
+                    try:
+                        await confirm_interaction.followup.send("❌ 오류가 발생했습니다.", ephemeral=True)
+                    except:
+                        pass
 
-        async def cancel_callback(cancel_interaction):
-            await cancel_interaction.response.send_message("취소되었습니다.", ephemeral=True)
+            async def cancel_callback(cancel_interaction):
+                try:
+                    await cancel_interaction.response.send_message("취소되었습니다.", ephemeral=True)
+                except Exception as e:
+                    self.logger.error(f"Cancel callback error: {e}")
 
-        confirm_button.callback = confirm_callback
-        cancel_button.callback = cancel_callback
-        view.add_item(confirm_button)
-        view.add_item(cancel_button)
+            confirm_button.callback = confirm_callback
+            cancel_button.callback = cancel_callback
+            view.add_item(confirm_button)
+            view.add_item(cancel_button)
 
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+        except Exception as e:
+            self.logger.error(f"Cancel scrim error: {e}")
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message("❌ 오류가 발생했습니다.", ephemeral=True)
+                else:
+                    await interaction.followup.send("❌ 오류가 발생했습니다.", ephemeral=True)
+            except:
+                pass
 
 
 class ScrimCreateView(discord.ui.View):
@@ -849,26 +958,40 @@ class ScrimCreateView(discord.ui.View):
     )
     async def create_scrim(self, interaction: discord.Interaction, button: discord.ui.Button):
         """개선된 스크림 생성 프로세스 시작"""
-        # 기능 활성화 여부 확인
-        if not config.is_feature_enabled(interaction.guild.id, 'scrim_system'):
-            await interaction.response.send_message(
-                "❌ 이 서버에서 스크림 시스템이 비활성화되어 있습니다.",
-                ephemeral=True
+        try:
+            self.logger.info(f"Create scrim button pressed by {interaction.user.id}")
+
+            # 기능 활성화 여부 확인
+            if not config.is_feature_enabled(interaction.guild.id, 'scrim_system'):
+                await interaction.response.send_message(
+                    "❌ 이 서버에서 스크림 시스템이 비활성화되어 있습니다.",
+                    ephemeral=True
+                )
+                return
+
+            self.logger.info(f"Feature enabled, creating game view")
+
+            # 게임 선택으로 시작
+            game_view = GameSelectView(self.bot, interaction.guild.id)
+
+            embed = discord.Embed(
+                title="🎮 게임 선택",
+                description="스크림을 위한 게임을 선택하세요:",
+                color=discord.Color.green()
             )
-            return
+            embed.set_footer(text="아래 드롭다운을 사용하여 게임을 선택하세요")
 
-        # 게임 선택으로 시작
-        game_view = GameSelectView(self.bot, interaction.guild.id)
+            await interaction.response.send_message(embed=embed, view=game_view, ephemeral=True)
 
-        embed = discord.Embed(
-            title="🎮 게임 선택",
-            description="스크림을 위한 게임을 선택하세요:",
-            color=discord.Color.green()
-        )
-        embed.set_footer(text="아래 드롭다운을 사용하여 게임을 선택하세요")
-
-        await interaction.response.send_message(embed=embed, view=game_view, ephemeral=True)
-
+        except Exception as e:
+            self.logger.error(f"Create scrim button error: {e}", exc_info=True)
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message("❌ 오류가 발생했습니다.", ephemeral=True)
+                else:
+                    await interaction.followup.send("❌ 오류가 발생했습니다.", ephemeral=True)
+            except:
+                pass
 
 class ScrimCog(commands.Cog):
     def __init__(self, bot):
@@ -893,11 +1016,27 @@ class ScrimCog(commands.Cog):
         await self.bot.wait_until_ready()
         await self.load_scrims_data()
         await self.load_map_pools()
+        await self.setup_persistent_views()
         await self.setup_scrim_panels()
 
         # 알림 및 정리 태스크 시작
         self.scrim_notifications.start()
         self.cleanup_old_scrims.start()
+
+    async def setup_persistent_views(self):
+        """Setup persistent views on bot startup"""
+        try:
+            # Add persistent views to the bot
+            self.bot.add_view(ScrimCreateView(self.bot))
+
+            # For each active scrim, add its view
+            for scrim_id, scrim_data in self.scrims_data.items():
+                if scrim_data['status'] == '활성':
+                    self.bot.add_view(ScrimView(self.bot, scrim_data))
+
+            self.logger.info("Persistent views setup completed")
+        except Exception as e:
+            self.logger.error(f"Error setting up persistent views: {e}")
 
     def has_staff_permissions(self, member: discord.Member) -> bool:
         """멤버가 스태프 권한을 가지고 있는지 확인"""
@@ -1053,7 +1192,7 @@ class ScrimCog(commands.Cog):
 
     async def create_scrim(self, guild_id: int, organizer_id: int, game: str, gamemode: str,
                            tier_range: str, start_time: datetime, max_players: int, channel_id: int) -> Optional[str]:
-        """새로운 스크림 생성"""
+        """새로운 스크림 생성 - 개선된 버전"""
         try:
             eastern = pytz.timezone('America/New_York')
             scrim_id = f"{guild_id}_{int(datetime.now(eastern).timestamp())}"
@@ -1070,7 +1209,7 @@ class ScrimCog(commands.Cog):
                 'channel_id': channel_id,
                 'participants': [],
                 'queue': [],
-                'status': '활성',  # 활성, 취소됨, 완료됨
+                'status': '활성',
                 'created_at': datetime.now(eastern),
                 'notifications_sent': {
                     '10min': False,
@@ -1079,7 +1218,9 @@ class ScrimCog(commands.Cog):
             }
 
             self.scrims_data[scrim_id] = scrim_data
-            await self.save_scrims_data()
+
+            # 파일 저장을 백그라운드 태스크로 실행
+            asyncio.create_task(self.save_scrims_data())
 
             self.logger.info(f"길드 {guild_id}에서 게임 {game}의 새 스크림 {scrim_id} 생성",
                              extra={'guild_id': guild_id})
