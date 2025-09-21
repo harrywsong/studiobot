@@ -838,7 +838,8 @@ class MyBot(commands.Bot):
             'cogs.casino_bingo',
             'cogs.casino_holdem',
             'cogs.casino_carddraw',
-            'cogs.casino_rps'
+            'cogs.casino_rps',
+            'cogs.betting'
         ]
 
         # Database-dependent extensions
