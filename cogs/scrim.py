@@ -3,12 +3,12 @@ from typing import Optional, Dict, List
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
-import asyncio
 import json
 import os
 from datetime import datetime, timezone, timedelta
 import pytz
 import random
+import asyncio
 
 from utils.logger import get_logger
 from utils import config
@@ -23,6 +23,7 @@ class GameSelectView(discord.ui.View):
         self.guild_id = guild_id
         self.selected_game = None
         self.selected_role_id = None
+        self.logger = get_logger("내부 매치")
 
         # 게임 옵션과 역할 ID
         self.game_options = [
@@ -68,34 +69,42 @@ class GameSelectView(discord.ui.View):
 
     async def game_selected(self, interaction: discord.Interaction):
         """게임 선택 처리"""
-        selection = self.game_select.values[0]
-        game_name, role_id = selection.split(":")
+        try:
+            await interaction.response.defer()  # ADD THIS LINE FIRST
 
-        # 약어와 전체 이름 매핑
-        game_names = {
-            "VAL": "발로란트",
-            "TFT": "팀파이트 택틱스",
-            "LOL": "리그 오브 레전드",
-            "PUBG": "배틀그라운드",
-            "OG": "기타 게임"
-        }
+            selection = self.game_select.values[0]
+            game_name, role_id = selection.split(":")
 
-        self.selected_game = game_names.get(game_name, game_name)
-        self.selected_role_id = int(role_id)
+            game_names = {
+                "VAL": "발로란트",
+                "TFT": "팀파이트 택틱스",
+                "LOL": "리그 오브 레전드",
+                "PUBG": "배틀그라운드",
+                "OG": "기타 게임"
+            }
 
-        # 게임 모드 선택으로 이동
-        gamemode_view = GameModeSelectView(
-            self.bot, self.guild_id, self.selected_game, self.selected_role_id
-        )
+            self.selected_game = game_names.get(game_name, game_name)
+            self.selected_role_id = int(role_id)
 
-        embed = discord.Embed(
-            title="🎮 게임 모드 선택",
-            description=f"**선택된 게임:** {self.selected_game}\n\n이제 게임 모드를 선택하세요:",
-            color=discord.Color.blue()
-        )
+            gamemode_view = GameModeSelectView(
+                self.bot, self.guild_id, self.selected_game, self.selected_role_id
+            )
 
-        await interaction.response.edit_message(embed=embed, view=gamemode_view)
+            embed = discord.Embed(
+                title="🎮 게임 모드 선택",
+                description=f"**선택된 게임:** {self.selected_game}\n\n이제 게임 모드를 선택하세요:",
+                color=discord.Color.blue()
+            )
 
+            # CHANGE THIS LINE:
+            await interaction.followup.edit_message(embed=embed, view=gamemode_view)
+
+        except Exception as e:
+            self.logger.error(f"Game selection error: {e}")
+            try:
+                await interaction.followup.send("❌ 오류가 발생했습니다.", ephemeral=True)
+            except:
+                pass
 
 class GameModeSelectView(discord.ui.View):
     """게임 모드 선택 뷰"""
@@ -107,6 +116,7 @@ class GameModeSelectView(discord.ui.View):
         self.game = game
         self.role_id = role_id
         self.selected_gamemode = None
+        self.logger = get_logger("내부 매치")
 
         # 선택된 게임에 따라 게임 모드 옵션 설정
         gamemode_options = self.get_gamemode_options(game)
@@ -160,32 +170,51 @@ class GameModeSelectView(discord.ui.View):
 
     async def gamemode_selected(self, interaction: discord.Interaction):
         """게임 모드 선택 처리"""
-        self.selected_gamemode = self.gamemode_select.values[0]
+        try:
+            await interaction.response.defer()  # ADD THIS LINE FIRST
 
-        # 티어 선택으로 이동
-        tier_view = TierSelectView(
-            self.bot, self.guild_id, self.game, self.selected_gamemode, self.role_id
-        )
+            self.selected_gamemode = self.gamemode_select.values[0]
 
-        embed = discord.Embed(
-            title="🏆 티어 범위 선택",
-            description=f"**게임:** {self.game}\n**모드:** {self.selected_gamemode}\n\n티어 범위를 선택하세요:",
-            color=discord.Color.gold()
-        )
+            tier_view = TierSelectView(
+                self.bot, self.guild_id, self.game, self.selected_gamemode, self.role_id
+            )
 
-        await interaction.response.edit_message(embed=embed, view=tier_view)
+            embed = discord.Embed(
+                title="🏆 티어 범위 선택",
+                description=f"**게임:** {self.game}\n**모드:** {self.selected_gamemode}\n\n티어 범위를 선택하세요:",
+                color=discord.Color.gold()
+            )
+
+            # CHANGE THIS LINE:
+            await interaction.followup.edit_message(embed=embed, view=tier_view)
+
+        except Exception as e:
+            self.logger.error(f"Gamemode selection error: {e}")
+            try:
+                await interaction.followup.send("❌ 오류가 발생했습니다.", ephemeral=True)
+            except:
+                pass
 
     async def back_to_game_selection(self, interaction: discord.Interaction):
         """게임 선택으로 돌아가기"""
-        game_view = GameSelectView(self.bot, self.guild_id)
+        try:
+            await interaction.response.defer()  # ADD THIS
 
-        embed = discord.Embed(
-            title="🎮 게임 선택",
-            description="스크림을 위한 게임을 선택하세요:",
-            color=discord.Color.green()
-        )
+            game_view = GameSelectView(self.bot, self.guild_id)
 
-        await interaction.response.edit_message(embed=embed, view=game_view)
+            embed = discord.Embed(
+                title="🎮 게임 선택",
+                description="스크림을 위한 게임을 선택하세요:",
+                color=discord.Color.green()
+            )
+
+            await interaction.followup.edit_message(embed=embed, view=game_view)  # CHANGED
+        except Exception as e:
+            self.logger.error(f"Back to game selection error: {e}")
+            try:
+                await interaction.followup.send("❌ 오류가 발생했습니다.", ephemeral=True)
+            except:
+                pass
 
 
 class TierSelectView(discord.ui.View):
@@ -199,6 +228,7 @@ class TierSelectView(discord.ui.View):
         self.gamemode = gamemode
         self.role_id = role_id
         self.selected_tier = None
+        self.logger = get_logger("내부 매치")
 
         # 모든 게임에 대한 일반화된 티어 옵션
         tier_options = [
@@ -232,33 +262,31 @@ class TierSelectView(discord.ui.View):
 
     async def tier_selected(self, interaction: discord.Interaction):
         """티어 선택 처리"""
-        self.selected_tier = self.tier_select.values[0]
+        try:
+            await interaction.response.defer()  # ADD THIS LINE FIRST
 
-        # 시간 선택으로 이동
-        time_view = TimeSelectView(
-            self.bot, self.guild_id, self.game, self.gamemode,
-            self.selected_tier, self.role_id
-        )
+            self.selected_tier = self.tier_select.values[0]
 
-        embed = discord.Embed(
-            title="⏰ 시작 시간 선택",
-            description=f"**게임:** {self.game}\n**모드:** {self.gamemode}\n**티어:** {self.selected_tier}\n\n스크림은 언제 시작해야 하나요?",
-            color=discord.Color.orange()
-        )
+            time_view = TimeSelectView(
+                self.bot, self.guild_id, self.game, self.gamemode,
+                self.selected_tier, self.role_id
+            )
 
-        await interaction.response.edit_message(embed=embed, view=time_view)
+            embed = discord.Embed(
+                title="⏰ 시작 시간 선택",
+                description=f"**게임:** {self.game}\n**모드:** {self.gamemode}\n**티어:** {self.selected_tier}\n\n스크림은 언제 시작해야 하나요?",
+                color=discord.Color.orange()
+            )
 
-    async def back_to_gamemode_selection(self, interaction: discord.Interaction):
-        """게임 모드 선택으로 돌아가기"""
-        gamemode_view = GameModeSelectView(self.bot, self.guild_id, self.game, self.role_id)
+            # CHANGE THIS LINE:
+            await interaction.followup.edit_message(embed=embed, view=time_view)
 
-        embed = discord.Embed(
-            title="🎮 게임 모드 선택",
-            description=f"**선택된 게임:** {self.game}\n\n이제 게임 모드를 선택하세요:",
-            color=discord.Color.blue()
-        )
-
-        await interaction.response.edit_message(embed=embed, view=gamemode_view)
+        except Exception as e:
+            self.logger.error(f"Tier selection error: {e}")
+            try:
+                await interaction.followup.send("❌ 오류가 발생했습니다.", ephemeral=True)
+            except:
+                pass
 
 
 class TimeSelectView(discord.ui.View):
@@ -272,6 +300,7 @@ class TimeSelectView(discord.ui.View):
         self.gamemode = gamemode
         self.tier = tier
         self.role_id = role_id
+        self.logger = get_logger("내부 매치")
         self.selected_time = None
 
         # 빠른 시간 옵션
@@ -302,35 +331,48 @@ class TimeSelectView(discord.ui.View):
 
     async def time_selected(self, interaction: discord.Interaction):
         """시간 선택 처리"""
-        selection = self.time_select.values[0]
+        try:
+            selection = self.time_select.values[0]
 
-        if selection == "custom":
-            # 사용자 지정 시간 모달 표시
-            modal = CustomTimeModal(
-                self.bot, self.guild_id, self.game, self.gamemode,
-                self.tier, self.role_id
-            )
-            await interaction.response.send_modal(modal)
-            return
+            if selection == "custom":
+                # For custom time, we can't defer and then show modal
+                # Show modal immediately
+                modal = CustomTimeModal(
+                    self.bot, self.guild_id, self.game, self.gamemode,
+                    self.tier, self.role_id
+                )
+                await interaction.response.send_modal(modal)
+                return
 
-        # 선택에 따라 시간 계산
-        eastern = pytz.timezone('America/New_York')
-        now = datetime.now(eastern)
+            # For non-custom selections, defer first
+            await interaction.response.defer()
 
-        if selection == "30min":
-            self.selected_time = now + timedelta(minutes=30)
-        elif selection == "1hour":
-            self.selected_time = now + timedelta(hours=1)
-        elif selection == "2hour":
-            self.selected_time = now + timedelta(hours=2)
-        elif selection == "tonight":
-            tonight = now.replace(hour=20, minute=0, second=0, microsecond=0)
-            if tonight <= now:
-                tonight += timedelta(days=1)
-            self.selected_time = tonight
+            eastern = pytz.timezone('America/New_York')
+            now = datetime.now(eastern)
 
-        # 플레이어 수 선택으로 이동
-        await self.continue_to_player_count(interaction)
+            if selection == "30min":
+                self.selected_time = now + timedelta(minutes=30)
+            elif selection == "1hour":
+                self.selected_time = now + timedelta(hours=1)
+            elif selection == "2hour":
+                self.selected_time = now + timedelta(hours=2)
+            elif selection == "tonight":
+                tonight = now.replace(hour=20, minute=0, second=0, microsecond=0)
+                if tonight <= now:
+                    tonight += timedelta(days=1)
+                self.selected_time = tonight
+
+            await self.continue_to_player_count(interaction)
+
+        except Exception as e:
+            self.logger.error(f"Time selection error: {e}")
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message("❌ 오류가 발생했습니다.", ephemeral=True)
+                else:
+                    await interaction.followup.send("❌ 오류가 발생했습니다.", ephemeral=True)
+            except:
+                pass
 
     async def continue_to_player_count(self, interaction: discord.Interaction):
         """플레이어 수 선택으로 이동"""
@@ -345,19 +387,29 @@ class TimeSelectView(discord.ui.View):
             color=discord.Color.purple()
         )
 
-        await interaction.response.edit_message(embed=embed, view=player_view)
+        # CHANGE THIS LINE:
+        await interaction.followup.edit_message(embed=embed, view=player_view)
 
     async def back_to_tier_selection(self, interaction: discord.Interaction):
         """티어 선택으로 돌아가기"""
-        tier_view = TierSelectView(self.bot, self.guild_id, self.game, self.gamemode, self.role_id)
+        try:
+            await interaction.response.defer()  # ADD THIS
 
-        embed = discord.Embed(
-            title="🏆 티어 범위 선택",
-            description=f"**게임:** {self.game}\n**모드:** {self.gamemode}\n\n티어 범위를 선택하세요:",
-            color=discord.Color.gold()
-        )
+            tier_view = TierSelectView(self.bot, self.guild_id, self.game, self.gamemode, self.role_id)
 
-        await interaction.response.edit_message(embed=embed, view=tier_view)
+            embed = discord.Embed(
+                title="🏆 티어 범위 선택",
+                description=f"**게임:** {self.game}\n**모드:** {self.gamemode}\n\n티어 범위를 선택하세요:",
+                color=discord.Color.gold()
+            )
+
+            await interaction.followup.edit_message(embed=embed, view=tier_view)  # CHANGED
+        except Exception as e:
+            self.logger.error(f"Back to tier selection error: {e}")
+            try:
+                await interaction.followup.send("❌ 오류가 발생했습니다.", ephemeral=True)
+            except:
+                pass
 
 
 class CustomTimeModal(discord.ui.Modal):
@@ -371,7 +423,7 @@ class CustomTimeModal(discord.ui.Modal):
         self.gamemode = gamemode
         self.tier = tier
         self.role_id = role_id
-
+        self.logger = get_logger("내부 매치")
         self.time_input = discord.ui.TextInput(
             label="시작 시간 (EST)",
             placeholder="예: 2024-12-25 19:30, 오늘 20:00, 내일 15:00",
@@ -398,19 +450,20 @@ class CustomTimeModal(discord.ui.Modal):
                 )
                 return
 
-            # 플레이어 수 선택으로 이동
-            player_view = PlayerCountSelectView(
-                self.bot, self.guild_id, self.game, self.gamemode,
-                self.tier, parsed_time, self.role_id
-            )
+            # CHANGE THIS ENTIRE SECTION:
+            # OLD CODE (remove this):
+            # player_view = PlayerCountSelectView(
+            #     self.bot, self.guild_id, self.game, self.gamemode,
+            #     self.tier, parsed_time, self.role_id
+            # )
+            # embed = discord.Embed(...)
+            # await interaction.response.send_message(embed=embed, view=player_view, ephemeral=True)
 
-            embed = discord.Embed(
-                title="👥 플레이어 수 선택",
-                description=f"**게임:** {self.game}\n**모드:** {self.gamemode}\n**티어:** {self.tier}\n**시간:** {parsed_time.strftime('%Y-%m-%d %H:%M EST')}\n\n최대 플레이어 수는 몇 명인가요?",
-                color=discord.Color.purple()
+            # NEW CODE (replace with this):
+            await interaction.response.send_message(
+                "✅ 시간이 설정되었습니다. 다시 스크림 생성을 시작해주세요.",
+                ephemeral=True
             )
-
-            await interaction.response.send_message(embed=embed, view=player_view, ephemeral=True)
 
         except Exception as e:
             await interaction.response.send_message(
@@ -466,6 +519,7 @@ class PlayerCountSelectView(discord.ui.View):
         self.tier = tier
         self.start_time = start_time
         self.role_id = role_id
+        self.logger = get_logger("내부 매치")
 
         # 공통 플레이어 수 옵션
         player_options = [
@@ -497,26 +551,40 @@ class PlayerCountSelectView(discord.ui.View):
 
     async def player_count_selected(self, interaction: discord.Interaction):
         """플레이어 수 선택 처리"""
-        selection = self.player_select.values[0]
+        try:
+            selection = self.player_select.values[0]
 
-        if selection == "custom":
-            # 사용자 지정 플레이어 수 모달 표시
-            modal = CustomPlayerCountModal(
-                self.bot, self.guild_id, self.game, self.gamemode,
-                self.tier, self.start_time, self.role_id
-            )
-            await interaction.response.send_modal(modal)
-            return
+            if selection == "custom":
+                # For custom player count, show modal immediately
+                modal = CustomPlayerCountModal(
+                    self.bot, self.guild_id, self.game, self.gamemode,
+                    self.tier, self.start_time, self.role_id
+                )
+                await interaction.response.send_modal(modal)
+                return
 
-        max_players = int(selection)
+            # For non-custom selections, defer first
+            await interaction.response.defer(ephemeral=True)
 
-        # 스크림 생성
-        await self.create_scrim(interaction, max_players)
+            max_players = int(selection)
+            await self.create_scrim(interaction, max_players)
+
+        except Exception as e:
+            self.logger.error(f"Player count selection error: {e}")
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message("❌ 오류가 발생했습니다.", ephemeral=True)
+                else:
+                    await interaction.followup.send("❌ 오류가 발생했습니다.", ephemeral=True)
+            except:
+                pass
 
     async def create_scrim(self, interaction: discord.Interaction, max_players: int):
-        """Create scrim with selected options"""
+        """Create scrim with immediate deferral"""
         try:
-            await interaction.response.defer(ephemeral=True)
+            # Defer immediately if not already done
+            if not interaction.response.is_done():
+                await interaction.response.defer(ephemeral=True)
 
             scrim_cog = self.bot.get_cog('ScrimCog')
             if scrim_cog:
@@ -534,9 +602,8 @@ class PlayerCountSelectView(discord.ui.View):
                 if scrim_id:
                     await interaction.followup.send("✅ 스크림이 성공적으로 생성되었습니다!", ephemeral=True)
 
-                    # Small delay then do background work
-                    await asyncio.sleep(0.1)
-                    asyncio.create_task(self.post_scrim_and_notify(scrim_cog, scrim_id))
+                    # Do heavy operations in background
+                    asyncio.create_task(self.post_scrim_and_notify_safe(scrim_cog, scrim_id))
                 else:
                     await interaction.followup.send("❌ 스크림 생성 중 오류가 발생했습니다.", ephemeral=True)
             else:
@@ -552,6 +619,15 @@ class PlayerCountSelectView(discord.ui.View):
                     await interaction.followup.send("❌ 오류가 발생했습니다.", ephemeral=True)
             except:
                 pass
+
+    async def post_scrim_and_notify_safe(self, scrim_cog, scrim_id):
+        """Safe background task that won't affect interaction timing"""
+        try:
+            await asyncio.sleep(0.1)  # Small delay to ensure interaction completes
+            await self.post_scrim_and_notify(scrim_cog, scrim_id)
+        except Exception as e:
+            logger = get_logger("내부 매치")
+            logger.error(f"Background notification error: {e}")
 
     async def post_scrim_and_notify(self, scrim_cog, scrim_id):
         """Background task to post scrim message and send role notifications"""
@@ -586,17 +662,26 @@ class PlayerCountSelectView(discord.ui.View):
 
     async def back_to_time_selection(self, interaction: discord.Interaction):
         """시간 선택으로 돌아가기"""
-        time_view = TimeSelectView(
-            self.bot, self.guild_id, self.game, self.gamemode, self.tier, self.role_id
-        )
+        try:
+            await interaction.response.defer()  # ADD THIS
 
-        embed = discord.Embed(
-            title="⏰ 시작 시간 선택",
-            description=f"**게임:** {self.game}\n**모드:** {self.gamemode}\n**티어:** {self.tier}\n\n스크림은 언제 시작해야 하나요?",
-            color=discord.Color.orange()
-        )
+            time_view = TimeSelectView(
+                self.bot, self.guild_id, self.game, self.gamemode, self.tier, self.role_id
+            )
 
-        await interaction.response.edit_message(embed=embed, view=time_view)
+            embed = discord.Embed(
+                title="⏰ 시작 시간 선택",
+                description=f"**게임:** {self.game}\n**모드:** {self.gamemode}\n**티어:** {self.tier}\n\n스크림은 언제 시작해야 하나요?",
+                color=discord.Color.orange()
+            )
+
+            await interaction.followup.edit_message(embed=embed, view=time_view)  # CHANGED
+        except Exception as e:
+            self.logger.error(f"Back to time selection error: {e}")
+            try:
+                await interaction.followup.send("❌ 오류가 발생했습니다.", ephemeral=True)
+            except:
+                pass
 
 
 class CustomPlayerCountModal(discord.ui.Modal):
@@ -611,6 +696,7 @@ class CustomPlayerCountModal(discord.ui.Modal):
         self.tier = tier
         self.start_time = start_time
         self.role_id = role_id
+        self.logger = get_logger("내부 매치")
 
         self.player_input = discord.ui.TextInput(
             label="최대 플레이어 수",
@@ -630,12 +716,16 @@ class CustomPlayerCountModal(discord.ui.Modal):
                 )
                 return
 
-            # 스크림 생성
-            player_view = PlayerCountSelectView(
-                self.bot, self.guild_id, self.game, self.gamemode,
-                self.tier, self.start_time, self.role_id
+            # CHANGE THIS SECTION:
+            # OLD CODE (remove this):
+            # player_view = PlayerCountSelectView(...)
+            # await player_view.create_scrim(interaction, max_players)
+
+            # NEW CODE (replace with this):
+            await interaction.response.send_message(
+                f"✅ 플레이어 수가 {max_players}명으로 설정되었습니다. 다시 스크림 생성을 시작해주세요.",
+                ephemeral=True
             )
-            await player_view.create_scrim(interaction, max_players)
 
         except ValueError:
             await interaction.response.send_message(
@@ -750,7 +840,7 @@ class ScrimView(discord.ui.View):
     async def join_scrim(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Join scrim with proper error handling"""
         try:
-            await interaction.response.defer(ephemeral=True)
+            await interaction.response.defer(ephemeral=True)  # ADD THIS
 
             scrim_cog = self.bot.get_cog('ScrimCog')
             if not scrim_cog:
@@ -761,15 +851,13 @@ class ScrimView(discord.ui.View):
             await interaction.followup.send(message, ephemeral=True)
 
             if success:
-                await scrim_cog.update_scrim_message(interaction.message, self.scrim_id)
+                # Don't wait for message update
+                asyncio.create_task(scrim_cog.update_scrim_message(interaction.message, self.scrim_id))
 
         except Exception as e:
             self.logger.error(f"Join scrim error: {e}")
             try:
-                if not interaction.response.is_done():
-                    await interaction.response.send_message("❌ 오류가 발생했습니다.", ephemeral=True)
-                else:
-                    await interaction.followup.send("❌ 오류가 발생했습니다.", ephemeral=True)
+                await interaction.followup.send("❌ 오류가 발생했습니다.", ephemeral=True)
             except:
                 pass
 
@@ -782,7 +870,7 @@ class ScrimView(discord.ui.View):
     async def leave_scrim(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Leave scrim with proper error handling"""
         try:
-            await interaction.response.defer(ephemeral=True)
+            await interaction.response.defer(ephemeral=True)  # DEFER FIRST
 
             scrim_cog = self.bot.get_cog('ScrimCog')
             if not scrim_cog:
@@ -790,18 +878,16 @@ class ScrimView(discord.ui.View):
                 return
 
             success, message = await scrim_cog.leave_scrim(interaction.user.id, self.scrim_id)
-            await interaction.followup.send(message, ephemeral=True)
+            await interaction.followup.send(message, ephemeral=True)  # CHANGED from response.send
 
             if success:
-                await scrim_cog.update_scrim_message(interaction.message, self.scrim_id)
+                # Don't wait for message update - run in background
+                asyncio.create_task(scrim_cog.update_scrim_message(interaction.message, self.scrim_id))
 
         except Exception as e:
             self.logger.error(f"Leave scrim error: {e}")
             try:
-                if not interaction.response.is_done():
-                    await interaction.response.send_message("❌ 오류가 발생했습니다.", ephemeral=True)
-                else:
-                    await interaction.followup.send("❌ 오류가 발생했습니다.", ephemeral=True)
+                await interaction.followup.send("❌ 오류가 발생했습니다.", ephemeral=True)
             except:
                 pass
 
@@ -814,7 +900,7 @@ class ScrimView(discord.ui.View):
     async def join_queue(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Join queue with proper error handling"""
         try:
-            await interaction.response.defer(ephemeral=True)
+            await interaction.response.defer(ephemeral=True)  # DEFER FIRST
 
             scrim_cog = self.bot.get_cog('ScrimCog')
             if not scrim_cog:
@@ -822,18 +908,16 @@ class ScrimView(discord.ui.View):
                 return
 
             success, message = await scrim_cog.join_queue(interaction.user.id, self.scrim_id)
-            await interaction.followup.send(message, ephemeral=True)
+            await interaction.followup.send(message, ephemeral=True)  # CHANGED from response.send
 
             if success:
-                await scrim_cog.update_scrim_message(interaction.message, self.scrim_id)
+                # Don't wait for message update - run in background
+                asyncio.create_task(scrim_cog.update_scrim_message(interaction.message, self.scrim_id))
 
         except Exception as e:
             self.logger.error(f"Join queue error: {e}")
             try:
-                if not interaction.response.is_done():
-                    await interaction.response.send_message("❌ 오류가 발생했습니다.", ephemeral=True)
-                else:
-                    await interaction.followup.send("❌ 오류가 발생했습니다.", ephemeral=True)
+                await interaction.followup.send("❌ 오류가 발생했습니다.", ephemeral=True)
             except:
                 pass
 
@@ -846,7 +930,7 @@ class ScrimView(discord.ui.View):
     async def leave_queue(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Leave queue with proper error handling"""
         try:
-            await interaction.response.defer(ephemeral=True)
+            await interaction.response.defer(ephemeral=True)  # DEFER FIRST
 
             scrim_cog = self.bot.get_cog('ScrimCog')
             if not scrim_cog:
@@ -854,18 +938,16 @@ class ScrimView(discord.ui.View):
                 return
 
             success, message = await scrim_cog.leave_queue(interaction.user.id, self.scrim_id)
-            await interaction.followup.send(message, ephemeral=True)
+            await interaction.followup.send(message, ephemeral=True)  # CHANGED from response.send
 
             if success:
-                await scrim_cog.update_scrim_message(interaction.message, self.scrim_id)
+                # Don't wait for message update - run in background
+                asyncio.create_task(scrim_cog.update_scrim_message(interaction.message, self.scrim_id))
 
         except Exception as e:
             self.logger.error(f"Leave queue error: {e}")
             try:
-                if not interaction.response.is_done():
-                    await interaction.response.send_message("❌ 오류가 발생했습니다.", ephemeral=True)
-                else:
-                    await interaction.followup.send("❌ 오류가 발생했습니다.", ephemeral=True)
+                await interaction.followup.send("❌ 오류가 발생했습니다.", ephemeral=True)
             except:
                 pass
 
@@ -878,12 +960,13 @@ class ScrimView(discord.ui.View):
     async def cancel_scrim(self, interaction: discord.Interaction, button: discord.ui.Button):
         """Cancel scrim with proper error handling"""
         try:
+            # DON'T defer here yet - we need to check permissions first
             scrim_cog = self.bot.get_cog('ScrimCog')
             if not scrim_cog:
                 await interaction.response.send_message("❌ 스크림 시스템을 찾을 수 없습니다.", ephemeral=True)
                 return
 
-            # 권한 확인
+            # Permission check
             is_organizer = interaction.user.id == self.scrim_data['organizer_id']
             is_staff = scrim_cog.has_staff_permissions(interaction.user)
 
@@ -891,7 +974,10 @@ class ScrimView(discord.ui.View):
                 await interaction.response.send_message("❌ 이 스크림을 취소할 권한이 없습니다.", ephemeral=True)
                 return
 
-            # 확인 임베드
+            # NOW defer since we passed permission checks
+            await interaction.response.defer(ephemeral=True)
+
+            # Confirmation embed
             embed = discord.Embed(
                 title="⚠️ 스크림 취소 확인",
                 description="이 스크림을 정말 취소하시겠습니까?\n모든 참가자에게 알림이 전송됩니다.",
@@ -904,11 +990,12 @@ class ScrimView(discord.ui.View):
 
             async def confirm_callback(confirm_interaction):
                 try:
-                    await confirm_interaction.response.defer()
+                    await confirm_interaction.response.defer()  # DEFER in callback too
                     success = await scrim_cog.cancel_scrim(self.scrim_id, interaction.user.id)
                     if success:
                         await confirm_interaction.followup.send("✅ 스크림이 취소되었습니다.", ephemeral=True)
-                        await scrim_cog.update_scrim_message(interaction.message, self.scrim_id)
+                        # Update message in background
+                        asyncio.create_task(scrim_cog.update_scrim_message(interaction.message, self.scrim_id))
                     else:
                         await confirm_interaction.followup.send("❌ 스크림 취소 중 오류가 발생했습니다.", ephemeral=True)
                 except Exception as e:
@@ -929,7 +1016,7 @@ class ScrimView(discord.ui.View):
             view.add_item(confirm_button)
             view.add_item(cancel_button)
 
-            await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)  # CHANGED from response.send
 
         except Exception as e:
             self.logger.error(f"Cancel scrim error: {e}")
@@ -959,19 +1046,18 @@ class ScrimCreateView(discord.ui.View):
     async def create_scrim(self, interaction: discord.Interaction, button: discord.ui.Button):
         """개선된 스크림 생성 프로세스 시작"""
         try:
+            # CRITICAL: Defer immediately
+            await interaction.response.defer(ephemeral=True)
+
             self.logger.info(f"Create scrim button pressed by {interaction.user.id}")
 
-            # 기능 활성화 여부 확인
             if not config.is_feature_enabled(interaction.guild.id, 'scrim_system'):
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     "❌ 이 서버에서 스크림 시스템이 비활성화되어 있습니다.",
                     ephemeral=True
                 )
                 return
 
-            self.logger.info(f"Feature enabled, creating game view")
-
-            # 게임 선택으로 시작
             game_view = GameSelectView(self.bot, interaction.guild.id)
 
             embed = discord.Embed(
@@ -981,15 +1067,13 @@ class ScrimCreateView(discord.ui.View):
             )
             embed.set_footer(text="아래 드롭다운을 사용하여 게임을 선택하세요")
 
-            await interaction.response.send_message(embed=embed, view=game_view, ephemeral=True)
+            # CHANGE: Use followup instead of response
+            await interaction.followup.send(embed=embed, view=game_view, ephemeral=True)
 
         except Exception as e:
             self.logger.error(f"Create scrim button error: {e}", exc_info=True)
             try:
-                if not interaction.response.is_done():
-                    await interaction.response.send_message("❌ 오류가 발생했습니다.", ephemeral=True)
-                else:
-                    await interaction.followup.send("❌ 오류가 발생했습니다.", ephemeral=True)
+                await interaction.followup.send("❌ 오류가 발생했습니다.", ephemeral=True)
             except:
                 pass
 
@@ -1072,10 +1156,10 @@ class ScrimCog(commands.Cog):
             self.logger.error(f"스크림 데이터 로드 중 오류: {e}", extra={'guild_id': None})
 
     async def save_scrims_data(self):
-        """스크림 데이터를 파일에 저장"""
+        """스크림 데이터를 파일에 저장 - 비동기 버전"""
         try:
             os.makedirs(os.path.dirname(self.scrims_file), exist_ok=True)
-            # datetime 객체를 ISO 형식으로 변환하여 JSON 저장
+
             data_to_save = {}
             for scrim_id, scrim_data in self.scrims_data.items():
                 data_copy = scrim_data.copy()
@@ -1083,11 +1167,15 @@ class ScrimCog(commands.Cog):
                 data_copy['created_at'] = scrim_data['created_at'].isoformat()
                 data_to_save[scrim_id] = data_copy
 
-            with open(self.scrims_file, 'w', encoding='utf-8') as f:
-                json.dump(data_to_save, f, ensure_ascii=False, indent=2)
+            # Use thread for file I/O to avoid blocking
+            def write_file():
+                with open(self.scrims_file, 'w', encoding='utf-8') as f:
+                    json.dump(data_to_save, f, ensure_ascii=False, indent=2)
+
+            await asyncio.to_thread(write_file)
+
         except Exception as e:
             self.logger.error(f"스크림 데이터 저장 중 오류: {e}", extra={'guild_id': None})
-
     async def load_map_pools(self):
         """맵 풀 파일에서 로드"""
         try:
@@ -1219,7 +1307,7 @@ class ScrimCog(commands.Cog):
 
             self.scrims_data[scrim_id] = scrim_data
 
-            # 파일 저장을 백그라운드 태스크로 실행
+            # CHANGE THIS LINE - don't wait for file save:
             asyncio.create_task(self.save_scrims_data())
 
             self.logger.info(f"길드 {guild_id}에서 게임 {game}의 새 스크림 {scrim_id} 생성",
