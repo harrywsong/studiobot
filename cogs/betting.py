@@ -152,6 +152,7 @@ class BettingCreationModal(discord.ui.Modal):
             self.betting_cog.logger.error(f"베팅 생성 모달 오류: {e}", extra={'guild_id': interaction.guild.id})
 
 
+# Fixed BettingView class with duplicate method removed
 class BettingView(discord.ui.View):
     def __init__(self, bot, event_data: dict):
         super().__init__(timeout=None)  # Never timeout
@@ -225,6 +226,7 @@ class BettingView(discord.ui.View):
             )
             total_bet += bet['amount']
 
+        embed.add_field(name="💰 총 베팅액", value=f"{total_bet:,} 코인", inline=False)
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     async def handle_bet(self, interaction: discord.Interaction, option_index: int):
