@@ -47,8 +47,15 @@ class LotteryCog(commands.Cog):
         self.lottery_channel_id = 1418763263721869403
         self._setup_completed = False
 
-        # Start the daily draw task
+        # Start the draw task
         self.daily_lottery_draw.start()
+
+        # Immediately schedule a task to post/update the embed when the cog loads
+        self.bot.loop.create_task(self.setup_and_post_interface())
+
+    async def setup_and_post_interface(self):
+        await self.bot.wait_until_ready()
+        await self.update_lottery_interface_message(self.lottery_channel_id)
 
     def cog_unload(self):
         """Clean up when cog is unloaded"""
