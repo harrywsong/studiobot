@@ -73,10 +73,10 @@ class LotteryCog(commands.Cog):
 
     @tasks.loop(
         time=[
-            time(hour=4, minute=0, tzinfo=timezone.utc),
-            time(hour=10, minute=0, tzinfo=timezone.utc),
-            time(hour=16, minute=0, tzinfo=timezone.utc),
-            time(hour=22, minute=0, tzinfo=timezone.utc),
+            time(hour=0, minute=0, tzinfo=pytz.timezone('US/Eastern')),  # 12:00 AM EST/EDT
+            time(hour=6, minute=0, tzinfo=pytz.timezone('US/Eastern')),  # 6:00 AM EST/EDT
+            time(hour=12, minute=0, tzinfo=pytz.timezone('US/Eastern')),  # 12:00 PM EST/EDT
+            time(hour=18, minute=0, tzinfo=pytz.timezone('US/Eastern')),  # 6:00 PM EST/EDT
         ]
     )
     async def daily_lottery_draw(self):
@@ -340,17 +340,20 @@ class LotteryCog(commands.Cog):
                 import pytz
                 est = pytz.timezone('US/Eastern')
                 now_est = datetime.now(est)
-                # Calculate the next draw time based on the 6-hour cycle
-                draw_times_utc = [time(hour=4, minute=0), time(hour=10, minute=0), time(hour=16, minute=0),
-                                  time(hour=22, minute=0)]
-                next_draw_time_utc = min(
-                    (datetime.utcnow().replace(hour=t.hour, minute=t.minute, second=0, microsecond=0) for t in
-                     draw_times_utc if datetime.utcnow().time() < t),
-                    default=datetime.utcnow() + timedelta(days=1, hours=4)
-                )
+                draw_times_est = [time(hour=0, minute=0), time(hour=6, minute=0), time(hour=12, minute=0),
+                                  time(hour=18, minute=0)]
 
-                # Convert UTC to EST for display
-                next_draw_time_est = next_draw_time_utc.astimezone(est)
+                next_draw_time_est = None
+                for draw_time in draw_times_est:
+                    candidate_time = now_est.replace(hour=draw_time.hour, minute=draw_time.minute, second=0,
+                                                     microsecond=0)
+                    if candidate_time > now_est:
+                        next_draw_time_est = candidate_time
+                        break
+
+                # If no draw time left today, use tomorrow's first draw (midnight)
+                if next_draw_time_est is None:
+                    next_draw_time_est = now_est.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
 
                 embed.add_field(
                     name="⏰ 다음 자동 추첨",
@@ -1074,26 +1077,19 @@ class LotteryCog(commands.Cog):
             # Calculate next run time
             est = pytz.timezone('US/Eastern')
             now_est = datetime.now(est)
+            draw_times_est = [time(hour=0, minute=0), time(hour=6, minute=0), time(hour=12, minute=0),
+                              time(hour=18, minute=0)]
 
-            # The draw happens at 04:00, 10:00, 16:00, 22:00 UTC, which is 12:00 AM, 6:00 AM, 12:00 PM, 6:00 PM EST
-            draw_times_utc = [time(hour=4, minute=0), time(hour=10, minute=0), time(hour=16, minute=0),
-                              time(hour=22, minute=0)]
-
-            # Find the next upcoming draw time in UTC
-            now_utc = datetime.now(timezone.utc).time()
             next_draw_time_utc = None
-            for draw_time in draw_times_utc:
-                if now_utc < draw_time:
-                    next_draw_time_utc = datetime.now(timezone.utc).replace(
-                        hour=draw_time.hour, minute=draw_time.minute, second=0, microsecond=0
-                    )
+            for draw_time in draw_times_est:
+                candidate_time = now_est.replace(hour=draw_time.hour, minute=draw_time.minute, second=0, microsecond=0)
+                if candidate_time > now_est:
+                    next_draw_time_utc = candidate_time
                     break
 
-            # If no draw time is left for today, it's tomorrow's first draw
+            # If no draw time is left for today, it's tomorrow's first draw (midnight Eastern)
             if next_draw_time_utc is None:
-                next_draw_time_utc = datetime.now(timezone.utc).replace(
-                    hour=draw_times_utc[0].hour, minute=draw_times_utc[0].minute, second=0, microsecond=0
-                ) + timedelta(days=1)
+                next_draw_time_utc = now_est.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
 
             embed.add_field(name="📊 상태", value="🟢 실행 중", inline=True)
             embed.add_field(name="⏰ 다음 추첨", value=f"<t:{int(next_draw_time_utc.timestamp())}:R>", inline=True)
