@@ -41,19 +41,12 @@ class BettingControlView(discord.ui.View):
         emoji="🎲"
     )
     async def create_betting_event(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Button to create new betting event"""
-        betting_cog = self.bot.get_cog('BettingCog')
-        if not betting_cog:
-            await interaction.response.send_message("베팅 시스템을 찾을 수 없습니다.", ephemeral=True)
-            return
-
-        # Check admin permissions
-        if not betting_cog.has_admin_permissions(interaction.user):
-            await interaction.response.send_message("이 기능을 사용할 권한이 없습니다.", ephemeral=True)
-            return
-
-        modal = BettingCreationModal(betting_cog)
-        await interaction.response.send_modal(modal)
+        """Callback for creating a new betting event"""
+        try:
+            await interaction.response.send_modal(self.create_betting_event_modal())
+        except Exception as e:
+            self.logger.error(f"베팅 생성 버튼 상호작용 실패: {e}", extra={'guild_id': interaction.guild_id})
+            await interaction.response.send_message("베팅 생성 중 오류가 발생했습니다.", ephemeral=True)
 
 
 class BettingCreationModal(discord.ui.Modal):
@@ -848,14 +841,17 @@ class BettingCog(commands.Cog):
             fig.patch.set_facecolor('#2f3136')
 
             # Pie chart for betting distribution
+            # Ensure event_data['options'] is a list and stats['option_stats'] is a dict with integer keys
+            if not isinstance(event_data['options'], list) or not isinstance(stats['option_stats'], dict):
+                raise TypeError("베팅 데이터 형식이 올바르지 않습니다.")
+
             option_names = [opt['name'] for opt in event_data['options']]
             amounts = []
             colors = ['#7289da', '#43b581', '#faa61a', '#f04747', '#9b59b6', '#e67e22', '#11806a', '#992d22']
 
             for i, option in enumerate(event_data['options']):
-                option_stats = stats['option_stats'].get(i, {'amount': 0})
-                amounts.append(
-                    option_stats['amount'] if option_stats['amount'] > 0 else 0.1)  # Small value for empty options
+                option_stats = stats['option_stats'].get(i, {'amount': 0, 'bettors': 0})
+                amounts.append(option_stats['amount'] if option_stats['amount'] > 0 else 0.1)
 
             if sum(amounts) > 0:
                 wedges, texts, autotexts = ax1.pie(amounts, labels=option_names, autopct='%1.1f%%',
@@ -874,7 +870,7 @@ class BettingCog(commands.Cog):
             # Bar chart for participant count
             participant_counts = []
             for i, option in enumerate(event_data['options']):
-                option_stats = stats['option_stats'].get(i, {'bettors': 0})
+                option_stats = stats['option_stats'].get(i, {'amount': 0, 'bettors': 0})
                 participant_counts.append(option_stats['bettors'])
 
             bars = ax2.bar(range(len(option_names)), participant_counts,
@@ -891,8 +887,8 @@ class BettingCog(commands.Cog):
             # Add value labels on bars
             for bar, count in zip(bars, participant_counts):
                 if count > 0:
-                    ax2.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.1,
-                             str(count), ha='center', va='bottom', color='white', fontweight='bold')
+                    ax2.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.1, str(count),
+                             ha='center', va='bottom', color='white', fontweight='bold')
 
             plt.tight_layout()
 
@@ -908,7 +904,6 @@ class BettingCog(commands.Cog):
                 color=discord.Color.blue(),
                 timestamp=datetime.now(timezone.utc)
             )
-
             graph_embed.add_field(
                 name="💰 총 베팅액",
                 value=f"{stats['total_amount']:,} 코인",
@@ -932,15 +927,12 @@ class BettingCog(commands.Cog):
                     value=f"<t:{int(event_data['ends_at'].timestamp())}:R>",
                     inline=False
                 )
-
             graph_embed.set_footer(text="그래프는 5분마다 자동 업데이트됩니다")
 
             # Find and update existing graph message, or create new one
             graph_message = None
             async for message in channel.history(limit=20):
-                if (message.author == self.bot.user and
-                        message.embeds and
-                        "실시간 베팅 통계" in message.embeds[0].title):
+                if (message.author == self.bot.user and message.embeds and "실시간 베팅 통계" in message.embeds[0].title):
                     graph_message = message
                     break
 
@@ -954,7 +946,6 @@ class BettingCog(commands.Cog):
 
         except Exception as e:
             self.logger.error(f"베팅 그래프 생성 실패: {e}", extra={'guild_id': channel.guild.id})
-
     async def get_event(self, event_id: int, guild_id: int) -> Optional[dict]:
         """Get event data"""
         try:
