@@ -159,15 +159,16 @@ class BettingView(discord.ui.View):
         self.event_data = event_data
         self.logger = get_logger("베팅 시스템")
 
-        # Create buttons with STATIC custom_ids (this is crucial!)
+        # Create buttons for each betting option
         for i, option in enumerate(event_data['options'][:8]):
             button = discord.ui.Button(
                 label=f"{option['name']} (0명)",
                 style=discord.ButtonStyle.primary,
-                custom_id=f"bet_{event_data['event_id']}_{i}",  # Keep this format
+                custom_id=f"bet_{event_data['event_id']}_{i}",
                 emoji="💰"
             )
-            button.callback = self.create_bet_callback(i)  # ← Actually set the callback!
+            # FIXED: Use a closure to capture the correct index
+            button.callback = self._create_bet_callback(i)
             self.add_item(button)
 
         # Add status button
@@ -177,13 +178,14 @@ class BettingView(discord.ui.View):
             custom_id=f"betting_status_{event_data['event_id']}",
             emoji="📊"
         )
-        status_button.callback = self.show_betting_status  # ← CORRECT!
+        # FIXED: Properly assign callback
+        status_button.callback = self.show_betting_status
         self.add_item(status_button)
 
-    def create_bet_callback(self, option_index):
+    def _create_bet_callback(self, option_index):
+        """Create a callback function with the correct option index captured"""
         async def bet_callback(interaction: discord.Interaction):
             await self.handle_bet(interaction, option_index)
-
         return bet_callback
 
     async def handle_bet(self, interaction: discord.Interaction, option_index: int):
@@ -325,7 +327,8 @@ class AdminBettingView(discord.ui.View):
             custom_id=f"admin_close_bet_{event_id}",
             emoji="⏹️"
         )
-        close_button.callback = self.close_betting  # ← ADD THIS LINE
+        # FIXED: Properly assign callback
+        close_button.callback = self.close_betting
         self.add_item(close_button)
 
     async def close_betting(self, interaction: discord.Interaction):
@@ -393,18 +396,8 @@ class BettingCog(commands.Cog):
         self.active_events = {}
         self.betting_displays = {}
 
-        # IMPORTANT: Add persistent views immediately in __init__
-        self.setup_persistent_views()
-
         self.logger.info("베팅 시스템이 초기화되었습니다.")
         self.bot.loop.create_task(self.wait_and_start_tasks())
-
-    def setup_persistent_views(self):
-        """Setup persistent views that survive bot restarts"""
-        # Add persistent views to bot immediately
-        control_view = BettingControlView(self.bot)
-        control_view.timeout = None
-        self.bot.add_view(control_view, message_id=None)  # No specific message_id for general use
 
     async def wait_and_start_tasks(self):
         """Wait for bot to be ready then start tasks"""
@@ -412,7 +405,7 @@ class BettingCog(commands.Cog):
         await self.setup_database()
         await self.load_active_events()
 
-        # IMPORTANT: Reload persistent views after bot restart
+        # FIXED: Reload persistent views after bot restart
         await self.reload_persistent_views()
 
         await self.setup_control_panel()
@@ -493,12 +486,11 @@ class BettingCog(commands.Cog):
 
             embed = self.create_control_panel_embed()
             view = BettingControlView(self.bot)
-            view.timeout = None
 
             if control_message:
                 try:
                     await control_message.edit(embed=embed, view=view)
-                    # Add the view with the specific message ID
+                    # FIXED: Add the view with the specific message ID
                     self.bot.add_view(view, message_id=control_message.id)
                     self.logger.info("기존 베팅 제어 패널을 업데이트했습니다.")
                 except discord.NotFound:
@@ -619,19 +611,13 @@ class BettingCog(commands.Cog):
                 return {'success': False, 'reason': '베팅 카테고리를 찾을 수 없습니다.'}
 
             # Calculate end time - ensure it's timezone-aware using UTC
-            # Create timezone-aware current time explicitly
             current_time_utc = datetime.now(timezone.utc)
-            # Create timedelta (this is timezone-naive by design)
             duration_delta = timedelta(minutes=duration_minutes)
-            # Add them together (timezone-aware + timedelta = timezone-aware)
             end_time = current_time_utc + duration_delta
 
             # Ensure end_time is definitely timezone-aware
             if end_time.tzinfo is None:
                 end_time = end_time.replace(tzinfo=timezone.utc)
-
-            # Debug logging
-            self.logger.info(f"End time created: {end_time} (tzinfo: {end_time.tzinfo})")
 
             # Create dedicated betting channel with proper formatting
             channel_name = f"╠ 📋┆베팅-{title.replace(' ', '-')[:20]}"
@@ -685,11 +671,7 @@ class BettingCog(commands.Cog):
 
             await betting_channel.edit(overwrites=overwrites)
 
-            # Debug logging before database insert
-            self.logger.info(
-                f"About to insert into DB - end_time: {end_time} (type: {type(end_time)}, tzinfo: {end_time.tzinfo})")
-
-            # Create event in database - ensure timezone is handled properly
+            # Create event in database
             try:
                 event_id = await self.bot.pool.fetchval("""
                     INSERT INTO betting_events (guild_id, title, description, options, creator_id, ends_at, 
@@ -761,7 +743,7 @@ class BettingCog(commands.Cog):
             )
             admin_message = await channel.send(embed=admin_embed, view=admin_view)
 
-            # Register views with specific message IDs
+            # FIXED: Register views with specific message IDs properly
             self.bot.add_view(view, message_id=betting_message.id)
             self.bot.add_view(admin_view, message_id=admin_message.id)
 
@@ -780,16 +762,18 @@ class BettingCog(commands.Cog):
 
         except Exception as e:
             self.logger.error(f"초기 베팅 디스플레이 생성 실패: {e}", extra={'guild_id': channel.guild.id})
+
     async def reload_persistent_views(self):
         """Reload persistent views for active betting events"""
         try:
-            # Get all active betting events
+            # Get all active betting events with their message IDs
             active_events = await self.bot.pool.fetch("""
                 SELECT event_id, guild_id, title, options, message_id, betting_channel_id
                 FROM betting_events 
-                WHERE status IN ('active', 'expired')
+                WHERE status IN ('active', 'expired') AND message_id IS NOT NULL
             """)
 
+            views_reloaded = 0
             for event_row in active_events:
                 if not event_row['message_id'] or not event_row['betting_channel_id']:
                     continue
@@ -810,15 +794,23 @@ class BettingCog(commands.Cog):
                         'message_id': event_row['message_id']
                     }
 
-                    # Create and add persistent view
-                    view = BettingView(self.bot, event_data)
-                    self.bot.add_view(view, message_id=event_row['message_id'])
+                    # Create and add persistent view for betting buttons
+                    betting_view = BettingView(self.bot, event_data)
+                    self.bot.add_view(betting_view, message_id=event_row['message_id'])
+                    views_reloaded += 1
 
-                    # Also add admin view if it exists
-                    admin_view = AdminBettingView(self.bot, event_row['event_id'])
-                    self.bot.add_view(admin_view, message_id=None)  # Admin messages don't have stored IDs
+                    # Try to find and reload admin view message (it's usually right after the betting message)
+                    try:
+                        async for msg in channel.history(after=message, limit=5):
+                            if (msg.author == self.bot.user and msg.embeds and
+                                "관리자 제어" in msg.embeds[0].title):
+                                admin_view = AdminBettingView(self.bot, event_row['event_id'])
+                                self.bot.add_view(admin_view, message_id=msg.id)
+                                break
+                    except:
+                        pass  # Admin view reload is not critical
 
-                    self.logger.info(f"Reloaded persistent view for event {event_row['event_id']}")
+                    self.logger.debug(f"Reloaded persistent view for event {event_row['event_id']}")
 
                 except discord.NotFound:
                     # Message was deleted, clean up database
@@ -827,8 +819,12 @@ class BettingCog(commands.Cog):
                         SET message_id = NULL 
                         WHERE event_id = $1
                     """, event_row['event_id'])
+                    self.logger.info(f"Cleaned up deleted message for event {event_row['event_id']}")
                 except Exception as e:
                     self.logger.warning(f"Failed to reload view for event {event_row['event_id']}: {e}")
+
+            if views_reloaded > 0:
+                self.logger.info(f"Successfully reloaded {views_reloaded} persistent views")
 
         except Exception as e:
             self.logger.error(f"Failed to reload persistent views: {e}")
@@ -848,7 +844,6 @@ class BettingCog(commands.Cog):
             fig.patch.set_facecolor('#2f3136')
 
             # Pie chart for betting distribution
-            # Ensure event_data['options'] is a list and stats['option_stats'] is a dict with integer keys
             if not isinstance(event_data['options'], list) or not isinstance(stats['option_stats'], dict):
                 raise TypeError("베팅 데이터 형식이 올바르지 않습니다.")
 
@@ -953,6 +948,7 @@ class BettingCog(commands.Cog):
 
         except Exception as e:
             self.logger.error(f"베팅 그래프 생성 실패: {e}", extra={'guild_id': channel.guild.id})
+
     async def get_event(self, event_id: int, guild_id: int) -> Optional[dict]:
         """Get event data"""
         try:
@@ -1048,6 +1044,7 @@ class BettingCog(commands.Cog):
 
         except Exception as e:
             self.logger.error(f"베팅 처리 실패: {e}", extra={'guild_id': guild_id})
+            # Refund coins if they were removed but bet failed
             if 'removed' in locals() and removed:
                 await coins_cog.add_coins(user_id, guild_id, amount, "betting_refund",
                                           f"베팅 실패 환불 (이벤트 ID: {event_id})")
@@ -1188,9 +1185,11 @@ class BettingCog(commands.Cog):
                 stats = await self.get_betting_stats(event_id, guild_id)
                 view = BettingView(self.bot, event_data)
 
-                for i, item in enumerate(view.children[:-1]):
-                    option_stats = stats['option_stats'].get(i, {'bettors': 0})
-                    item.label = f"{event_data['options'][i]['name']} ({option_stats['bettors']}명)"
+                # FIXED: Update button labels correctly
+                for i, button in enumerate(view.children[:-1]):  # Exclude status button
+                    if i < len(event_data['options']):
+                        option_stats = stats['option_stats'].get(i, {'bettors': 0})
+                        button.label = f"{event_data['options'][i]['name']} ({option_stats['bettors']}명)"
 
                 await message.edit(embed=embed, view=view)
 
@@ -1198,9 +1197,13 @@ class BettingCog(commands.Cog):
                 await self.create_and_send_graph(event_id, channel)
 
             except discord.NotFound:
+                # Message was deleted, clean up
                 del self.betting_displays[guild_id][event_id]
+                await self.bot.pool.execute("""
+                    UPDATE betting_events SET message_id = NULL WHERE event_id = $1
+                """, event_id)
             except discord.HTTPException as e:
-                if e.status != 429:
+                if e.status != 429:  # Don't log rate limit errors
                     self.logger.error(f"베팅 디스플레이 업데이트 실패: {e}", extra={'guild_id': guild_id})
 
         except Exception as e:
@@ -1218,7 +1221,7 @@ class BettingCog(commands.Cog):
                 await interaction.followup.send("베팅 이벤트를 찾을 수 없습니다.", ephemeral=True)
                 return
 
-            if event_data['status'] != 'active':
+            if event_data['status'] not in ['active', 'expired']:
                 await interaction.followup.send("이미 종료된 베팅 이벤트입니다.", ephemeral=True)
                 return
 
@@ -1380,8 +1383,7 @@ class BettingCog(commands.Cog):
                 options_text = ""
                 for i, option in enumerate(event_data['options']):
                     option_stats = stats['option_stats'].get(i, {'amount': 0, 'bettors': 0})
-                    percentage = (option_stats['amount'] / stats['total_amount'] * 100) if stats[
-                                                                                               'total_amount'] > 0 else 0
+                    percentage = (option_stats['amount'] / stats['total_amount'] * 100) if stats['total_amount'] > 0 else 0
 
                     status_icon = "🏆" if i == winning_index else "❌"
                     options_text += f"{status_icon} **{option['name']}**\n"
@@ -1492,8 +1494,7 @@ class BettingCog(commands.Cog):
                 options_text = ""
                 for i, option in enumerate(event_data['options']):
                     option_stats = stats['option_stats'].get(i, {'amount': 0, 'bettors': 0})
-                    percentage = (option_stats['amount'] / stats['total_amount'] * 100) if stats[
-                                                                                               'total_amount'] > 0 else 0
+                    percentage = (option_stats['amount'] / stats['total_amount'] * 100) if stats['total_amount'] > 0 else 0
 
                     options_text += f"⏳ **{option['name']}**\n"
                     options_text += f"├ 베팅액: {option_stats['amount']:,} 코인 ({percentage:.1f}%)\n"
