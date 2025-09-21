@@ -805,55 +805,162 @@ class BettingCog(commands.Cog):
                 return
 
             custom_id = interaction.data.get('custom_id', '')
+            self.logger.info(f"Handling interaction with custom_id: {custom_id}")
 
             # Handle betting button interactions
             if custom_id.startswith('bet_'):
-                parts = custom_id.split('_')
-                if len(parts) >= 3:
-                    event_id = int(parts[1])
-                    option_index = int(parts[2])
+                try:
+                    parts = custom_id.split('_')
+                    if len(parts) >= 3:
+                        event_id = int(parts[1])
+                        option_index = int(parts[2])
 
-                    # Get the betting view and handle the interaction
-                    guild_id = interaction.guild.id
-                    event_data = await self.get_event(event_id, guild_id)
+                        # Get the betting view and handle the interaction
+                        guild_id = interaction.guild.id
+                        user_id = interaction.user.id
 
-                    if event_data:
-                        view = BettingView(self.bot, event_data)
-                        await view.handle_bet(interaction, option_index)
-                    else:
-                        await interaction.response.send_message("베팅 이벤트를 찾을 수 없습니다.", ephemeral=True)
+                        # Check if casino games are enabled
+                        if not config.is_feature_enabled(guild_id, 'casino_games'):
+                            await interaction.response.send_message(
+                                "⛔ 이 서버에서는 베팅 시스템이 비활성화되어 있습니다.",
+                                ephemeral=True
+                            )
+                            return
+
+                        # Check if event is still active
+                        event = await self.get_event(event_id, guild_id)
+                        if not event or event['status'] != 'active':
+                            await interaction.response.send_message("⛔ 이 베팅은 더 이상 활성화되어 있지 않습니다.", ephemeral=True)
+                            return
+
+                        # Show betting modal
+                        modal = BettingModal(self, event, option_index)
+                        await interaction.response.send_modal(modal)
+
+                except Exception as e:
+                    self.logger.error(f"베팅 버튼 처리 오류: {e}")
+                    if not interaction.response.is_done():
+                        await interaction.response.send_message("베팅 처리 중 오류가 발생했습니다.", ephemeral=True)
 
             # Handle betting status button
             elif custom_id.startswith('betting_status_'):
-                parts = custom_id.split('_')
-                if len(parts) >= 3:
-                    event_id = int(parts[2])
+                try:
+                    parts = custom_id.split('_')
+                    if len(parts) >= 3:
+                        event_id = int(parts[2])
 
-                    guild_id = interaction.guild.id
-                    event_data = await self.get_event(event_id, guild_id)
+                        guild_id = interaction.guild.id
+                        user_id = interaction.user.id
 
-                    if event_data:
-                        view = BettingView(self.bot, event_data)
-                        await view.show_betting_status(interaction)
-                    else:
-                        await interaction.response.send_message("베팅 이벤트를 찾을 수 없습니다.", ephemeral=True)
+                        event_data = await self.get_event(event_id, guild_id)
+                        if not event_data:
+                            await interaction.response.send_message("베팅 이벤트를 찾을 수 없습니다.", ephemeral=True)
+                            return
+
+                        user_bets = await self.get_user_bets(user_id, event_id, guild_id)
+
+                        if not user_bets:
+                            await interaction.response.send_message("📊 이 이벤트에 베팅하지 않았습니다.", ephemeral=True)
+                            return
+
+                        embed = discord.Embed(
+                            title="📊 내 베팅 현황",
+                            description=f"**이벤트:** {event_data['title']}",
+                            color=discord.Color.blue(),
+                            timestamp=datetime.now(timezone.utc)
+                        )
+
+                        total_bet = 0
+                        for bet in user_bets:
+                            option_name = event_data['options'][bet['option_index']]['name']
+                            embed.add_field(
+                                name=f"🎯 {option_name}",
+                                value=f"{bet['amount']:,} 코인",
+                                inline=True
+                            )
+                            total_bet += bet['amount']
+
+                        embed.add_field(name="💰 총 베팅액", value=f"{total_bet:,} 코인", inline=False)
+                        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+                except Exception as e:
+                    self.logger.error(f"베팅 상태 버튼 처리 오류: {e}")
+                    if not interaction.response.is_done():
+                        await interaction.response.send_message("상태 조회 중 오류가 발생했습니다.", ephemeral=True)
 
             # Handle admin close betting button
             elif custom_id.startswith('admin_close_bet_'):
-                parts = custom_id.split('_')
-                if len(parts) >= 4:
-                    event_id = int(parts[3])
+                try:
+                    parts = custom_id.split('_')
+                    if len(parts) >= 4:
+                        event_id = int(parts[3])
 
-                    admin_view = AdminBettingView(self.bot, event_id)
-                    await admin_view.close_betting(interaction)
+                        if not self.has_admin_permissions(interaction.user):
+                            await interaction.response.send_message("이 기능을 사용할 권한이 없습니다.", ephemeral=True)
+                            return
+
+                        event_data = await self.get_event(event_id, interaction.guild.id)
+
+                        if not event_data or event_data['status'] != 'active':
+                            await interaction.response.send_message("이미 종료된 베팅입니다.", ephemeral=True)
+                            return
+
+                        # Create dropdown with options
+                        options = []
+                        for i, option in enumerate(event_data['options']):
+                            options.append(discord.SelectOption(
+                                label=option['name'],
+                                value=str(i),
+                                description=f"선택지 {i + 1}"
+                            ))
+
+                        class WinnerSelect(discord.ui.Select):
+                            def __init__(self, betting_cog):
+                                super().__init__(placeholder="승리한 선택지를 선택하세요...", options=options)
+                                self.betting_cog = betting_cog
+
+                            async def callback(self, select_interaction):
+                                winning_index = int(self.values[0])
+                                await self.betting_cog.end_betting_event_internal(
+                                    select_interaction, event_id, winning_index
+                                )
+
+                        class WinnerView(discord.ui.View):
+                            def __init__(self, betting_cog):
+                                super().__init__(timeout=60)
+                                self.add_item(WinnerSelect(betting_cog))
+
+                        embed = discord.Embed(
+                            title="🏆 승리 선택지 선택",
+                            description="베팅을 종료하고 승리한 선택지를 선택해주세요:",
+                            color=discord.Color.orange()
+                        )
+
+                        await interaction.response.send_message(embed=embed, view=WinnerView(self), ephemeral=True)
+
+                except Exception as e:
+                    self.logger.error(f"관리자 종료 버튼 처리 오류: {e}")
+                    if not interaction.response.is_done():
+                        await interaction.response.send_message("관리자 기능 처리 중 오류가 발생했습니다.", ephemeral=True)
 
             # Handle control panel create betting button
             elif custom_id == 'create_betting_event':
-                control_view = BettingControlView(self.bot)
-                await control_view.create_betting_event(interaction, None)
+                try:
+                    # Check admin permissions
+                    if not self.has_admin_permissions(interaction.user):
+                        await interaction.response.send_message("이 기능을 사용할 권한이 없습니다.", ephemeral=True)
+                        return
+
+                    modal = BettingCreationModal(self)
+                    await interaction.response.send_modal(modal)
+
+                except Exception as e:
+                    self.logger.error(f"베팅 생성 버튼 처리 오류: {e}")
+                    if not interaction.response.is_done():
+                        await interaction.response.send_message("베팅 생성 처리 중 오류가 발생했습니다.", ephemeral=True)
 
         except Exception as e:
-            self.logger.error(f"버튼 인터랙션 처리 실패: {e}", extra={'guild_id': getattr(interaction, 'guild_id', None)})
+            self.logger.error(f"전체 인터랙션 처리 실패: {e}")
             if not interaction.response.is_done():
                 try:
                     await interaction.response.send_message("처리 중 오류가 발생했습니다.", ephemeral=True)
