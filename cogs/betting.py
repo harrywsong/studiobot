@@ -796,6 +796,70 @@ class BettingCog(commands.Cog):
         except Exception as e:
             self.logger.error(f"초기 베팅 디스플레이 생성 실패: {e}", extra={'guild_id': channel.guild.id})
 
+    @commands.Cog.listener()
+    async def on_interaction(self, interaction: discord.Interaction):
+        """Handle all interactions for betting system"""
+        try:
+            # Only handle button interactions
+            if interaction.type != discord.InteractionType.component:
+                return
+
+            custom_id = interaction.data.get('custom_id', '')
+
+            # Handle betting button interactions
+            if custom_id.startswith('bet_'):
+                parts = custom_id.split('_')
+                if len(parts) >= 3:
+                    event_id = int(parts[1])
+                    option_index = int(parts[2])
+
+                    # Get the betting view and handle the interaction
+                    guild_id = interaction.guild.id
+                    event_data = await self.get_event(event_id, guild_id)
+
+                    if event_data:
+                        view = BettingView(self.bot, event_data)
+                        await view.handle_bet(interaction, option_index)
+                    else:
+                        await interaction.response.send_message("베팅 이벤트를 찾을 수 없습니다.", ephemeral=True)
+
+            # Handle betting status button
+            elif custom_id.startswith('betting_status_'):
+                parts = custom_id.split('_')
+                if len(parts) >= 3:
+                    event_id = int(parts[2])
+
+                    guild_id = interaction.guild.id
+                    event_data = await self.get_event(event_id, guild_id)
+
+                    if event_data:
+                        view = BettingView(self.bot, event_data)
+                        await view.show_betting_status(interaction)
+                    else:
+                        await interaction.response.send_message("베팅 이벤트를 찾을 수 없습니다.", ephemeral=True)
+
+            # Handle admin close betting button
+            elif custom_id.startswith('admin_close_bet_'):
+                parts = custom_id.split('_')
+                if len(parts) >= 4:
+                    event_id = int(parts[3])
+
+                    admin_view = AdminBettingView(self.bot, event_id)
+                    await admin_view.close_betting(interaction)
+
+            # Handle control panel create betting button
+            elif custom_id == 'create_betting_event':
+                control_view = BettingControlView(self.bot)
+                await control_view.create_betting_event(interaction, None)
+
+        except Exception as e:
+            self.logger.error(f"버튼 인터랙션 처리 실패: {e}", extra={'guild_id': getattr(interaction, 'guild_id', None)})
+            if not interaction.response.is_done():
+                try:
+                    await interaction.response.send_message("처리 중 오류가 발생했습니다.", ephemeral=True)
+                except:
+                    pass
+
     async def create_and_send_graph(self, event_id: int, channel: discord.TextChannel):
         """Create and send betting statistics graph"""
         try:
