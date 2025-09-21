@@ -215,10 +215,24 @@ class SimpleBettingCog(commands.Cog):
             ORDER BY option_index
         """, event_id)
 
+        # 상태에 따른 제목과 색상 설정
+        if event['status'] == 'active':
+            title = f"🎲 {event['title']}"
+            description = "옵션을 선택하고 베팅하세요!"
+            color = discord.Color.gold()
+        elif event['status'] == 'closed':
+            title = f"⏸️ {event['title']} - 베팅 마감"
+            description = "베팅이 마감되었습니다. 결과 발표를 기다려주세요!"
+            color = discord.Color.orange()
+        else:
+            title = f"🏆 {event['title']} - 종료"
+            description = "베팅이 종료되었습니다!"
+            color = discord.Color.green()
+
         embed = discord.Embed(
-            title=f"🎲 {event['title']}",
-            description="옵션을 선택하고 베팅하세요!",
-            color=discord.Color.gold()
+            title=title,
+            description=description,
+            color=color
         )
 
         # 통계 계산
@@ -248,7 +262,10 @@ class SimpleBettingCog(commands.Cog):
             option_text += f"**{i + 1}. {option}**\n"
             option_text += f"💰 **{amount:,}** 코인 ({bets_count}명) - **{percentage:.1f}%**\n"
             option_text += f"📊 {bar} **{percentage:.1f}%**\n"
-            option_text += f"💸 예상 배당률: **x{payout_ratio:.2f}**\n\n"
+            if event['status'] in ['active', 'closed']:
+                option_text += f"💸 예상 배당률: **x{payout_ratio:.2f}**\n\n"
+            else:
+                option_text += "\n"
 
         if not option_text.strip():
             option_text = "아직 베팅이 없습니다.\n"
@@ -262,11 +279,16 @@ class SimpleBettingCog(commands.Cog):
                         value=f"총 베팅액: **{total_pool:,}** 코인\n참여자: **{unique_bettors}**명",
                         inline=True)
 
-        embed.add_field(name="⏰ 종료 시간",
-                        value=f"<t:{int(event['ends_at'].timestamp())}:R>",
-                        inline=True)
+        if event['status'] == 'active':
+            embed.add_field(name="⏰ 종료 시간",
+                            value=f"<t:{int(event['ends_at'].timestamp())}:R>",
+                            inline=True)
+            embed.set_footer(text="아래 버튼을 클릭하여 베팅하세요 | 한 사람당 하나의 옵션에만 베팅 가능")
+        elif event['status'] == 'closed':
+            embed.set_footer(text="베팅이 마감되어 더 이상 새로운 베팅을 받지 않습니다")
+        else:
+            embed.set_footer(text="베팅이 종료되었습니다")
 
-        embed.set_footer(text="아래 버튼을 클릭하여 베팅하세요 | 한 사람당 하나의 옵션에만 베팅 가능")
         return embed
 
     async def get_user_bet(self, user_id: int, event_id: int) -> Optional[Dict]:
@@ -291,7 +313,16 @@ class SimpleBettingCog(commands.Cog):
             """, event_id, guild_id)
 
             if not event:
-                return {'success': False, 'reason': '이벤트를 찾을 수 없거나 비활성 상태입니다'}
+                # 이벤트가 closed 상태인지 확인
+                closed_event = await self.bot.pool.fetchrow("""
+                    SELECT * FROM betting_events_v2 
+                    WHERE id = $1 AND guild_id = $2 AND status = 'closed'
+                """, event_id, guild_id)
+
+                if closed_event:
+                    return {'success': False, 'reason': '베팅이 마감되었습니다. 더 이상 새로운 베팅을 받지 않습니다.'}
+                else:
+                    return {'success': False, 'reason': '이벤트를 찾을 수 없거나 비활성 상태입니다'}
 
             if datetime.now(timezone.utc) > event['ends_at']:
                 return {'success': False, 'reason': '베팅 시간이 만료되었습니다'}
@@ -377,6 +408,28 @@ class SimpleBettingCog(commands.Cog):
         except Exception as e:
             self.logger.error(f"베팅 디스플레이 업데이트 실패: {e}")
 
+    async def close_betting(self, event_id: int) -> Dict:
+        """베팅을 마감하여 새로운 베팅을 받지 않음"""
+        try:
+            # 이벤트 상태를 'closed'로 변경
+            result = await self.bot.pool.execute("""
+                UPDATE betting_events_v2 
+                SET status = 'closed' 
+                WHERE id = $1 AND status = 'active'
+            """, event_id)
+
+            if result == "UPDATE 0":
+                return {'success': False, 'reason': '활성화된 이벤트를 찾을 수 없습니다'}
+
+            # 디스플레이 업데이트
+            await self.update_betting_display(event_id)
+
+            return {'success': True}
+
+        except Exception as e:
+            self.logger.error(f"베팅 마감 실패: {e}")
+            return {'success': False, 'reason': str(e)}
+
     async def end_betting(self, event_id: int, winner_index: int) -> Dict:
         """베팅 종료 및 상금 분배"""
         try:
@@ -388,7 +441,7 @@ class SimpleBettingCog(commands.Cog):
             if not event:
                 return {'success': False, 'reason': '이벤트를 찾을 수 없습니다'}
 
-            if event['status'] != 'active':
+            if event['status'] not in ['active', 'closed']:
                 return {'success': False, 'reason': '이미 종료된 이벤트입니다'}
 
             # 이벤트 상태 업데이트
@@ -432,6 +485,11 @@ class SimpleBettingCog(commands.Cog):
             # 최종 디스플레이 업데이트
             await self.update_final_display(event_id, winner_index)
 
+            # 10분 후 채널 삭제 스케줄
+            channel_id = event['channel_id']
+            if channel_id:
+                asyncio.create_task(self.schedule_channel_deletion(channel_id, event_id))
+
             return {
                 'success': True,
                 'winners': len(winning_bets),
@@ -442,6 +500,23 @@ class SimpleBettingCog(commands.Cog):
         except Exception as e:
             self.logger.error(f"베팅 종료 실패: {e}")
             return {'success': False, 'reason': str(e)}
+
+    async def schedule_channel_deletion(self, channel_id: int, event_id: int):
+        """10분 후 채널 삭제 스케줄"""
+        try:
+            # 10분 대기
+            await asyncio.sleep(600)  # 600초 = 10분
+
+            channel = self.bot.get_channel(channel_id)
+            if channel:
+                try:
+                    await channel.delete(reason=f"베팅 이벤트 {event_id} 종료 후 자동 삭제")
+                    self.logger.info(f"베팅 채널 {channel_id} 자동 삭제 완료")
+                except discord.HTTPException as e:
+                    self.logger.error(f"채널 삭제 실패: {e}")
+
+        except Exception as e:
+            self.logger.error(f"채널 삭제 스케줄 오류: {e}")
 
     async def update_final_display(self, event_id: int, winner_index: int):
         """최종 결과로 디스플레이 업데이트"""
@@ -528,6 +603,26 @@ class SimpleBettingCog(commands.Cog):
             self.logger.error(f"정리 작업 오류: {e}")
 
     # 슬래시 명령어들
+    @app_commands.command(name="베팅마감", description="베팅을 마감하여 새로운 베팅을 받지 않습니다 (관리자 전용)")
+    @app_commands.describe(event_id="마감할 이벤트 ID")
+    async def close_bet_command(self, interaction: discord.Interaction, event_id: int):
+        if not self.has_admin_permissions(interaction.user):
+            await interaction.response.send_message("관리자 권한이 필요합니다", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        result = await self.close_betting(event_id)
+
+        if result['success']:
+            await interaction.followup.send(
+                f"✅ 베팅이 마감되었습니다! (이벤트 ID: {event_id})\n"
+                f"더 이상 새로운 베팅을 받지 않습니다. `/베팅종료` 명령어로 결과를 발표하세요.",
+                ephemeral=True
+            )
+        else:
+            await interaction.followup.send(f"❌ 실패: {result['reason']}", ephemeral=True)
+
     @app_commands.command(name="베팅종료", description="베팅 이벤트를 종료합니다 (관리자 전용)")
     @app_commands.describe(
         event_id="종료할 이벤트 ID",
@@ -562,7 +657,8 @@ class SimpleBettingCog(commands.Cog):
                 f"✅ 베팅이 종료되었습니다!\n"
                 f"승리 옵션: **{result['winner_option']}**\n"
                 f"승리자: {result['winners']}명\n"
-                f"총 배당금: {result['total_payout']:,} 코인",
+                f"총 배당금: {result['total_payout']:,} 코인\n"
+                f"📝 채널은 10분 후 자동으로 삭제됩니다.",
                 ephemeral=True
             )
         else:
@@ -575,7 +671,7 @@ class SimpleBettingCog(commands.Cog):
         events = await self.bot.pool.fetch("""
             SELECT id, title, status, ends_at, channel_id 
             FROM betting_events_v2 
-            WHERE guild_id = $1 AND status IN ('active', 'expired')
+            WHERE guild_id = $1 AND status IN ('active', 'closed', 'expired')
             ORDER BY created_at DESC
             LIMIT 10
         """, interaction.guild.id)
@@ -584,16 +680,23 @@ class SimpleBettingCog(commands.Cog):
             await interaction.followup.send("활성화된 베팅 이벤트가 없습니다", ephemeral=True)
             return
 
-        embed = discord.Embed(title="활성화된 베팅 이벤트", color=discord.Color.blue())
+        embed = discord.Embed(title="베팅 이벤트 목록", color=discord.Color.blue())
 
         for event in events:
-            status = "🟢 진행중" if event['status'] == 'active' else "🟡 만료됨"
+            if event['status'] == 'active':
+                status = "🟢 진행중"
+            elif event['status'] == 'closed':
+                status = "🟡 마감됨"
+            else:
+                status = "🔴 만료됨"
+
             embed.add_field(
                 name=f"ID {event['id']}: {event['title']}",
                 value=f"{status}\n종료: <t:{int(event['ends_at'].timestamp())}:R>\n<#{event['channel_id']}>",
                 inline=False
             )
 
+        embed.set_footer(text="마감된 이벤트는 /베팅종료로 결과를 발표할 수 있습니다")
         await interaction.followup.send(embed=embed, ephemeral=True)
 
 
@@ -668,7 +771,8 @@ class CreateBettingModal(discord.ui.Modal, title="베팅 이벤트 생성"):
                     f"채널: <#{result['channel_id']}>\n"
                     f"종료: <t:{int(result['ends_at'].timestamp())}:R>\n\n"
                     f"🔧 **관리자 제어**\n"
-                    f"베팅을 수동으로 종료하려면: `/베팅종료 event_id:{result['event_id']} winner_option:[1-8]`",
+                    f"베팅 마감: `/베팅마감 event_id:{result['event_id']}`\n"
+                    f"베팅 종료: `/베팅종료 event_id:{result['event_id']} winner_option:[1-8]`",
                     ephemeral=True
                 )
             else:
@@ -718,25 +822,17 @@ class BettingEventView(discord.ui.View):
     async def bet_option_7(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.handle_bet_option(interaction, 7)
 
-    async def on_ready(self):
-        """View가 준비되면 버튼 레이블을 옵션명으로 업데이트"""
-        for i, child in enumerate(self.children):
-            if hasattr(child, 'custom_id') and child.custom_id.startswith('bet_'):
-                option_index = int(child.custom_id.split('_')[1])
-                if option_index < len(self.options):
-                    option_name = self.options[option_index][:15]  # 길이 제한
-                    child.label = f"{option_index + 1}. {option_name}"
-                    child.disabled = False
-                else:
-                    child.disabled = True
-                    child.style = discord.ButtonStyle.gray
-
     async def handle_bet_option(self, interaction: discord.Interaction, option_index: int):
         """베팅 옵션 버튼 클릭 처리"""
         try:
             betting_cog = interaction.client.get_cog('SimpleBettingCog')
             if not betting_cog:
                 await interaction.response.send_message("베팅 시스템을 사용할 수 없습니다", ephemeral=True)
+                return
+
+            # 옵션이 유효한지 확인
+            if option_index >= len(self.options):
+                await interaction.response.send_message("유효하지 않은 옵션입니다", ephemeral=True)
                 return
 
             # 기존 베팅 확인
