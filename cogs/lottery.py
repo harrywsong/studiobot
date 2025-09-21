@@ -56,7 +56,8 @@ class LotteryCog(commands.Cog):
     async def setup_and_post_interface(self):
         """Waits for the bot to be ready and posts the lottery embed."""
         await self.bot.wait_until_ready()
-        await self.update_lottery_interface_message(self.lottery_channel_id)
+        # Use the correct function that handles creating/finding the interface
+        await self.setup_lottery_interface()
 
     def cog_unload(self):
         """Clean up when cog is unloaded"""
