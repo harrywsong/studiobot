@@ -54,7 +54,7 @@ class LotteryCog(commands.Cog):
         """Clean up when cog is unloaded"""
         self.daily_lottery_draw.cancel()
 
-    @tasks.loop(time=time(hour=4, minute=0, tzinfo=timezone.utc))
+    @tasks.loop(hours=6, time=time(hour=4, minute=0, tzinfo=timezone.utc))
     async def daily_lottery_draw(self):
         """Automatically conduct daily lottery draws at 12 AM EST"""
         try:
@@ -316,17 +316,27 @@ class LotteryCog(commands.Cog):
                 import pytz
                 est = pytz.timezone('US/Eastern')
                 now_est = datetime.now(est)
-                next_midnight = now_est.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+                # Calculate the next draw time based on the 6-hour cycle
+                draw_times_utc = [time(hour=4, minute=0), time(hour=10, minute=0), time(hour=16, minute=0),
+                                  time(hour=22, minute=0)]
+                next_draw_time_utc = min(
+                    (datetime.utcnow().replace(hour=t.hour, minute=t.minute, second=0, microsecond=0) for t in
+                     draw_times_utc if datetime.utcnow().time() < t),
+                    default=datetime.utcnow() + timedelta(days=1, hours=4)
+                )
+
+                # Convert UTC to EST for display
+                next_draw_time_est = next_draw_time_utc.astimezone(est)
 
                 embed.add_field(
                     name="⏰ 다음 자동 추첨",
-                    value=f"<t:{int(next_midnight.timestamp())}:R>",
+                    value=f"<t:{int(next_draw_time_est.timestamp())}:R>",
                     inline=True
                 )
             except ImportError:
                 embed.add_field(
                     name="⏰ 다음 자동 추첨",
-                    value="내일 오전 12시 (EST)",
+                    value="6시간마다 자동 추첨",
                     inline=True
                 )
 
@@ -1047,11 +1057,30 @@ class LotteryCog(commands.Cog):
             # Calculate next run time
             est = pytz.timezone('US/Eastern')
             now_est = datetime.now(est)
-            next_midnight = now_est.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+
+            # The draw happens at 04:00, 10:00, 16:00, 22:00 UTC, which is 12:00 AM, 6:00 AM, 12:00 PM, 6:00 PM EST
+            draw_times_utc = [time(hour=4, minute=0), time(hour=10, minute=0), time(hour=16, minute=0),
+                              time(hour=22, minute=0)]
+
+            # Find the next upcoming draw time in UTC
+            now_utc = datetime.now(timezone.utc).time()
+            next_draw_time_utc = None
+            for draw_time in draw_times_utc:
+                if now_utc < draw_time:
+                    next_draw_time_utc = datetime.now(timezone.utc).replace(
+                        hour=draw_time.hour, minute=draw_time.minute, second=0, microsecond=0
+                    )
+                    break
+
+            # If no draw time is left for today, it's tomorrow's first draw
+            if next_draw_time_utc is None:
+                next_draw_time_utc = datetime.now(timezone.utc).replace(
+                    hour=draw_times_utc[0].hour, minute=draw_times_utc[0].minute, second=0, microsecond=0
+                ) + timedelta(days=1)
 
             embed.add_field(name="📊 상태", value="🟢 실행 중", inline=True)
-            embed.add_field(name="⏰ 다음 추첨", value=f"<t:{int(next_midnight.timestamp())}:R>", inline=True)
-            embed.add_field(name="🕐 추첨 시간", value="매일 오전 12시 (EST)", inline=True)
+            embed.add_field(name="⏰ 다음 추첨", value=f"<t:{int(next_draw_time_utc.timestamp())}:R>", inline=True)
+            embed.add_field(name="🕐 추첨 시간", value="6시간마다 (EST)", inline=True)
         else:
             embed.add_field(name="📊 상태", value="🔴 중지됨", inline=True)
             embed.add_field(name="⏰ 다음 추첨", value="수동 추첨만 가능", inline=True)
