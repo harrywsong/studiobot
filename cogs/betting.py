@@ -630,13 +630,14 @@ class BettingCog(commands.Cog):
             if not category:
                 return {'success': False, 'reason': '베팅 카테고리를 찾을 수 없습니다.'}
 
-            # Calculate end time
+            # Calculate end time - ensure it's timezone-aware
             end_time = datetime.now(timezone.utc) + timedelta(minutes=duration_minutes)
 
-            # Create dedicated betting channel
-            channel_name = f"베팅-{title.replace(' ', '-')[:20]}"
+            # Create dedicated betting channel with proper formatting
+            channel_name = f"╠📋┆베팅-{title.replace(' ', '-')[:20]}"
 
             # Set position to be directly below the control channel
+            # Position is 0-indexed, so we add 1 to place it right below
             position = reference_channel.position + 1 if reference_channel else None
 
             betting_channel = await guild.create_text_channel(
@@ -678,7 +679,7 @@ class BettingCog(commands.Cog):
 
             await betting_channel.edit(overwrites=overwrites)
 
-            # Create event in database
+            # Create event in database - ensure end_time is timezone-aware
             event_id = await self.bot.pool.fetchval("""
                 INSERT INTO betting_events (guild_id, title, description, options, creator_id, ends_at, 
                                             channel_id, betting_channel_id)
