@@ -85,7 +85,7 @@ class WelcomeCog(commands.Cog):
 
             font = FONT
             welcome_message_format = get_server_setting(guild_id, 'welcome_message_format',
-                                                        '반짝이는 등불 따라 숲속에 들어왔군요, {username}님! 모험의 시작을 함께해요')
+                                                        '{username}님! 모험의 시작을 함께해요')
             text = welcome_message_format.format(username=member.display_name)
 
             bbox = draw.textbbox((0, 0), text, font=font)
@@ -165,7 +165,7 @@ class WelcomeCog(commands.Cog):
         try:
             embed_title_format = get_server_setting(guild_id, 'welcome_embed_title', '🌟 숲속 모험가 {username}님, 환영합니다!')
             embed_description = get_server_setting(guild_id, 'welcome_embed_description',
-                                                   '반짝이는 등불을 따라 이곳까지 오셨군요! 함께 멋진 모험을 시작해봐요 ✨')
+                                                   '반짝이는 등불을 따라 이곳까지 오셨군요!\n함께 멋진 모험을 시작해봐요! ✨')
             embed_color = get_server_setting(guild_id, 'welcome_embed_color', 'green')
 
             if embed_color == 'green':
@@ -211,7 +211,7 @@ class WelcomeCog(commands.Cog):
             self.logger.info(f"🔧 [welcome] {member.display_name}님을 위한 환영 메시지 전송 중…", extra={'guild_id': guild_id})
 
             mention_user = get_server_setting(guild_id, 'mention_on_welcome', True)
-            content = f"{member.mention}님 반짝이는 등불 따라 숲속에 들어왔군요! 모험의 시작을 함께해요" if mention_user else None
+            content = f"{member.mention}님, 반짝이는 등불 따라 숲속에 들어왔군요! 모험의 시작을 함께해요!" if mention_user else None
 
             await ch.send(content=content, embed=embed, file=file,
                           allowed_mentions=discord.AllowedMentions(users=mention_user))
