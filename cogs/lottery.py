@@ -7,6 +7,7 @@ import asyncio
 from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Optional
 import json
+import pytz
 
 from utils.logger import get_logger
 from utils.config import get_server_setting
@@ -42,10 +43,124 @@ class LotteryCog(commands.Cog):
         self.bot = bot
         self.logger = get_logger("복권")
         self.guild_lotteries: Dict[int, LotterySystem] = {}
-        self.lottery_interface_message = None  # Store the interface message
+        self.lottery_interface_message = None
         self.lottery_channel_id = 1418763263721869403
-        self._setup_completed = False  # Add flag to prevent duplicate setup
+        self._setup_completed = False
 
+        # Start the daily draw task
+        self.daily_lottery_draw.start()
+
+    def cog_unload(self):
+        """Clean up when cog is unloaded"""
+        self.daily_lottery_draw.cancel()
+
+    @tasks.loop(time=datetime.time(hour=4, minute=0, tzinfo=timezone.utc))  # 12 AM EST = 4 AM UTC (standard time)
+    async def daily_lottery_draw(self):
+        """Automatically conduct daily lottery draws at 12 AM EST"""
+        try:
+            self.logger.info("Starting automated daily lottery draw...")
+
+            # Process all guilds with lottery systems
+            for guild_id, lottery in self.guild_lotteries.items():
+                try:
+                    # Skip if no participants
+                    if not lottery.entries:
+                        self.logger.info(f"No participants for guild {guild_id}, skipping draw")
+                        # Still repost the interface to keep it as the latest message
+                        await self.repost_lottery_interface(guild_id)
+                        continue
+
+                    # Skip if pot is below minimum
+                    min_pot = get_server_setting(guild_id, 'lottery_min_pot', 1000)
+                    if lottery.pot_amount < min_pot:
+                        self.logger.info(f"Pot below minimum for guild {guild_id}, skipping draw")
+                        await self.repost_lottery_interface(guild_id)
+                        continue
+
+                    self.logger.info(f"Conducting automated draw for guild {guild_id}")
+
+                    # Conduct the draw
+                    success, message, results = await self.conduct_draw(guild_id)
+
+                    if success:
+                        # Send results to lottery channel
+                        channel = self.bot.get_channel(self.lottery_channel_id)
+                        if channel and channel.guild.id == guild_id:
+
+                            # Create results embed
+                            embed = discord.Embed(
+                                title="🎊 자동 복권 추첨 결과! (일일 추첨)",
+                                color=discord.Color.gold(),
+                                timestamp=datetime.now(timezone.utc)
+                            )
+
+                            winning_numbers = results['winning_numbers']
+                            embed.add_field(
+                                name="🎯 당첨 번호",
+                                value=" ".join(f"**{num}**" for num in winning_numbers),
+                                inline=False
+                            )
+
+                            embed.add_field(name="👥 총 참가자", value=f"{results['total_entries']}명", inline=True)
+                            embed.add_field(name="💰 총 상금", value=f"{results['total_awarded']:,} 코인", inline=True)
+                            embed.add_field(name="💵 남은 팟", value=f"{results['remaining_pot']:,} 코인", inline=True)
+
+                            # Winner details
+                            winners = results['winners']
+                            if winners:
+                                winner_text = []
+                                for user_id, win_data in winners.items():
+                                    user = self.bot.get_user(user_id)
+                                    username = user.display_name if user else f"사용자 {user_id}"
+                                    winner_text.append(
+                                        f"🎉 {username}: {win_data['matches']}개 일치 - {win_data['prize']:,} 코인"
+                                    )
+
+                                embed.add_field(
+                                    name="🏆 당첨자",
+                                    value="\n".join(winner_text[:10]) + ("..." if len(winner_text) > 10 else ""),
+                                    inline=False
+                                )
+                            else:
+                                embed.add_field(name="😢 당첨자", value="이번 추첨에는 당첨자가 없습니다.", inline=False)
+
+                            embed.add_field(
+                                name="⏰ 다음 자동 추첨",
+                                value="내일 오전 12시 (EST)",
+                                inline=False
+                            )
+                            embed.set_footer(text="매일 자동 추첨! 새로 참가해주세요!")
+
+                            # Send the results
+                            await channel.send(embed=embed)
+                            self.logger.info(f"Sent automated draw results for guild {guild_id}")
+
+                        # Always repost the interface after draw
+                        await self.repost_lottery_interface(guild_id)
+
+                    else:
+                        self.logger.warning(f"Automated draw failed for guild {guild_id}: {message}")
+                        # Still repost interface to keep it latest
+                        await self.repost_lottery_interface(guild_id)
+
+                except Exception as e:
+                    self.logger.error(f"Error in automated draw for guild {guild_id}: {e}", exc_info=True)
+                    # Try to repost interface even if draw failed
+                    try:
+                        await self.repost_lottery_interface(guild_id)
+                    except:
+                        pass
+
+            self.logger.info("Completed automated daily lottery draws")
+
+        except Exception as e:
+            self.logger.error(f"Critical error in daily lottery draw task: {e}", exc_info=True)
+
+    @daily_lottery_draw.before_loop
+    async def before_daily_lottery_draw(self):
+        """Wait for bot to be ready before starting the daily draw task"""
+        await self.bot.wait_until_ready()
+        self.logger.info("Daily lottery draw task is ready to start")
 
     async def setup_lottery_interface(self):
         """Setup the persistent lottery interface in the designated channel"""
@@ -110,6 +225,7 @@ class LotteryCog(commands.Cog):
 
         except Exception as e:
             self.logger.error(f"복권 인터페이스 설정 실패: {e}", exc_info=True)
+
     def create_lottery_interface_embed(self, target_guild_id: int = None) -> discord.Embed:
         """Create the main lottery interface embed"""
         # If no target guild specified, try to determine from channel context or use first available
@@ -151,17 +267,26 @@ class LotteryCog(commands.Cog):
             inline=True
         )
 
-        min_pot = get_server_setting(target_guild_id, 'lottery_min_pot', 1000) # Use a consistent default
+        min_pot = get_server_setting(target_guild_id, 'lottery_min_pot', 1000)  # Use a consistent default
         embed.add_field(
             name="📊 최소 팟",
             value=f"{min_pot:,} 코인",
             inline=True
         )
 
+        # Add automation status
+        automation_status = "🟢 자동 추첨 활성화" if hasattr(self,
+                                                     'daily_lottery_draw') and self.daily_lottery_draw.is_running() else "🔴 수동 추첨만"
+        embed.add_field(
+            name="🤖 추첨 시스템",
+            value=f"{automation_status}\n매일 오전 12시 (EST) 자동 추첨",
+            inline=True
+        )
+
         embed.add_field(
             name="💡 팟 충전 방식",
             value="• 크래시 승리 시: 5% 수수료\n• 카지노 패배 시: 베팅금의 10%\n• 자동 실시간 업데이트",
-            inline=False
+            inline=True
         )
 
         if lottery.last_draw_time:
@@ -185,6 +310,26 @@ class LotteryCog(commands.Cog):
                 inline=True
             )
 
+        # Show next automated draw time if automation is active
+        if hasattr(self, 'daily_lottery_draw') and self.daily_lottery_draw.is_running():
+            try:
+                import pytz
+                est = pytz.timezone('US/Eastern')
+                now_est = datetime.now(est)
+                next_midnight = now_est.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+
+                embed.add_field(
+                    name="⏰ 다음 자동 추첨",
+                    value=f"<t:{int(next_midnight.timestamp())}:R>",
+                    inline=True
+                )
+            except ImportError:
+                embed.add_field(
+                    name="⏰ 다음 자동 추첨",
+                    value="내일 오전 12시 (EST)",
+                    inline=True
+                )
+
         embed.add_field(
             name="🏆 상금 구조",
             value="5개 일치: 팟의 60% (분할)\n4개 일치: 팟의 30% (분할)\n3개 일치: 팟의 10% (분할)\n\n💡 당첨자가 없으면 팟이 다음 추첨으로 이월됩니다",
@@ -193,7 +338,7 @@ class LotteryCog(commands.Cog):
 
         embed.add_field(
             name="📋 참가 방법",
-            value="1. '복권 참가하기' 버튼 클릭\n2. 1-35 범위에서 5개 번호 선택\n3. 관리자 추첨 대기\n\n⚠️ 한 번에 하나의 참가만 가능합니다!",
+            value="1. '복권 참가하기' 버튼 클릭\n2. 1-35 범위에서 5개 번호 선택\n3. 자동/수동 추첨 대기\n\n⚠️ 한 번에 하나의 참가만 가능합니다!",
             inline=False
         )
 
@@ -554,6 +699,9 @@ class LotteryCog(commands.Cog):
             if lottery.pot_amount <= 0:
                 return False, "복권 팟이 비어있습니다.", {}
 
+            # Capture entry count before clearing (FIX: moved this before clearing entries)
+            entry_count = len(lottery.entries)
+
             # Generate winning numbers (5 numbers from 1-35)
             winning_numbers = sorted(random.sample(range(1, 36), 5))
             lottery.winning_numbers = winning_numbers
@@ -617,17 +765,17 @@ class LotteryCog(commands.Cog):
                         "lottery_win", f"복권 당첨 ({win_data['matches']}개 일치)"
                     )
 
-            # Record draw in history
+            # Record draw in history (FIX: use captured entry_count)
             await self.bot.pool.execute("""
                 INSERT INTO lottery_history (guild_id, winning_numbers, winner_id, prize_amount, total_entries)
                 VALUES ($1, $2, $3, $4, $5)
             """, guild_id, json.dumps(winning_numbers),
                                         list(winners.keys())[0] if winners else None,
-                                        total_awarded, len(lottery.entries))
+                                        total_awarded, entry_count)
 
             # Update pot (keep remaining amount for rollover)
             lottery.pot_amount = remaining_pot
-            lottery.entries.clear()
+            lottery.entries.clear()  # Clear entries after capturing count
             lottery.last_draw_time = datetime.now(timezone.utc)
             lottery.last_prize_amount = total_awarded
 
@@ -644,7 +792,7 @@ class LotteryCog(commands.Cog):
             draw_results = {
                 'winning_numbers': winning_numbers,
                 'winners': winners,
-                'total_entries': len(lottery.entries),
+                'total_entries': entry_count,  # FIX: use captured count instead of len(lottery.entries)
                 'total_awarded': total_awarded,
                 'remaining_pot': remaining_pot
             }
@@ -836,6 +984,86 @@ class LotteryCog(commands.Cog):
 
         except Exception as e:
             self.logger.error(f"복권 인터페이스 재게시 실패: {e}", exc_info=True)
+
+    @app_commands.command(name="복권자동화설정", description="자동 복권 시스템 설정 (관리자 전용)")
+    @app_commands.describe(action="start 또는 stop")
+    async def lottery_automation_control(self, interaction: discord.Interaction, action: str):
+        """Control the automated lottery system"""
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("⛔ 관리자만 사용할 수 있습니다.", ephemeral=True)
+            return
+
+        action = action.lower()
+
+        if action == "start":
+            if not self.daily_lottery_draw.is_running():
+                self.daily_lottery_draw.start()
+                embed = discord.Embed(
+                    title="✅ 자동 복권 시스템 시작",
+                    description="매일 오전 12시 (EST)에 자동으로 복권 추첨이 진행됩니다.",
+                    color=discord.Color.green()
+                )
+            else:
+                embed = discord.Embed(
+                    title="ℹ️ 자동 복권 시스템",
+                    description="이미 자동 복권 시스템이 실행 중입니다.",
+                    color=discord.Color.blue()
+                )
+
+        elif action == "stop":
+            if self.daily_lottery_draw.is_running():
+                self.daily_lottery_draw.cancel()
+                embed = discord.Embed(
+                    title="⏹️ 자동 복권 시스템 중지",
+                    description="자동 복권 추첨이 중지되었습니다. 수동으로만 추첨 가능합니다.",
+                    color=discord.Color.orange()
+                )
+            else:
+                embed = discord.Embed(
+                    title="ℹ️ 자동 복권 시스템",
+                    description="자동 복권 시스템이 이미 중지되어 있습니다.",
+                    color=discord.Color.blue()
+                )
+
+        else:
+            embed = discord.Embed(
+                title="❌ 잘못된 명령",
+                description="'start' 또는 'stop'을 입력해주세요.",
+                color=discord.Color.red()
+            )
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @app_commands.command(name="복권자동화상태", description="자동 복권 시스템 상태 확인")
+    async def lottery_automation_status(self, interaction: discord.Interaction):
+        """Check automated lottery system status"""
+        embed = discord.Embed(
+            title="🤖 자동 복권 시스템 상태",
+            color=discord.Color.blue(),
+            timestamp=datetime.now(timezone.utc)
+        )
+
+        if self.daily_lottery_draw.is_running():
+            # Calculate next run time
+            est = pytz.timezone('US/Eastern')
+            now_est = datetime.now(est)
+            next_midnight = now_est.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+
+            embed.add_field(name="📊 상태", value="🟢 실행 중", inline=True)
+            embed.add_field(name="⏰ 다음 추첨", value=f"<t:{int(next_midnight.timestamp())}:R>", inline=True)
+            embed.add_field(name="🕐 추첨 시간", value="매일 오전 12시 (EST)", inline=True)
+        else:
+            embed.add_field(name="📊 상태", value="🔴 중지됨", inline=True)
+            embed.add_field(name="⏰ 다음 추첨", value="수동 추첨만 가능", inline=True)
+
+        embed.add_field(
+            name="🔧 제어 명령어",
+            value="• `/복권자동화설정 start` - 시작\n• `/복권자동화설정 stop` - 중지",
+            inline=False
+        )
+
+        await interaction.response.send_message(embed=embed)
+
     @app_commands.command(name="복권추첨", description="복권 추첨을 실시합니다 (관리자 전용)")
     async def conduct_lottery_draw(self, interaction: discord.Interaction):
         """Conduct lottery draw (admin only)"""
@@ -851,11 +1079,13 @@ class LotteryCog(commands.Cog):
         if not success:
             embed = discord.Embed(title="⛔ 추첨 실패", description=message, color=discord.Color.red())
             await interaction.followup.send(embed=embed)
+            # Still repost interface even if draw failed (if no participants, etc.)
+            await self.repost_lottery_interface(interaction.guild.id)
             return
 
         # Create results embed
         embed = discord.Embed(
-            title="🎊 복권 추첨 결과!",
+            title="🎊 복권 추첨 결과! (수동 추첨)",
             color=discord.Color.gold(),
             timestamp=datetime.now(timezone.utc)
         )
@@ -895,7 +1125,7 @@ class LotteryCog(commands.Cog):
         # Send the draw results first
         await interaction.followup.send(embed=embed)
 
-        # Now repost the lottery interface as the latest message
+        # Always repost the lottery interface as the latest message
         await self.repost_lottery_interface(interaction.guild.id)
 
     @app_commands.command(name="복권내역", description="복권 추첨 이력을 확인합니다")
