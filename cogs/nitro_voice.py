@@ -181,6 +181,7 @@ class BoosterVoiceCog(commands.Cog):
                     move_members=True,  # Can move/kick members
                     mute_members=True,  # Can mute members
                     deafen_members=True,  # Can deafen members
+                    set_voice_channel_status=True,  # ADD THIS LINE - Can set voice channel status
                 )
             }
 

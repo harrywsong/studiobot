@@ -130,7 +130,9 @@ class TempVoice(commands.Cog):
                         mute_members=True,
                         deafen_members=True,
                         speak=True,
-                        stream=True
+                        stream=True,
+                        set_voice_channel_status=True,  # ADD THIS LINE - Can set voice channel status
+
                     ),
                 }
 
