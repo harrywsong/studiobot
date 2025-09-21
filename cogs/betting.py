@@ -631,20 +631,22 @@ class SimpleBettingCog(commands.Cog):
 
     @tasks.loop(minutes=1)
     async def cleanup_task(self):
-        """만료된 이벤트 정리"""
+        """만료된 이벤트를 자동으로 마감합니다."""
         try:
-            expired = await self.bot.pool.fetch("""
-                SELECT id FROM betting_events_v2 
-                WHERE status = 'active' AND ends_at < NOW()
-            """)
+            # Find active events where the end time has passed.
+            expired_events = await self.bot.pool.fetch("""
+                    SELECT id FROM betting_events_v2
+                    WHERE status = 'active' AND ends_at < NOW()
+                """)
 
-            for event in expired:
-                await self.bot.pool.execute("""
-                    UPDATE betting_events_v2 SET status = 'expired' WHERE id = $1
-                """, event['id'])
+            for event in expired_events:
+                event_id = event['id']
+                self.logger.info(f"Event ID {event_id} has expired. Automatically closing betting.")
+                # Call the close_betting function to handle closing and display updates.
+                await self.close_betting(event_id)
 
         except Exception as e:
-            self.logger.error(f"정리 작업 오류: {e}")
+            self.logger.error(f"An error occurred in the betting cleanup task: {e}")
 
     # 슬래시 명령어들
     @app_commands.command(name="베팅마감", description="베팅을 마감하여 새로운 베팅을 받지 않습니다 (관리자 전용)")
