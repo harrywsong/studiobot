@@ -11,7 +11,7 @@ import os
 from utils.logger import get_logger
 from utils import config
 
-# Constants
+# 상수
 BETTING_CONTROL_CHANNEL_ID = 1419346557232484352
 BETTING_CATEGORY_ID = 1417712502220783716
 
@@ -19,22 +19,22 @@ BETTING_CATEGORY_ID = 1417712502220783716
 class SimpleBettingCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.logger = get_logger("SimpleBetting")
-        self.logger.info("Simplified betting system initializing...")
+        self.logger = get_logger("베팅시스템")
+        self.logger.info("베팅 시스템 초기화 중...")
 
-        # Start initialization task
+        # 초기화 작업 시작
         self.bot.loop.create_task(self.initialize())
 
     async def initialize(self):
-        """Initialize the betting system"""
+        """베팅 시스템 초기화"""
         await self.bot.wait_until_ready()
         await self.setup_database()
         self.cleanup_task.start()
         await self.setup_control_panel()
-        self.logger.info("Simplified betting system ready!")
+        self.logger.info("베팅 시스템 준비 완료!")
 
     async def setup_database(self):
-        """Create database tables"""
+        """데이터베이스 테이블 생성"""
         try:
             await self.bot.pool.execute("""
                 CREATE TABLE IF NOT EXISTS betting_events_v2 (
@@ -66,18 +66,18 @@ class SimpleBettingCog(commands.Cog):
                 )
             """)
 
-            self.logger.info("Database setup complete")
+            self.logger.info("데이터베이스 설정 완료")
         except Exception as e:
-            self.logger.error(f"Database setup failed: {e}")
+            self.logger.error(f"데이터베이스 설정 실패: {e}")
 
     async def setup_control_panel(self):
-        """Setup control panel with simple button"""
+        """제어판 설정"""
         try:
             channel = self.bot.get_channel(BETTING_CONTROL_CHANNEL_ID)
             if not channel:
                 return
 
-            # Clean up old messages
+            # 기존 메시지 정리
             async for message in channel.history(limit=10):
                 if message.author == self.bot.user:
                     try:
@@ -86,8 +86,8 @@ class SimpleBettingCog(commands.Cog):
                         pass
 
             embed = discord.Embed(
-                title="🎲 Betting Control Panel",
-                description="Click the button below to create a new betting event.",
+                title="🎲 베팅 제어판",
+                description="아래 버튼을 클릭하여 새로운 베팅 이벤트를 생성하세요.",
                 color=discord.Color.gold()
             )
 
@@ -95,40 +95,48 @@ class SimpleBettingCog(commands.Cog):
             message = await channel.send(embed=embed, view=view)
             self.bot.add_view(view, message_id=message.id)
 
-            self.logger.info("Control panel setup complete")
+            self.logger.info("제어판 설정 완료")
         except Exception as e:
-            self.logger.error(f"Control panel setup failed: {e}")
+            self.logger.error(f"제어판 설정 실패: {e}")
 
     def has_admin_permissions(self, member: discord.Member) -> bool:
-        """Check admin permissions"""
+        """관리자 권한 확인"""
         return member.guild_permissions.administrator
 
     async def create_betting_event(self, guild_id: int, title: str, options: List[str],
                                    creator_id: int, duration_minutes: int) -> Dict:
-        """Create a new betting event"""
+        """새로운 베팅 이벤트 생성"""
         try:
-            # Create channel
+            # 채널 생성
             guild = self.bot.get_guild(guild_id)
             category = guild.get_channel(BETTING_CATEGORY_ID)
+            reference_channel = guild.get_channel(BETTING_CONTROL_CHANNEL_ID)
 
-            channel_name = f"betting-{title.replace(' ', '-')[:20]}"
+            channel_name = f"╠📋┆베팅-{title.replace(' ', '-')[:20]}"
             betting_channel = await guild.create_text_channel(
                 name=channel_name,
                 category=category,
-                topic=f"Betting: {title}"
+                topic=f"베팅: {title}"
             )
 
-            # Set permissions
+            # 채널 위치 조정 (기준 채널 바로 아래에 배치)
+            if reference_channel and reference_channel.category_id == category.id:
+                try:
+                    await betting_channel.edit(position=reference_channel.position + 1)
+                except discord.HTTPException:
+                    self.logger.warning("채널 위치 조정 실패")
+
+            # 권한 설정
             await betting_channel.set_permissions(
                 guild.default_role,
                 send_messages=False,
                 add_reactions=False
             )
 
-            # Calculate end time
+            # 종료 시간 계산
             ends_at = datetime.now(timezone.utc) + timedelta(minutes=duration_minutes)
 
-            # Insert into database
+            # 데이터베이스에 삽입
             event_id = await self.bot.pool.fetchval("""
                 INSERT INTO betting_events_v2 
                 (guild_id, title, options, creator_id, ends_at, channel_id)
@@ -136,7 +144,7 @@ class SimpleBettingCog(commands.Cog):
                 RETURNING id
             """, guild_id, title, json.dumps(options), creator_id, ends_at, betting_channel.id)
 
-            # Create betting message
+            # 베팅 메시지 생성
             await self.create_betting_message(event_id, betting_channel)
 
             return {
@@ -147,13 +155,13 @@ class SimpleBettingCog(commands.Cog):
             }
 
         except Exception as e:
-            self.logger.error(f"Failed to create betting event: {e}")
+            self.logger.error(f"베팅 이벤트 생성 실패: {e}")
             return {'success': False, 'reason': str(e)}
 
     async def create_betting_message(self, event_id: int, channel: discord.TextChannel):
-        """Create the betting message in channel"""
+        """채널에 베팅 메시지 생성"""
         try:
-            # Get event data
+            # 이벤트 데이터 가져오기
             event = await self.bot.pool.fetchrow("""
                 SELECT * FROM betting_events_v2 WHERE id = $1
             """, event_id)
@@ -163,89 +171,191 @@ class SimpleBettingCog(commands.Cog):
 
             options = json.loads(event['options'])
 
-            # Create embed
-            embed = discord.Embed(
-                title=f"🎲 {event['title']}",
-                description="Choose your option and place your bet!",
-                color=discord.Color.gold()
-            )
+            # 임베드 생성
+            embed = await self.create_betting_embed(event_id, options, event)
 
-            # Add options
-            option_text = ""
-            for i, option in enumerate(options):
-                option_text += f"{i + 1}. **{option}**\n"
-
-            embed.add_field(name="Options", value=option_text, inline=False)
-            embed.add_field(name="Ends", value=f"<t:{int(event['ends_at'].timestamp())}:R>", inline=True)
-
-            # Create view with simple buttons
-            view = BettingEventView(event_id)
+            # 동적 버튼이 있는 뷰 생성
+            view = BettingEventView(event_id, options)
             message = await channel.send(embed=embed, view=view)
 
-            # Update database with message ID
+            # 데이터베이스에 메시지 ID 업데이트
             await self.bot.pool.execute("""
                 UPDATE betting_events_v2 SET message_id = $1 WHERE id = $2
             """, message.id, event_id)
 
-            # Register view
+            # 뷰 등록
             self.bot.add_view(view, message_id=message.id)
 
-            self.logger.info(f"Created betting message for event {event_id}")
+            # 관리자 제어 메시지 추가
+            await self.create_admin_controls(event_id, channel)
+
+            self.logger.info(f"이벤트 {event_id} 베팅 메시지 생성 완료")
 
         except Exception as e:
-            self.logger.error(f"Failed to create betting message: {e}")
+            self.logger.error(f"베팅 메시지 생성 실패: {e}")
+
+    async def create_admin_controls(self, event_id: int, channel: discord.TextChannel):
+        """관리자 제어 메시지 생성"""
+        try:
+            embed = discord.Embed(
+                title="🔧 관리자 제어",
+                description="베팅을 수동으로 종료하려면 아래 명령어를 사용하세요:",
+                color=discord.Color.orange()
+            )
+            embed.add_field(
+                name="베팅 종료 명령어",
+                value=f"`/endbet event_id:{event_id} winner_option:[1-8]`",
+                inline=False
+            )
+            await channel.send(embed=embed)
+        except Exception as e:
+            self.logger.error(f"관리자 제어 생성 실패: {e}")
+
+    async def create_betting_embed(self, event_id: int, options: List[str], event) -> discord.Embed:
+        """베팅 임베드 생성"""
+        # 베팅 통계 가져오기
+        stats = await self.bot.pool.fetch("""
+            SELECT option_index, COUNT(*) as bets, SUM(amount) as total
+            FROM betting_bets_v2 
+            WHERE event_id = $1
+            GROUP BY option_index
+            ORDER BY option_index
+        """, event_id)
+
+        embed = discord.Embed(
+            title=f"🎲 {event['title']}",
+            description="옵션을 선택하고 베팅하세요!",
+            color=discord.Color.gold()
+        )
+
+        # 통계 계산
+        total_pool = sum(stat['total'] or 0 for stat in stats)
+        unique_bettors = await self.bot.pool.fetchval("""
+            SELECT COUNT(DISTINCT user_id) FROM betting_bets_v2 WHERE event_id = $1
+        """, event_id) or 0
+
+        # 옵션별 정보 표시
+        option_text = ""
+        for i, option in enumerate(options):
+            # 해당 옵션의 통계 찾기
+            option_stats = next((s for s in stats if s['option_index'] == i), None)
+            bets_count = option_stats['bets'] if option_stats else 0
+            amount = option_stats['total'] if option_stats else 0
+
+            percentage = (amount / total_pool * 100) if total_pool > 0 else 0
+
+            # 예상 배당률 계산 (전체 풀 / 해당 옵션 베팅액)
+            payout_ratio = (total_pool / amount) if amount > 0 else 2.0
+
+            # 진행 바 생성
+            bar_length = 10
+            filled = int(percentage / 10) if percentage <= 100 else 10
+            bar = "█" * filled + "░" * (bar_length - filled)
+
+            option_text += f"**{i + 1}. {option}**\n"
+            option_text += f"💰 **{amount:,}** 코인 ({bets_count}명) - **{percentage:.1f}%**\n"
+            option_text += f"📊 {bar} **{percentage:.1f}%**\n"
+            option_text += f"💸 예상 배당률: **x{payout_ratio:.2f}**\n\n"
+
+        if not option_text.strip():
+            option_text = "아직 베팅이 없습니다.\n"
+            for i, option in enumerate(options):
+                option_text += f"**{i + 1}. {option}**\n💰 0 코인 (0명) - 0.0%\n📊 ░░░░░░░░░░ 0.0%\n💸 예상 배당률: x2.00\n\n"
+
+        embed.add_field(name="🎯 베팅 현황", value=option_text, inline=False)
+
+        # 전체 통계
+        embed.add_field(name="📊 전체 현황",
+                        value=f"총 베팅액: **{total_pool:,}** 코인\n참여자: **{unique_bettors}**명",
+                        inline=True)
+
+        embed.add_field(name="⏰ 종료 시간",
+                        value=f"<t:{int(event['ends_at'].timestamp())}:R>",
+                        inline=True)
+
+        embed.set_footer(text="아래 버튼을 클릭하여 베팅하세요 | 한 사람당 하나의 옵션에만 베팅 가능")
+        return embed
+
+    async def get_user_bet(self, user_id: int, event_id: int) -> Optional[Dict]:
+        """사용자의 기존 베팅 확인"""
+        bet = await self.bot.pool.fetchrow("""
+            SELECT option_index, amount FROM betting_bets_v2 
+            WHERE user_id = $1 AND event_id = $2
+        """, user_id, event_id)
+
+        if bet:
+            return {'option_index': bet['option_index'], 'amount': bet['amount']}
+        return None
 
     async def place_bet(self, user_id: int, guild_id: int, event_id: int,
                         option_index: int, amount: int) -> Dict:
-        """Place a bet"""
+        """베팅 하기"""
         try:
-            # Check if event is active
+            # 이벤트가 활성화되어 있는지 확인
             event = await self.bot.pool.fetchrow("""
                 SELECT * FROM betting_events_v2 
                 WHERE id = $1 AND guild_id = $2 AND status = 'active'
             """, event_id, guild_id)
 
             if not event:
-                return {'success': False, 'reason': 'Event not found or not active'}
+                return {'success': False, 'reason': '이벤트를 찾을 수 없거나 비활성 상태입니다'}
 
             if datetime.now(timezone.utc) > event['ends_at']:
-                return {'success': False, 'reason': 'Betting has ended'}
+                return {'success': False, 'reason': '베팅 시간이 만료되었습니다'}
 
-            # Check coins
+            # 기존 베팅 확인
+            existing_bet = await self.get_user_bet(user_id, event_id)
+            if existing_bet:
+                options = json.loads(event['options'])
+                option_name = options[existing_bet['option_index']]
+                return {
+                    'success': False,
+                    'reason': f'이미 **{option_name}**에 **{existing_bet["amount"]:,}** 코인을 베팅하셨습니다.\n한 이벤트당 하나의 옵션에만 베팅할 수 있습니다.'
+                }
+
+            # 코인 확인
             coins_cog = self.bot.get_cog('CoinsCog')
             if not coins_cog:
-                return {'success': False, 'reason': 'Coins system not available'}
+                return {'success': False, 'reason': '코인 시스템을 사용할 수 없습니다'}
 
             user_coins = await coins_cog.get_user_coins(user_id, guild_id)
             if user_coins < amount:
-                return {'success': False, 'reason': f'Insufficient coins (You have: {user_coins:,})'}
+                return {'success': False, 'reason': f'코인이 부족합니다 (보유: {user_coins:,} 코인)'}
 
-            # Remove coins
-            if not await coins_cog.remove_coins(user_id, guild_id, amount, "betting", f"Bet on event {event_id}"):
-                return {'success': False, 'reason': 'Failed to remove coins'}
+            # 카지노 자격 확인
+            from cogs.coins import check_user_casino_eligibility
+            eligibility = await check_user_casino_eligibility(self.bot, user_id, guild_id)
+            if not eligibility['allowed']:
+                return {'success': False, 'reason': eligibility['message']}
 
-            # Record bet
+            # 코인 차감
+            if not await coins_cog.remove_coins(user_id, guild_id, amount, "betting", f"베팅 - 이벤트 {event_id}"):
+                return {'success': False, 'reason': '코인 차감에 실패했습니다'}
+
+            # 베팅 기록
             await self.bot.pool.execute("""
                 INSERT INTO betting_bets_v2 (event_id, user_id, guild_id, option_index, amount)
                 VALUES ($1, $2, $3, $4, $5)
             """, event_id, user_id, guild_id, option_index, amount)
 
-            # Update betting display
+            # 베팅 디스플레이 업데이트
             await self.update_betting_display(event_id)
 
+            options = json.loads(event['options'])
             return {
                 'success': True,
+                'option_name': options[option_index],
                 'remaining_coins': await coins_cog.get_user_coins(user_id, guild_id)
             }
 
         except Exception as e:
-            self.logger.error(f"Failed to place bet: {e}")
-            return {'success': False, 'reason': 'Internal error'}
+            self.logger.error(f"베팅 실패: {e}")
+            return {'success': False, 'reason': '내부 오류가 발생했습니다'}
 
     async def update_betting_display(self, event_id: int):
-        """Update the betting display"""
+        """베팅 디스플레이 업데이트"""
         try:
-            # Get event and stats
+            # 이벤트 가져오기
             event = await self.bot.pool.fetchrow("""
                 SELECT * FROM betting_events_v2 WHERE id = $1
             """, event_id)
@@ -253,16 +363,7 @@ class SimpleBettingCog(commands.Cog):
             if not event or not event['message_id']:
                 return
 
-            # Get betting stats
-            stats = await self.bot.pool.fetch("""
-                SELECT option_index, COUNT(*) as bets, SUM(amount) as total
-                FROM betting_bets_v2 
-                WHERE event_id = $1
-                GROUP BY option_index
-                ORDER BY option_index
-            """, event_id)
-
-            # Get channel and message
+            # 채널과 메시지 가져오기
             channel = self.bot.get_channel(event['channel_id'])
             if not channel:
                 return
@@ -274,98 +375,83 @@ class SimpleBettingCog(commands.Cog):
 
             options = json.loads(event['options'])
 
-            # Create updated embed
-            embed = discord.Embed(
-                title=f"🎲 {event['title']}",
-                description="Choose your option and place your bet!",
-                color=discord.Color.gold()
-            )
+            # 업데이트된 임베드 생성
+            embed = await self.create_betting_embed(event_id, options, event)
 
-            # Add options with stats
-            option_text = ""
-            total_amount = sum(stat['total'] or 0 for stat in stats)
-
-            for i, option in enumerate(options):
-                # Find stats for this option
-                option_stats = next((s for s in stats if s['option_index'] == i), None)
-                bets = option_stats['bets'] if option_stats else 0
-                amount = option_stats['total'] if option_stats else 0
-
-                percentage = (amount / total_amount * 100) if total_amount > 0 else 0
-
-                option_text += f"{i + 1}. **{option}**\n"
-                option_text += f"   💰 {amount:,} coins ({bets} bets) - {percentage:.1f}%\n"
-
-            embed.add_field(name="Options", value=option_text, inline=False)
-            embed.add_field(name="Total Pool", value=f"{total_amount:,} coins", inline=True)
-            embed.add_field(name="Ends", value=f"<t:{int(event['ends_at'].timestamp())}:R>", inline=True)
-
-            # Update message
+            # 메시지 업데이트
             await message.edit(embed=embed)
 
         except Exception as e:
-            self.logger.error(f"Failed to update betting display: {e}")
+            self.logger.error(f"베팅 디스플레이 업데이트 실패: {e}")
 
     async def end_betting(self, event_id: int, winner_index: int) -> Dict:
-        """End betting and distribute winnings"""
+        """베팅 종료 및 상금 분배"""
         try:
-            # Get event
+            # 이벤트 가져오기
             event = await self.bot.pool.fetchrow("""
                 SELECT * FROM betting_events_v2 WHERE id = $1
             """, event_id)
 
             if not event:
-                return {'success': False, 'reason': 'Event not found'}
+                return {'success': False, 'reason': '이벤트를 찾을 수 없습니다'}
 
-            # Update event status
+            if event['status'] != 'active':
+                return {'success': False, 'reason': '이미 종료된 이벤트입니다'}
+
+            # 이벤트 상태 업데이트
             await self.bot.pool.execute("""
                 UPDATE betting_events_v2 
                 SET status = 'ended', winner_option = $1 
                 WHERE id = $2
             """, winner_index, event_id)
 
-            # Get all bets
+            # 모든 베팅 가져오기
             all_bets = await self.bot.pool.fetch("""
                 SELECT * FROM betting_bets_v2 WHERE event_id = $1
             """, event_id)
 
-            # Calculate payouts
+            # 배당금 계산
             total_pool = sum(bet['amount'] for bet in all_bets)
             winning_bets = [bet for bet in all_bets if bet['option_index'] == winner_index]
             winning_pool = sum(bet['amount'] for bet in winning_bets)
 
-            if winning_pool > 0:
+            if winning_pool > 0 and total_pool > 0:
                 coins_cog = self.bot.get_cog('CoinsCog')
                 if coins_cog:
                     for bet in winning_bets:
-                        # Calculate payout (proportional share of total pool)
+                        # 배당금 계산 (전체 풀에서 비례 분배)
                         payout = int((bet['amount'] / winning_pool) * total_pool)
 
-                        # Give payout
+                        # 배당금 지급
                         await coins_cog.add_coins(
                             bet['user_id'],
                             bet['guild_id'],
                             payout,
                             "betting_win",
-                            f"Won betting event: {event['title']}"
+                            f"베팅 승리: {event['title']}"
                         )
 
-                        # Update bet record
+                        # 베팅 기록 업데이트
                         await self.bot.pool.execute("""
                             UPDATE betting_bets_v2 SET payout = $1 WHERE id = $2
                         """, payout, bet['id'])
 
-            # Update final display
+            # 최종 디스플레이 업데이트
             await self.update_final_display(event_id, winner_index)
 
-            return {'success': True, 'winners': len(winning_bets), 'total_payout': total_pool}
+            return {
+                'success': True,
+                'winners': len(winning_bets),
+                'total_payout': total_pool,
+                'winner_option': json.loads(event['options'])[winner_index]
+            }
 
         except Exception as e:
-            self.logger.error(f"Failed to end betting: {e}")
+            self.logger.error(f"베팅 종료 실패: {e}")
             return {'success': False, 'reason': str(e)}
 
     async def update_final_display(self, event_id: int, winner_index: int):
-        """Update display with final results"""
+        """최종 결과로 디스플레이 업데이트"""
         try:
             event = await self.bot.pool.fetchrow("""
                 SELECT * FROM betting_events_v2 WHERE id = $1
@@ -386,14 +472,14 @@ class SimpleBettingCog(commands.Cog):
             options = json.loads(event['options'])
             winner_option = options[winner_index]
 
-            # Create final embed
+            # 최종 임베드 생성
             embed = discord.Embed(
-                title=f"🏆 {event['title']} - ENDED",
-                description=f"**Winner: {winner_option}**",
+                title=f"🏆 {event['title']} - 종료",
+                description=f"**승리 옵션: {winner_option}**",
                 color=discord.Color.green()
             )
 
-            # Get final stats
+            # 최종 통계 가져오기
             stats = await self.bot.pool.fetch("""
                 SELECT option_index, COUNT(*) as bets, SUM(amount) as total, SUM(payout) as payouts
                 FROM betting_bets_v2 
@@ -412,25 +498,28 @@ class SimpleBettingCog(commands.Cog):
                 payouts = option_stats['payouts'] if option_stats else 0
 
                 status = "🏆" if i == winner_index else "❌"
+                percentage = (amount / total_amount * 100) if total_amount > 0 else 0
+
                 option_text += f"{status} **{option}**\n"
-                option_text += f"   💰 {amount:,} coins ({bets} bets)\n"
+                option_text += f"💰 {amount:,} 코인 ({bets}명) - {percentage:.1f}%\n"
                 if i == winner_index and payouts > 0:
-                    option_text += f"   💸 Paid out: {payouts:,} coins\n"
+                    option_text += f"💸 배당금: {payouts:,} 코인\n"
+                option_text += "\n"
 
-            embed.add_field(name="Final Results", value=option_text, inline=False)
+            embed.add_field(name="🎯 최종 결과", value=option_text, inline=False)
 
-            # Remove view and update message
+            # 뷰 제거 및 메시지 업데이트
             await message.edit(embed=embed, view=None)
 
-            # Send final announcement
-            await channel.send(f"🎉 Betting ended! Winner: **{winner_option}** 🎉")
+            # 최종 발표
+            await channel.send(f"🎉 베팅 종료! 승리 옵션: **{winner_option}** 🎉")
 
         except Exception as e:
-            self.logger.error(f"Failed to update final display: {e}")
+            self.logger.error(f"최종 디스플레이 업데이트 실패: {e}")
 
     @tasks.loop(minutes=1)
     async def cleanup_task(self):
-        """Clean up expired events"""
+        """만료된 이벤트 정리"""
         try:
             expired = await self.bot.pool.fetch("""
                 SELECT id FROM betting_events_v2 
@@ -443,43 +532,50 @@ class SimpleBettingCog(commands.Cog):
                 """, event['id'])
 
         except Exception as e:
-            self.logger.error(f"Cleanup task error: {e}")
+            self.logger.error(f"정리 작업 오류: {e}")
 
-    # Slash Commands
-    @app_commands.command(name="endbet", description="End a betting event (Admin only)")
+    # 슬래시 명령어들
+    @app_commands.command(name="베팅종료", description="베팅 이벤트를 종료합니다 (관리자 전용)")
+    @app_commands.describe(
+        event_id="종료할 이벤트 ID",
+        winner_option="승리한 옵션 번호 (1부터 시작)"
+    )
     async def end_bet_command(self, interaction: discord.Interaction,
                               event_id: int, winner_option: int):
         if not self.has_admin_permissions(interaction.user):
-            await interaction.response.send_message("No permission", ephemeral=True)
+            await interaction.response.send_message("관리자 권한이 필요합니다", ephemeral=True)
             return
 
         await interaction.response.defer(ephemeral=True)
 
-        # Get event to validate winner option
+        # 이벤트 확인하여 승리 옵션 검증
         event = await self.bot.pool.fetchrow("""
             SELECT options FROM betting_events_v2 WHERE id = $1 AND guild_id = $2
         """, event_id, interaction.guild.id)
 
         if not event:
-            await interaction.followup.send("Event not found", ephemeral=True)
+            await interaction.followup.send("이벤트를 찾을 수 없습니다", ephemeral=True)
             return
 
         options = json.loads(event['options'])
         if winner_option < 1 or winner_option > len(options):
-            await interaction.followup.send(f"Invalid option. Must be 1-{len(options)}", ephemeral=True)
+            await interaction.followup.send(f"잘못된 옵션입니다. 1-{len(options)} 사이의 숫자를 입력하세요", ephemeral=True)
             return
 
         result = await self.end_betting(event_id, winner_option - 1)
 
         if result['success']:
             await interaction.followup.send(
-                f"✅ Betting ended! {result['winners']} winners, {result['total_payout']:,} coins distributed",
+                f"✅ 베팅이 종료되었습니다!\n"
+                f"승리 옵션: **{result['winner_option']}**\n"
+                f"승리자: {result['winners']}명\n"
+                f"총 배당금: {result['total_payout']:,} 코인",
                 ephemeral=True
             )
         else:
-            await interaction.followup.send(f"❌ Failed: {result['reason']}", ephemeral=True)
+            await interaction.followup.send(f"❌ 실패: {result['reason']}", ephemeral=True)
 
-    @app_commands.command(name="listbets", description="List active betting events")
+    @app_commands.command(name="베팅목록", description="활성화된 베팅 이벤트 목록을 확인합니다")
     async def list_bets(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
 
@@ -492,59 +588,59 @@ class SimpleBettingCog(commands.Cog):
         """, interaction.guild.id)
 
         if not events:
-            await interaction.followup.send("No active betting events", ephemeral=True)
+            await interaction.followup.send("활성화된 베팅 이벤트가 없습니다", ephemeral=True)
             return
 
-        embed = discord.Embed(title="Active Betting Events", color=discord.Color.blue())
+        embed = discord.Embed(title="활성화된 베팅 이벤트", color=discord.Color.blue())
 
         for event in events:
-            status = "🟢 Active" if event['status'] == 'active' else "🟡 Expired"
+            status = "🟢 진행중" if event['status'] == 'active' else "🟡 만료됨"
             embed.add_field(
                 name=f"ID {event['id']}: {event['title']}",
-                value=f"{status}\nEnds: <t:{int(event['ends_at'].timestamp())}:R>\n<#{event['channel_id']}>",
+                value=f"{status}\n종료: <t:{int(event['ends_at'].timestamp())}:R>\n<#{event['channel_id']}>",
                 inline=False
             )
 
         await interaction.followup.send(embed=embed, ephemeral=True)
 
 
-# Simple Views
+# 뷰 클래스들
 class CreateBettingView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="Create Betting Event", style=discord.ButtonStyle.green, emoji="🎲")
+    @discord.ui.button(label="베팅 이벤트 생성", style=discord.ButtonStyle.green, emoji="🎲")
     async def create_betting(self, interaction: discord.Interaction, button: discord.ui.Button):
         betting_cog = interaction.client.get_cog('SimpleBettingCog')
         if not betting_cog or not betting_cog.has_admin_permissions(interaction.user):
-            await interaction.response.send_message("No permission", ephemeral=True)
+            await interaction.response.send_message("관리자 권한이 필요합니다", ephemeral=True)
             return
 
         modal = CreateBettingModal()
         await interaction.response.send_modal(modal)
 
 
-class CreateBettingModal(discord.ui.Modal, title="Create Betting Event"):
+class CreateBettingModal(discord.ui.Modal, title="베팅 이벤트 생성"):
     def __init__(self):
         super().__init__()
 
     title_input = discord.ui.TextInput(
-        label="Event Title",
-        placeholder="Enter betting event title",
+        label="이벤트 제목",
+        placeholder="베팅 이벤트 제목을 입력하세요",
         required=True,
         max_length=100
     )
 
     options_input = discord.ui.TextInput(
-        label="Options (one per line)",
-        placeholder="Option 1\nOption 2\nOption 3",
+        label="옵션 (한 줄에 하나씩)",
+        placeholder="옵션 1\n옵션 2\n옵션 3",
         style=discord.TextStyle.paragraph,
         required=True,
         max_length=500
     )
 
     duration_input = discord.ui.TextInput(
-        label="Duration (minutes)",
+        label="지속 시간 (분)",
         placeholder="30",
         required=True,
         max_length=10
@@ -555,13 +651,13 @@ class CreateBettingModal(discord.ui.Modal, title="Create Betting Event"):
 
         try:
             duration = int(self.duration_input.value)
-            if duration < 1 or duration > 1440:  # Max 24 hours
-                await interaction.followup.send("Duration must be 1-1440 minutes", ephemeral=True)
+            if duration < 1 or duration > 1440:  # 최대 24시간
+                await interaction.followup.send("지속 시간은 1-1440분이어야 합니다", ephemeral=True)
                 return
 
             options = [opt.strip() for opt in self.options_input.value.split('\n') if opt.strip()]
             if len(options) < 2 or len(options) > 8:
-                await interaction.followup.send("Must have 2-8 options", ephemeral=True)
+                await interaction.followup.send("2-8개의 옵션이 필요합니다", ephemeral=True)
                 return
 
             betting_cog = interaction.client.get_cog('SimpleBettingCog')
@@ -575,115 +671,95 @@ class CreateBettingModal(discord.ui.Modal, title="Create Betting Event"):
 
             if result['success']:
                 await interaction.followup.send(
-                    f"✅ Created betting event!\nChannel: <#{result['channel_id']}>\n"
-                    f"Ends: <t:{int(result['ends_at'].timestamp())}:R>",
+                    f"✅ 베팅 이벤트가 생성되었습니다!\n"
+                    f"채널: <#{result['channel_id']}>\n"
+                    f"종료: <t:{int(result['ends_at'].timestamp())}:R>",
                     ephemeral=True
                 )
             else:
-                await interaction.followup.send(f"❌ Failed: {result['reason']}", ephemeral=True)
+                await interaction.followup.send(f"❌ 실패: {result['reason']}", ephemeral=True)
 
         except ValueError:
-            await interaction.followup.send("Invalid duration", ephemeral=True)
+            await interaction.followup.send("지속 시간에 올바른 숫자를 입력하세요", ephemeral=True)
         except Exception as e:
-            await interaction.followup.send(f"Error: {e}", ephemeral=True)
+            await interaction.followup.send(f"오류: {e}", ephemeral=True)
 
 
 class BettingEventView(discord.ui.View):
-    def __init__(self, event_id: int):
-        super().__init__(timeout=None)
-        self.event_id = event_id
-
-    @discord.ui.button(label="Place Bet", style=discord.ButtonStyle.primary, emoji="💰")
-    async def place_bet_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        # Get event to show options
-        betting_cog = interaction.client.get_cog('SimpleBettingCog')
-        event = await betting_cog.bot.pool.fetchrow("""
-            SELECT options FROM betting_events_v2 WHERE id = $1
-        """, self.event_id)
-
-        if not event:
-            await interaction.response.send_message("Event not found", ephemeral=True)
-            return
-
-        modal = PlaceBetModal(self.event_id, json.loads(event['options']))
-        await interaction.response.send_modal(modal)
-
-    @discord.ui.button(label="My Bets", style=discord.ButtonStyle.secondary, emoji="📊")
-    async def my_bets_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer(ephemeral=True)
-
-        betting_cog = interaction.client.get_cog('SimpleBettingCog')
-        bets = await betting_cog.bot.pool.fetch("""
-            SELECT option_index, amount, payout, placed_at 
-            FROM betting_bets_v2 
-            WHERE event_id = $1 AND user_id = $2
-        """, self.event_id, interaction.user.id)
-
-        if not bets:
-            await interaction.followup.send("You have no bets on this event", ephemeral=True)
-            return
-
-        # Get event info
-        event = await betting_cog.bot.pool.fetchrow("""
-            SELECT title, options FROM betting_events_v2 WHERE id = $1
-        """, self.event_id)
-
-        options = json.loads(event['options'])
-        embed = discord.Embed(
-            title=f"Your Bets: {event['title']}",
-            color=discord.Color.blue()
-        )
-
-        total_bet = sum(bet['amount'] for bet in bets)
-        total_payout = sum(bet['payout'] for bet in bets)
-
-        for bet in bets:
-            option_name = options[bet['option_index']]
-            status = "🏆 Won" if bet['payout'] > 0 else "⏳ Pending" if bet['payout'] == 0 else "❌ Lost"
-
-            embed.add_field(
-                name=f"{option_name}",
-                value=f"Bet: {bet['amount']:,} coins\nStatus: {status}\n"
-                      f"Payout: {bet['payout']:,} coins" if bet[
-                                                                'payout'] > 0 else f"Bet: {bet['amount']:,} coins\nStatus: {status}",
-                inline=True
-            )
-
-        embed.add_field(
-            name="Summary",
-            value=f"Total bet: {total_bet:,} coins\nTotal payout: {total_payout:,} coins\n"
-                  f"Net: {total_payout - total_bet:,} coins",
-            inline=False
-        )
-
-        await interaction.followup.send(embed=embed, ephemeral=True)
-
-
-class PlaceBetModal(discord.ui.Modal, title="Place Bet"):
     def __init__(self, event_id: int, options: List[str]):
-        super().__init__()
+        super().__init__(timeout=None)
         self.event_id = event_id
         self.options = options
 
-        # Create option selector
-        options_text = "\n".join(f"{i + 1}. {opt}" for i, opt in enumerate(options))
-        self.add_item(discord.ui.TextInput(
-            label="Available Options",
-            default=options_text,
-            style=discord.TextStyle.paragraph,
-            required=False
-        ))
+        # 옵션 수에 따라 동적으로 버튼 생성
+        colors = [
+            discord.ButtonStyle.primary,  # 파란색
+            discord.ButtonStyle.secondary,  # 회색
+            discord.ButtonStyle.success,  # 초록색
+            discord.ButtonStyle.danger,  # 빨간색
+        ]
 
-    option_input = discord.ui.TextInput(
-        label="Option Number",
-        placeholder="Enter option number (1, 2, 3, etc.)",
-        required=True,
-        max_length=2
-    )
+        for i, option in enumerate(options):
+            if i >= 20:  # Discord 제한 (5행 x 5버튼 = 25개, 하지만 안전하게 20개로 제한)
+                break
+
+            # 버튼 생성
+            button = discord.ui.Button(
+                label=f"{i + 1}. {option[:20]}...",  # 버튼 레이블 길이 제한
+                style=colors[i % len(colors)],
+                custom_id=f"bet_option_{self.event_id}_{i}",
+                emoji="💰",
+                row=i // 4  # 4개씩 한 줄에 배치
+            )
+
+            # 동적 콜백 생성
+            async def create_callback(option_index):
+                async def callback(interaction):
+                    await self.handle_bet_option(interaction, option_index)
+
+                return callback
+
+            button.callback = create_callback(i)
+            self.add_item(button)
+
+    async def handle_bet_option(self, interaction: discord.Interaction, option_index: int):
+        """베팅 옵션 버튼 클릭 처리"""
+        try:
+            betting_cog = interaction.client.get_cog('SimpleBettingCog')
+            if not betting_cog:
+                await interaction.response.send_message("베팅 시스템을 사용할 수 없습니다", ephemeral=True)
+                return
+
+            # 기존 베팅 확인
+            existing_bet = await betting_cog.get_user_bet(interaction.user.id, self.event_id)
+            if existing_bet:
+                option_name = self.options[existing_bet['option_index']]
+                await interaction.response.send_message(
+                    f"❌ 이미 **{option_name}**에 **{existing_bet['amount']:,}** 코인을 베팅하셨습니다.\n"
+                    f"한 이벤트당 하나의 옵션에만 베팅할 수 있습니다.",
+                    ephemeral=True
+                )
+                return
+
+            # 베팅 모달 표시
+            modal = BetAmountModal(self.event_id, option_index, self.options[option_index])
+            await interaction.response.send_modal(modal)
+
+        except Exception as e:
+            betting_cog.logger.error(f"베팅 옵션 처리 오류: {e}")
+            await interaction.response.send_message("오류가 발생했습니다", ephemeral=True)
+
+
+class BetAmountModal(discord.ui.Modal):
+    def __init__(self, event_id: int, option_index: int, option_name: str):
+        super().__init__(title=f"베팅하기: {option_name}")
+        self.event_id = event_id
+        self.option_index = option_index
+        self.option_name = option_name
 
     amount_input = discord.ui.TextInput(
-        label="Bet Amount",
-        placeholder="Enter amount to bet",
+        label="베팅할 코인 수량",
+        placeholder="베팅할 코인을 입력하세요 (최소 10 코인)",
         required=True,
         max_length=10
     )
@@ -692,15 +768,14 @@ class PlaceBetModal(discord.ui.Modal, title="Place Bet"):
         await interaction.response.defer(ephemeral=True)
 
         try:
-            option_num = int(self.option_input.value)
             amount = int(self.amount_input.value.replace(',', ''))
 
-            if option_num < 1 or option_num > len(self.options):
-                await interaction.followup.send(f"Invalid option. Must be 1-{len(self.options)}", ephemeral=True)
+            if amount < 10:
+                await interaction.followup.send("최소 베팅 금액은 10 코인입니다", ephemeral=True)
                 return
 
-            if amount < 10:
-                await interaction.followup.send("Minimum bet is 10 coins", ephemeral=True)
+            if amount > 1000000:  # 최대 베팅 제한
+                await interaction.followup.send("최대 베팅 금액은 1,000,000 코인입니다", ephemeral=True)
                 return
 
             betting_cog = interaction.client.get_cog('SimpleBettingCog')
@@ -708,25 +783,32 @@ class PlaceBetModal(discord.ui.Modal, title="Place Bet"):
                 interaction.user.id,
                 interaction.guild.id,
                 self.event_id,
-                option_num - 1,  # Convert to 0-based index
+                self.option_index,
                 amount
             )
 
             if result['success']:
-                await interaction.followup.send(
-                    f"✅ Bet placed!\n"
-                    f"Option: {self.options[option_num - 1]}\n"
-                    f"Amount: {amount:,} coins\n"
-                    f"Remaining coins: {result['remaining_coins']:,}",
-                    ephemeral=True
+                embed = discord.Embed(
+                    title="✅ 베팅 성공!",
+                    color=discord.Color.green()
                 )
+                embed.add_field(
+                    name="베팅 정보",
+                    value=f"**옵션**: {result['option_name']}\n"
+                          f"**금액**: {amount:,} 코인\n"
+                          f"**잔여 코인**: {result['remaining_coins']:,} 코인",
+                    inline=False
+                )
+                embed.set_footer(text="베팅이 완료되었습니다. 결과를 기다려주세요!")
+
+                await interaction.followup.send(embed=embed, ephemeral=True)
             else:
                 await interaction.followup.send(f"❌ {result['reason']}", ephemeral=True)
 
         except ValueError:
-            await interaction.followup.send("Invalid input. Please enter numbers only.", ephemeral=True)
+            await interaction.followup.send("올바른 숫자를 입력해주세요", ephemeral=True)
         except Exception as e:
-            await interaction.followup.send(f"Error: {e}", ephemeral=True)
+            await interaction.followup.send(f"오류: {e}", ephemeral=True)
 
 
 async def setup(bot):
