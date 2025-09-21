@@ -77,7 +77,7 @@ class GameSelectView(discord.ui.View):
             if hasattr(self, 'message') and self.message:
                 embed = discord.Embed(
                     title="⏱️ 시간 초과",
-                    description="이 메뉴가 만료되었습니다. 새로운 스크림 생성을 시작해주세요.",
+                    description="이 메뉴가 만료되었습니다. 새로운 내전 생성을 시작해주세요.",
                     color=discord.Color.red()
                 )
                 await self.message.edit(embed=embed, view=self)
@@ -167,7 +167,7 @@ class GameModeSelectView(discord.ui.View):
             if hasattr(self, 'message') and self.message:
                 embed = discord.Embed(
                     title="⏱️ 시간 초과",
-                    description="이 메뉴가 만료되었습니다. 새로운 스크림 생성을 시작해주세요.",
+                    description="이 메뉴가 만료되었습니다. 새로운 내전 생성을 시작해주세요.",
                     color=discord.Color.red()
                 )
                 await self.message.edit(embed=embed, view=self)
@@ -242,7 +242,7 @@ class GameModeSelectView(discord.ui.View):
 
             embed = discord.Embed(
                 title="🎮 게임 선택",
-                description="스크림을 위한 게임을 선택하세요:",
+                description="내전을 위한 게임을 선택하세요:",
                 color=discord.Color.green()
             )
 
@@ -273,12 +273,12 @@ class TierSelectView(discord.ui.View):
         # 모든 게임에 대한 일반화된 티어 옵션
         tier_options = [
             discord.SelectOption(label="모든 티어", value="All tiers", emoji="🌐"),
-            discord.SelectOption(label="아이언 - 브론즈", value="Iron-Bronze", emoji="🥉"),
-            discord.SelectOption(label="실버 - 골드", value="Silver-Gold", emoji="🥈"),
-            discord.SelectOption(label="골드 - 플래티넘", value="Gold-Platinum", emoji="🥇"),
-            discord.SelectOption(label="플래티넘 - 다이아몬드", value="Plat-Diamond", emoji="💎"),
-            discord.SelectOption(label="다이아몬드+", value="Diamond+", emoji="💎✨"),
-            discord.SelectOption(label="이모탈+", value="Immortal+", emoji="⭐"),
+            discord.SelectOption(label="아이언 - 브론즈", value="Iron-Bronze", emoji="<:valorantbronze:1367050339987095563> "),
+            discord.SelectOption(label="실버 - 골드", value="Silver-Gold", emoji="<:valorantgold:1367050331242106951> "),
+            discord.SelectOption(label="골드 - 플래티넘", value="Gold-Platinum", emoji="<:valorantplatinum:1367055859435175986> "),
+            discord.SelectOption(label="플래티넘 - 다이아몬드", value="Plat-Diamond", emoji="<:valorantdiamond:1367055861351972905> "),
+            discord.SelectOption(label="초월자", value="Ascendant", emoji="<:valorantascendant:1367050328976920606> "),
+            discord.SelectOption(label="불멸+", value="Immortal+", emoji="<:valorantimmortal:1367050346874011668> "),
             discord.SelectOption(label="초보자 친화", value="Beginner", emoji="🌱"),
             discord.SelectOption(label="경쟁전", value="Competitive", emoji="🏆")
         ]
@@ -309,7 +309,7 @@ class TierSelectView(discord.ui.View):
             if hasattr(self, 'message') and self.message:
                 embed = discord.Embed(
                     title="⏱️ 시간 초과",
-                    description="이 메뉴가 만료되었습니다. 새로운 스크림 생성을 시작해주세요.",
+                    description="이 메뉴가 만료되었습니다. 새로운 내전 생성을 시작해주세요.",
                     color=discord.Color.red()
                 )
                 await self.message.edit(embed=embed, view=self)
@@ -331,7 +331,7 @@ class TierSelectView(discord.ui.View):
 
             embed = discord.Embed(
                 title="⏰ 시작 시간 선택",
-                description=f"**게임:** {self.game}\n**모드:** {self.gamemode}\n**티어:** {self.selected_tier}\n\n스크림은 언제 시작해야 하나요?",
+                description=f"**게임:** {self.game}\n**모드:** {self.gamemode}\n**티어:** {self.selected_tier}\n\n내전은 언제 시작해야 하나요?",
                 color=discord.Color.orange()
             )
 
@@ -394,7 +394,6 @@ class TimeSelectView(discord.ui.View):
             discord.SelectOption(label="30분 후", value="30min", emoji="⏰"),
             discord.SelectOption(label="1시간 후", value="1hour", emoji="🕐"),
             discord.SelectOption(label="2시간 후", value="2hour", emoji="🕑"),
-            discord.SelectOption(label="오늘 밤 (오후 8시 EST)", value="tonight", emoji="🌙"),
             discord.SelectOption(label="사용자 지정 시간", value="custom", emoji="⚙️")
         ]
 
@@ -424,7 +423,7 @@ class TimeSelectView(discord.ui.View):
             if hasattr(self, 'message') and self.message:
                 embed = discord.Embed(
                     title="⏱️ 시간 초과",
-                    description="이 메뉴가 만료되었습니다. 새로운 스크림 생성을 시작해주세요.",
+                    description="이 메뉴가 만료되었습니다. 새로운 내전 생성을 시작해주세요.",
                     color=discord.Color.red()
                 )
                 await self.message.edit(embed=embed, view=self)
@@ -556,7 +555,7 @@ class CustomTimeModal(discord.ui.Modal):
                 return
 
             await interaction.response.send_message(
-                f"✅ 시간이 {parsed_time.strftime('%Y-%m-%d %H:%M EST')}로 설정되었습니다. 다시 스크림 생성을 시작해주세요.",
+                f"✅ 시간이 {parsed_time.strftime('%Y-%m-%d %H:%M EST')}로 설정되었습니다. 다시 내전 생성을 시작해주세요.",
                 ephemeral=True
             )
 
@@ -620,10 +619,10 @@ class PlayerCountSelectView(discord.ui.View):
 
         # 공통 플레이어 수 옵션
         player_options = [
-            discord.SelectOption(label="6명", value="6", emoji="👥"),
-            discord.SelectOption(label="8명", value="8", emoji="👥"),
-            discord.SelectOption(label="10명", value="10", emoji="👥"),
-            discord.SelectOption(label="12명", value="12", emoji="👥"),
+            discord.SelectOption(label="6명", value="6", emoji="6️⃣"),
+            discord.SelectOption(label="8명", value="8", emoji="8️⃣"),
+            discord.SelectOption(label="10명", value="10", emoji="🔟"),
+            discord.SelectOption(label="12명", value="12", emoji="🕛"),
             discord.SelectOption(label="16명", value="16", emoji="👥"),
             discord.SelectOption(label="20명", value="20", emoji="👥"),
             discord.SelectOption(label="사용자 지정 수", value="custom", emoji="⚙️")
@@ -655,7 +654,7 @@ class PlayerCountSelectView(discord.ui.View):
             if hasattr(self, 'message') and self.message:
                 embed = discord.Embed(
                     title="⏱️ 시간 초과",
-                    description="이 메뉴가 만료되었습니다. 새로운 스크림 생성을 시작해주세요.",
+                    description="이 메뉴가 만료되었습니다. 새로운 내전 생성을 시작해주세요.",
                     color=discord.Color.red()
                 )
                 await self.message.edit(embed=embed, view=self)
@@ -715,14 +714,14 @@ class PlayerCountSelectView(discord.ui.View):
                 )
 
                 if scrim_id:
-                    await interaction.followup.send("✅ 스크림이 성공적으로 생성되었습니다!", ephemeral=True)
+                    await interaction.followup.send("✅ 내전이 성공적으로 생성되었습니다!", ephemeral=True)
 
                     # Do heavy operations in background
                     asyncio.create_task(self.post_scrim_and_notify_safe(scrim_cog, scrim_id))
                 else:
-                    await interaction.followup.send("❌ 스크림 생성 중 오류가 발생했습니다.", ephemeral=True)
+                    await interaction.followup.send("❌ 내전 생성 중 오류가 발생했습니다.", ephemeral=True)
             else:
-                await interaction.followup.send("❌ 스크림 시스템을 찾을 수 없습니다.", ephemeral=True)
+                await interaction.followup.send("❌ 내전 시스템을 찾을 수 없습니다.", ephemeral=True)
 
         except Exception as e:
             logger = get_logger("내부 매치")
@@ -764,7 +763,7 @@ class PlayerCountSelectView(discord.ui.View):
                 role = guild.get_role(self.role_id)
                 if role and channel:
                     try:
-                        mention_msg = await channel.send(f"{role.mention} 새로운 스크림이 생성되었습니다!")
+                        mention_msg = await channel.send(f"{role.mention} 새로운 내전이 생성되었습니다!")
                         # Delete the mention after 5 seconds to avoid spam
                         await asyncio.sleep(5)
                         await mention_msg.delete()
@@ -784,7 +783,7 @@ class PlayerCountSelectView(discord.ui.View):
 
             embed = discord.Embed(
                 title="⏰ 시작 시간 선택",
-                description=f"**게임:** {self.game}\n**모드:** {self.gamemode}\n**티어:** {self.tier}\n\n스크림은 언제 시작해야 하나요?",
+                description=f"**게임:** {self.game}\n**모드:** {self.gamemode}\n**티어:** {self.tier}\n\n내전은 언제 시작해야 하나요?",
                 color=discord.Color.orange()
             )
 
@@ -833,7 +832,7 @@ class CustomPlayerCountModal(discord.ui.Modal):
                 return
 
             await interaction.response.send_message(
-                f"✅ 플레이어 수가 {max_players}명으로 설정되었습니다. 다시 스크림 생성을 시작해주세요.",
+                f"✅ 플레이어 수가 {max_players}명으로 설정되었습니다. 다시 내전 생성을 시작해주세요.",
                 ephemeral=True
             )
 
@@ -878,7 +877,7 @@ class MapPoolModal(discord.ui.Modal):
                 await interaction.response.send_message("❌ 최소 2개의 맵이 필요합니다.", ephemeral=True)
                 return
 
-            # 스크림 Cog 가져오고 맵 풀 업데이트
+            # 내전 Cog 가져오고 맵 풀 업데이트
             scrim_cog = self.bot.get_cog('ScrimCog')
             if scrim_cog:
                 success = await scrim_cog.update_map_pool(self.guild_id, map_list)
@@ -895,7 +894,7 @@ class MapPoolModal(discord.ui.Modal):
                 else:
                     await interaction.response.send_message("❌ 맵 풀 업데이트 중 오류가 발생했습니다.", ephemeral=True)
             else:
-                await interaction.response.send_message("❌ 스크림 시스템을 찾을 수 없습니다.", ephemeral=True)
+                await interaction.response.send_message("❌ 내전 시스템을 찾을 수 없습니다.", ephemeral=True)
 
         except Exception as e:
             self.logger.error(f"길드 {self.guild_id}의 맵 풀 모달에서 오류 발생: {e}",
@@ -910,7 +909,7 @@ class MapPoolModal(discord.ui.Modal):
 
 
 class ScrimView(discord.ui.View):
-    """버튼 스타일이 개선된 스크림 뷰"""
+    """버튼 스타일이 개선된 내전 뷰"""
 
     def __init__(self, bot, scrim_data: Dict):
         super().__init__(timeout=None)
@@ -924,7 +923,7 @@ class ScrimView(discord.ui.View):
         self.update_button_states()
 
     def update_button_states(self):
-        """현재 스크림 상태에 따라 버튼 상태 업데이트"""
+        """현재 내전 상태에 따라 버튼 상태 업데이트"""
         eastern = pytz.timezone('America/New_York')
         now = datetime.now(eastern)
         start_time = self.scrim_data['start_time']
@@ -954,7 +953,7 @@ class ScrimView(discord.ui.View):
 
             scrim_cog = self.bot.get_cog('ScrimCog')
             if not scrim_cog:
-                await interaction.followup.send("❌ 스크림 시스템을 찾을 수 없습니다.", ephemeral=True)
+                await interaction.followup.send("❌ 내전 시스템을 찾을 수 없습니다.", ephemeral=True)
                 return
 
             success, message = await scrim_cog.join_scrim(interaction.user.id, self.scrim_id)
@@ -984,7 +983,7 @@ class ScrimView(discord.ui.View):
 
             scrim_cog = self.bot.get_cog('ScrimCog')
             if not scrim_cog:
-                await interaction.followup.send("❌ 스크림 시스템을 찾을 수 없습니다.", ephemeral=True)
+                await interaction.followup.send("❌ 내전 시스템을 찾을 수 없습니다.", ephemeral=True)
                 return
 
             success, message = await scrim_cog.leave_scrim(interaction.user.id, self.scrim_id)
@@ -1014,7 +1013,7 @@ class ScrimView(discord.ui.View):
 
             scrim_cog = self.bot.get_cog('ScrimCog')
             if not scrim_cog:
-                await interaction.followup.send("❌ 스크림 시스템을 찾을 수 없습니다.", ephemeral=True)
+                await interaction.followup.send("❌ 내전 시스템을 찾을 수 없습니다.", ephemeral=True)
                 return
 
             success, message = await scrim_cog.join_queue(interaction.user.id, self.scrim_id)
@@ -1044,7 +1043,7 @@ class ScrimView(discord.ui.View):
 
             scrim_cog = self.bot.get_cog('ScrimCog')
             if not scrim_cog:
-                await interaction.followup.send("❌ 스크림 시스템을 찾을 수 없습니다.", ephemeral=True)
+                await interaction.followup.send("❌ 내전 시스템을 찾을 수 없습니다.", ephemeral=True)
                 return
 
             success, message = await scrim_cog.leave_queue(interaction.user.id, self.scrim_id)
@@ -1073,7 +1072,7 @@ class ScrimView(discord.ui.View):
             # DON'T defer here yet - we need to check permissions first
             scrim_cog = self.bot.get_cog('ScrimCog')
             if not scrim_cog:
-                await interaction.response.send_message("❌ 스크림 시스템을 찾을 수 없습니다.", ephemeral=True)
+                await interaction.response.send_message("❌ 내전 시스템을 찾을 수 없습니다.", ephemeral=True)
                 return
 
             # Permission check
@@ -1081,7 +1080,7 @@ class ScrimView(discord.ui.View):
             is_staff = scrim_cog.has_staff_permissions(interaction.user)
 
             if not (is_organizer or is_staff):
-                await interaction.response.send_message("❌ 이 스크림을 취소할 권한이 없습니다.", ephemeral=True)
+                await interaction.response.send_message("❌ 이 내전을 취소할 권한이 없습니다.", ephemeral=True)
                 return
 
             # NOW defer since we passed permission checks
@@ -1089,8 +1088,8 @@ class ScrimView(discord.ui.View):
 
             # Confirmation embed
             embed = discord.Embed(
-                title="⚠️ 스크림 취소 확인",
-                description="이 스크림을 정말 취소하시겠습니까?\n모든 참가자에게 알림이 전송됩니다.",
+                title="⚠️ 내전 취소 확인",
+                description="이 내전을 정말 취소하시겠습니까?\n모든 참가자에게 알림이 전송됩니다.",
                 color=discord.Color.red()
             )
 
@@ -1103,11 +1102,11 @@ class ScrimView(discord.ui.View):
                     await confirm_interaction.response.defer()  # DEFER in callback too
                     success = await scrim_cog.cancel_scrim(self.scrim_id, interaction.user.id)
                     if success:
-                        await confirm_interaction.followup.send("✅ 스크림이 취소되었습니다.", ephemeral=True)
+                        await confirm_interaction.followup.send("✅ 내전이 취소되었습니다.", ephemeral=True)
                         # Update message in background
                         asyncio.create_task(scrim_cog.update_scrim_message(interaction.message, self.scrim_id))
                     else:
-                        await confirm_interaction.followup.send("❌ 스크림 취소 중 오류가 발생했습니다.", ephemeral=True)
+                        await confirm_interaction.followup.send("❌ 내전 취소 중 오류가 발생했습니다.", ephemeral=True)
                 except Exception as e:
                     self.logger.error(f"Confirm cancel error: {e}")
                     try:
@@ -1148,13 +1147,13 @@ class ScrimCreateView(discord.ui.View):
         self.logger = get_logger("내부 매치")
 
     @discord.ui.button(
-        label="스크림 생성",
+        label="내전 생성",
         style=discord.ButtonStyle.primary,
         custom_id="create_scrim_improved",
         emoji="🎮"
     )
     async def create_scrim(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """개선된 스크림 생성 프로세스 시작"""
+        """개선된 내전 생성 프로세스 시작"""
         try:
             # CRITICAL: Defer immediately
             await interaction.response.defer(ephemeral=True)
@@ -1163,7 +1162,7 @@ class ScrimCreateView(discord.ui.View):
 
             if not config.is_feature_enabled(interaction.guild.id, 'scrim_system'):
                 await interaction.followup.send(
-                    "⚠ 이 서버에서 스크림 시스템이 비활성화되어 있습니다.",
+                    "⚠ 이 서버에서 내전 시스템이 비활성화되어 있습니다.",
                     ephemeral=True
                 )
                 return
@@ -1172,7 +1171,7 @@ class ScrimCreateView(discord.ui.View):
 
             embed = discord.Embed(
                 title="🎮 게임 선택",
-                description="스크림을 위한 게임을 선택하세요:",
+                description="내전을 위한 게임을 선택하세요:",
                 color=discord.Color.green()
             )
             embed.set_footer(text="아래 드롭다운을 사용하여 게임을 선택하세요")
@@ -1192,7 +1191,7 @@ class ScrimCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.logger = get_logger("내부 매치")
-        self.scrims_data = {}  # 활성 스크림을 위한 메모리 저장소
+        self.scrims_data = {}  # 활성 내전을 위한 메모리 저장소
         self.scrims_file = "data/scrims.json"
         self.map_pools_file = "data/map_pools.json"
         self.map_pools = {}  # 길드 ID -> 맵 리스트
@@ -1252,7 +1251,7 @@ class ScrimCog(commands.Cog):
         return False
 
     async def load_scrims_data(self):
-        """스크림 데이터 파일에서 로드"""
+        """내전 데이터 파일에서 로드"""
         try:
             if os.path.exists(self.scrims_file):
                 with open(self.scrims_file, 'r', encoding='utf-8') as f:
@@ -1262,12 +1261,12 @@ class ScrimCog(commands.Cog):
                         scrim_data['start_time'] = datetime.fromisoformat(scrim_data['start_time'])
                         scrim_data['created_at'] = datetime.fromisoformat(scrim_data['created_at'])
                     self.scrims_data = data
-                self.logger.info("스크림 데이터 로드 완료", extra={'guild_id': None})
+                self.logger.info("내전 데이터 로드 완료", extra={'guild_id': None})
         except Exception as e:
-            self.logger.error(f"스크림 데이터 로드 중 오류: {e}", extra={'guild_id': None})
+            self.logger.error(f"내전 데이터 로드 중 오류: {e}", extra={'guild_id': None})
 
     async def save_scrims_data(self):
-        """스크림 데이터를 파일에 저장 - 비동기 버전"""
+        """내전 데이터를 파일에 저장 - 비동기 버전"""
         try:
             os.makedirs(os.path.dirname(self.scrims_file), exist_ok=True)
 
@@ -1286,7 +1285,7 @@ class ScrimCog(commands.Cog):
             await asyncio.to_thread(write_file)
 
         except Exception as e:
-            self.logger.error(f"스크림 데이터 저장 중 오류: {e}", extra={'guild_id': None})
+            self.logger.error(f"내전 데이터 저장 중 오류: {e}", extra={'guild_id': None})
     async def load_map_pools(self):
         """맵 풀 파일에서 로드"""
         try:
@@ -1330,7 +1329,7 @@ class ScrimCog(commands.Cog):
             return False
 
     async def setup_scrim_panels(self):
-        """설정된 채널에 스크림 생성 패널 설정"""
+        """설정된 채널에 내전 생성 패널 설정"""
         all_configs = config.get_all_server_configs()
         for guild_id_str, guild_config in all_configs.items():
             if guild_config.get('features', {}).get('scrim_system'):
@@ -1343,35 +1342,35 @@ class ScrimCog(commands.Cog):
                         await self.setup_scrim_panel(channel)
 
     async def setup_scrim_panel(self, channel: discord.TextChannel):
-        """특정 채널에 스크림 생성 패널 설정"""
+        """특정 채널에 내전 생성 패널 설정"""
         try:
             # 기존 패널 메시지 찾기
             async for message in channel.history(limit=50):
                 if (message.author == self.bot.user and
                         message.embeds and
-                        "스크림 생성 패널" in message.embeds[0].title):
+                        "내전 생성 패널" in message.embeds[0].title):
                     # 기존 메시지를 새로운 뷰로 업데이트
                     await message.edit(embed=self.create_scrim_panel_embed(), view=ScrimCreateView(self.bot))
-                    self.logger.info(f"채널 {channel.id}의 기존 스크림 패널 업데이트",
+                    self.logger.info(f"채널 {channel.id}의 기존 내전 패널 업데이트",
                                      extra={'guild_id': channel.guild.id})
                     return
 
             # 새로운 패널 생성
             embed = self.create_scrim_panel_embed()
             message = await channel.send(embed=embed, view=ScrimCreateView(self.bot))
-            self.logger.info(f"채널 {channel.id}에 새로운 스크림 패널 생성",
+            self.logger.info(f"채널 {channel.id}에 새로운 내전 패널 생성",
                              extra={'guild_id': channel.guild.id})
 
         except Exception as e:
-            self.logger.error(f"채널 {channel.id}의 스크림 패널 설정 중 오류: {e}",
+            self.logger.error(f"채널 {channel.id}의 내전 패널 설정 중 오류: {e}",
                               extra={'guild_id': channel.guild.id})
 
     def create_scrim_panel_embed(self) -> discord.Embed:
-        """개선된 스크림 생성 패널 임베드 생성"""
+        """개선된 내전 생성 패널 임베드 생성"""
         embed = discord.Embed(
-            title="🎮 스크림 생성 패널",
+            title="🎮 내전 생성 패널",
             description=(
-                "**개선된 스크림 시스템**에 오신 것을 환영합니다! 아래 버튼을 클릭하여 새 스크림을 생성하세요.\n\n"
+                "**개선된 내전 시스템**에 오신 것을 환영합니다! 아래 버튼을 클릭하여 새 내전을 생성하세요.\n\n"
                 "**✨ 새로운 기능:**\n"
                 "• 역할 태그와 함께 쉬운 게임 선택\n"
                 "• 빠른 시간 선택 옵션\n"
@@ -1381,17 +1380,17 @@ class ScrimCog(commands.Cog):
                 "**🎯 지원되는 게임:**\n"
                 "• 발로란트 • 리그 오브 레전드 • 팀파이트 택틱스\n"
                 "• 배틀그라운드 • 기타 게임\n\n"
-                "스크림을 생성할 준비가 되셨나요?"
+                "내전을 생성할 준비가 되셨나요?"
             ),
             color=discord.Color.blue()
         )
 
-        embed.set_footer(text="개선된 스크림 시스템 v2.0 • 시작하려면 버튼을 클릭하세요!")
+        embed.set_footer(text="개선된 내전 시스템 v2.0 • 시작하려면 버튼을 클릭하세요!")
         return embed
 
     async def create_scrim(self, guild_id: int, organizer_id: int, game: str, gamemode: str,
                            tier_range: str, start_time: datetime, max_players: int, channel_id: int) -> Optional[str]:
-        """새로운 스크림 생성 - 개선된 버전"""
+        """새로운 내전 생성 - 개선된 버전"""
         try:
             eastern = pytz.timezone('America/New_York')
             scrim_id = f"{guild_id}_{int(datetime.now(eastern).timestamp())}"
@@ -1421,16 +1420,16 @@ class ScrimCog(commands.Cog):
             # CHANGE THIS LINE - don't wait for file save:
             asyncio.create_task(self.save_scrims_data())
 
-            self.logger.info(f"길드 {guild_id}에서 게임 {game}의 새 스크림 {scrim_id} 생성",
+            self.logger.info(f"길드 {guild_id}에서 게임 {game}의 새 내전 {scrim_id} 생성",
                              extra={'guild_id': guild_id})
             return scrim_id
 
         except Exception as e:
-            self.logger.error(f"길드 {guild_id}에서 스크림 생성 중 오류: {e}", extra={'guild_id': guild_id})
+            self.logger.error(f"길드 {guild_id}에서 내전 생성 중 오류: {e}", extra={'guild_id': guild_id})
             return None
 
     async def post_scrim_message(self, channel: discord.TextChannel, scrim_id: str):
-        """인터랙티브 버튼과 함께 스크림 메시지 게시"""
+        """인터랙티브 버튼과 함께 내전 메시지 게시"""
         try:
             scrim_data = self.scrims_data.get(scrim_id)
             if not scrim_data:
@@ -1445,15 +1444,15 @@ class ScrimCog(commands.Cog):
             scrim_data['message_id'] = message.id
             await self.save_scrims_data()
 
-            self.logger.info(f"채널 {channel.id}에 스크림 메시지 {scrim_id} 게시",
+            self.logger.info(f"채널 {channel.id}에 내전 메시지 {scrim_id} 게시",
                              extra={'guild_id': channel.guild.id})
 
         except Exception as e:
-            self.logger.error(f"스크림 메시지 {scrim_id} 게시 중 오류: {e}",
+            self.logger.error(f"내전 메시지 {scrim_id} 게시 중 오류: {e}",
                               extra={'guild_id': scrim_data.get('guild_id') if scrim_data else None})
 
     def create_scrim_embed(self, scrim_data: Dict) -> discord.Embed:
-        """시각적으로 개선된 스크림 임베드 생성"""
+        """시각적으로 개선된 내전 임베드 생성"""
         eastern = pytz.timezone('America/New_York')
 
         # 필요 시 시작 시간을 시간대 인식으로 변환
@@ -1493,7 +1492,7 @@ class ScrimCog(commands.Cog):
 
         # 개선된 스타일로 임베드 생성
         embed = discord.Embed(
-            title=f"{game_emoji} {scrim_data['game']} 스크림",
+            title=f"{game_emoji} {scrim_data['game']} 내전",
             color=color,
             timestamp=datetime.now(timezone.utc)
         )
@@ -1578,30 +1577,30 @@ class ScrimCog(commands.Cog):
                 inline=False
             )
 
-        # 취소된 스크림을 위한 특별 스타일링
+        # 취소된 내전을 위한 특별 스타일링
         if scrim_data['status'] == '취소됨':
             embed.add_field(
                 name="⚠️ 공지",
-                value="이 스크림이 취소되었습니다.",
+                value="이 내전이 취소되었습니다.",
                 inline=False
             )
 
-        # 스크림 ID가 포함된 푸터
+        # 내전 ID가 포함된 푸터
         embed.set_footer(
-            text=f"스크림 ID: {scrim_data['id']} • 개선된 스크림 시스템 v2.0"
+            text=f"내전 ID: {scrim_data['id']} • 개선된 내전 시스템 v2.0"
         )
 
         return embed
 
     async def join_scrim(self, user_id: int, scrim_id: str) -> tuple[bool, str]:
-        """사용자를 스크림 참가자에 추가"""
+        """사용자를 내전 참가자에 추가"""
         try:
             scrim_data = self.scrims_data.get(scrim_id)
             if not scrim_data:
-                return False, "❌ 스크림을 찾을 수 없습니다."
+                return False, "❌ 내전을 찾을 수 없습니다."
 
             if scrim_data['status'] != '활성':
-                return False, "❌ 이 스크림은 더 이상 활성 상태가 아닙니다."
+                return False, "❌ 이 내전은 더 이상 활성 상태가 아닙니다."
 
             # 이미 참가 중인지 확인
             if user_id in scrim_data['participants']:
@@ -1611,29 +1610,29 @@ class ScrimCog(commands.Cog):
             if user_id in scrim_data['queue']:
                 scrim_data['queue'].remove(user_id)
 
-            # 스크림이 꽉 찼는지 확인
+            # 내전이 꽉 찼는지 확인
             if len(scrim_data['participants']) >= scrim_data['max_players']:
-                return False, "❌ 스크림이 꽉 찼습니다. 대기열에 가입해주세요."
+                return False, "❌ 내전이 꽉 찼습니다. 대기열에 가입해주세요."
 
             # 참가자에 추가
             scrim_data['participants'].append(user_id)
             await self.save_scrims_data()
 
-            self.logger.info(f"사용자 {user_id}가 스크림 {scrim_id}에 참가",
+            self.logger.info(f"사용자 {user_id}가 내전 {scrim_id}에 참가",
                              extra={'guild_id': scrim_data['guild_id']})
-            return True, "✅ 스크림에 성공적으로 참가했습니다!"
+            return True, "✅ 내전에 성공적으로 참가했습니다!"
 
         except Exception as e:
-            self.logger.error(f"스크림 {scrim_id} 참가 중 오류: {e}",
+            self.logger.error(f"내전 {scrim_id} 참가 중 오류: {e}",
                               extra={'guild_id': scrim_data.get('guild_id') if scrim_data else None})
-            return False, "❌ 스크림 참가 중 오류가 발생했습니다."
+            return False, "❌ 내전 참가 중 오류가 발생했습니다."
 
     async def leave_scrim(self, user_id: int, scrim_id: str) -> tuple[bool, str]:
-        """사용자를 스크림 참가자에서 제거"""
+        """사용자를 내전 참가자에서 제거"""
         try:
             scrim_data = self.scrims_data.get(scrim_id)
             if not scrim_data:
-                return False, "❌ 스크림을 찾을 수 없습니다."
+                return False, "❌ 내전을 찾을 수 없습니다."
 
             if user_id not in scrim_data['participants']:
                 return False, "❌ 참가 중이 아닙니다."
@@ -1653,8 +1652,8 @@ class ScrimCog(commands.Cog):
                     if member:
                         try:
                             embed = discord.Embed(
-                                title="🎮 스크림 참가 확정",
-                                description=f"**{scrim_data['game']}** 스크림에 자리가 생겨 대기열에서 자동으로 이동되었습니다!",
+                                title="🎮 내전 참가 확정",
+                                description=f"**{scrim_data['game']}** 내전에 자리가 생겨 대기열에서 자동으로 이동되었습니다!",
                                 color=discord.Color.green()
                             )
                             await member.send(embed=embed)
@@ -1663,24 +1662,24 @@ class ScrimCog(commands.Cog):
 
             await self.save_scrims_data()
 
-            self.logger.info(f"사용자 {user_id}가 스크림 {scrim_id}에서 나감",
+            self.logger.info(f"사용자 {user_id}가 내전 {scrim_id}에서 나감",
                              extra={'guild_id': scrim_data['guild_id']})
-            return True, "✅ 스크림에서 성공적으로 나갔습니다."
+            return True, "✅ 내전에서 성공적으로 나갔습니다."
 
         except Exception as e:
-            self.logger.error(f"스크림 {scrim_id} 나가기 중 오류: {e}",
+            self.logger.error(f"내전 {scrim_id} 나가기 중 오류: {e}",
                               extra={'guild_id': scrim_data.get('guild_id') if scrim_data else None})
-            return False, "❌ 스크림 나가기 중 오류가 발생했습니다."
+            return False, "❌ 내전 나가기 중 오류가 발생했습니다."
 
     async def join_queue(self, user_id: int, scrim_id: str) -> tuple[bool, str]:
-        """사용자를 스크림 대기열에 추가"""
+        """사용자를 내전 대기열에 추가"""
         try:
             scrim_data = self.scrims_data.get(scrim_id)
             if not scrim_data:
-                return False, "❌ 스크림을 찾을 수 없습니다."
+                return False, "❌ 내전을 찾을 수 없습니다."
 
             if scrim_data['status'] != '활성':
-                return False, "❌ 이 스크림은 더 이상 활성 상태가 아닙니다."
+                return False, "❌ 이 내전은 더 이상 활성 상태가 아닙니다."
 
             # 이미 대기열에 있는지 확인
             if user_id in scrim_data['queue']:
@@ -1699,21 +1698,21 @@ class ScrimCog(commands.Cog):
             await self.save_scrims_data()
 
             queue_position = len(scrim_data['queue'])
-            self.logger.info(f"사용자 {user_id}가 스크림 {scrim_id}의 대기열에 {queue_position}번으로 가입",
+            self.logger.info(f"사용자 {user_id}가 내전 {scrim_id}의 대기열에 {queue_position}번으로 가입",
                              extra={'guild_id': scrim_data['guild_id']})
             return True, f"✅ 대기열에 성공적으로 가입했습니다! (위치: {queue_position})"
 
         except Exception as e:
-            self.logger.error(f"스크림 {scrim_id} 대기열 가입 중 오류: {e}",
+            self.logger.error(f"내전 {scrim_id} 대기열 가입 중 오류: {e}",
                               extra={'guild_id': scrim_data.get('guild_id') if scrim_data else None})
             return False, "❌ 대기열 가입 중 오류가 발생했습니다."
 
     async def leave_queue(self, user_id: int, scrim_id: str) -> tuple[bool, str]:
-        """사용자를 스크림 대기열에서 제거"""
+        """사용자를 내전 대기열에서 제거"""
         try:
             scrim_data = self.scrims_data.get(scrim_id)
             if not scrim_data:
-                return False, "❌ 스크림을 찾을 수 없습니다."
+                return False, "❌ 내전을 찾을 수 없습니다."
 
             if user_id not in scrim_data['queue']:
                 return False, "❌ 대기열에 없습니다."
@@ -1722,17 +1721,17 @@ class ScrimCog(commands.Cog):
             scrim_data['queue'].remove(user_id)
             await self.save_scrims_data()
 
-            self.logger.info(f"사용자 {user_id}가 스크림 {scrim_id}의 대기열에서 나감",
+            self.logger.info(f"사용자 {user_id}가 내전 {scrim_id}의 대기열에서 나감",
                              extra={'guild_id': scrim_data['guild_id']})
             return True, "✅ 대기열에서 성공적으로 나갔습니다."
 
         except Exception as e:
-            self.logger.error(f"스크림 {scrim_id} 대기열 나가기 중 오류: {e}",
+            self.logger.error(f"내전 {scrim_id} 대기열 나가기 중 오류: {e}",
                               extra={'guild_id': scrim_data.get('guild_id') if scrim_data else None})
             return False, "❌ 대기열 나가기 중 오류가 발생했습니다."
 
     async def cancel_scrim(self, scrim_id: str, canceller_id: int) -> bool:
-        """스크림 취소"""
+        """내전 취소"""
         try:
             scrim_data = self.scrims_data.get(scrim_id)
             if not scrim_data:
@@ -1753,8 +1752,8 @@ class ScrimCog(commands.Cog):
                     if member:
                         try:
                             embed = discord.Embed(
-                                title="❌ 스크림 취소 공지",
-                                description=f"**{scrim_data['game']}** 스크림이 취소되었습니다.",
+                                title="❌ 내전 취소 공지",
+                                description=f"**{scrim_data['game']}** 내전이 취소되었습니다.",
                                 color=discord.Color.red()
                             )
                             embed.add_field(name="취소자", value=canceller_name, inline=True)
@@ -1765,17 +1764,17 @@ class ScrimCog(commands.Cog):
                         except:
                             pass  # DM 전송 불가, 문제 없음
 
-            self.logger.info(f"사용자 {canceller_id}가 스크림 {scrim_id} 취소",
+            self.logger.info(f"사용자 {canceller_id}가 내전 {scrim_id} 취소",
                              extra={'guild_id': scrim_data['guild_id']})
             return True
 
         except Exception as e:
-            self.logger.error(f"스크림 {scrim_id} 취소 중 오류: {e}",
+            self.logger.error(f"내전 {scrim_id} 취소 중 오류: {e}",
                               extra={'guild_id': scrim_data.get('guild_id') if scrim_data else None})
             return False
 
     async def update_scrim_message(self, message: discord.Message, scrim_id: str):
-        """현재 데이터로 스크림 메시지 업데이트"""
+        """현재 데이터로 내전 메시지 업데이트"""
         try:
             scrim_data = self.scrims_data.get(scrim_id)
             if not scrim_data:
@@ -1787,12 +1786,12 @@ class ScrimCog(commands.Cog):
             await message.edit(embed=embed, view=view)
 
         except Exception as e:
-            self.logger.error(f"스크림 메시지 {scrim_id} 업데이트 중 오류: {e}",
+            self.logger.error(f"내전 메시지 {scrim_id} 업데이트 중 오류: {e}",
                               extra={'guild_id': scrim_data.get('guild_id') if scrim_data else None})
 
     @tasks.loop(minutes=1)
     async def scrim_notifications(self):
-        """스크림 시작 시간 전에 알림 전송"""
+        """내전 시작 시간 전에 알림 전송"""
         try:
             eastern = pytz.timezone('America/New_York')
             now = datetime.now(eastern)
@@ -1807,7 +1806,7 @@ class ScrimCog(commands.Cog):
 
                 time_until_start = start_time - now
 
-                # 알림을 위한 스크림이 꽉 찼는지 확인
+                # 알림을 위한 내전이 꽉 찼는지 확인
                 is_full = len(scrim_data['participants']) >= scrim_data['max_players']
 
                 # 10분 알림
@@ -1829,7 +1828,7 @@ class ScrimCog(commands.Cog):
                     scrim_data['status'] = '완료됨'
                     await self.save_scrims_data()
 
-                    # 메시지가 존재하는 경우 스크림 메시지 업데이트
+                    # 메시지가 존재하는 경우 내전 메시지 업데이트
                     if 'message_id' in scrim_data:
                         guild = self.bot.get_guild(scrim_data['guild_id'])
                         if guild:
@@ -1842,10 +1841,10 @@ class ScrimCog(commands.Cog):
                                     pass
 
         except Exception as e:
-            self.logger.error(f"스크림 알림 태스크 중 오류: {e}", extra={'guild_id': None})
+            self.logger.error(f"내전 알림 태스크 중 오류: {e}", extra={'guild_id': None})
 
     async def send_scrim_notification(self, scrim_data: Dict, notification_type: str):
-        """스크림 참가자에게 알림 전송"""
+        """내전 참가자에게 알림 전송"""
         try:
             guild = self.bot.get_guild(scrim_data['guild_id'])
             if not guild:
@@ -1864,8 +1863,8 @@ class ScrimCog(commands.Cog):
 
             # 알림 임베드 생성
             embed = discord.Embed(
-                title=f"⏰ 스크림이 {time_text} 후 시작됩니다",
-                description=f"**{scrim_data['game']}** 스크림이 곧 시작됩니다!",
+                title=f"⏰ 내전이 {time_text} 후 시작됩니다",
+                description=f"**{scrim_data['game']}** 내전이 곧 시작됩니다!",
                 color=discord.Color.orange()
             )
             embed.add_field(name="게임 모드", value=scrim_data['gamemode'], inline=True)
@@ -1879,20 +1878,20 @@ class ScrimCog(commands.Cog):
                 mention_text = " ".join(mentions)
                 await channel.send(content=mention_text, embed=embed)
 
-            self.logger.info(f"스크림 {scrim_data['id']}에 대한 {notification_type} 알림 전송",
+            self.logger.info(f"내전 {scrim_data['id']}에 대한 {notification_type} 알림 전송",
                              extra={'guild_id': scrim_data['guild_id']})
 
         except Exception as e:
-            self.logger.error(f"스크림 알림 전송 중 오류: {e}",
+            self.logger.error(f"내전 알림 전송 중 오류: {e}",
                               extra={'guild_id': scrim_data.get('guild_id')})
 
     @tasks.loop(hours=6)
     async def cleanup_old_scrims(self):
-        """오래된 완료/취소된 스크림 정리"""
+        """오래된 완료/취소된 내전 정리"""
         try:
             eastern = pytz.timezone('America/New_York')
             now = datetime.now(eastern)
-            cutoff_time = now - timedelta(days=7)  # 7일 동안 스크림 유지
+            cutoff_time = now - timedelta(days=7)  # 7일 동안 내전 유지
 
             scrims_to_remove = []
             for scrim_id, scrim_data in self.scrims_data.items():
@@ -1900,18 +1899,18 @@ class ScrimCog(commands.Cog):
                 if start_time.tzinfo is None:
                     start_time = eastern.localize(start_time)
 
-                # 오래된 완료/취소된 스크림 제거
+                # 오래된 완료/취소된 내전 제거
                 if (scrim_data['status'] in ['완료됨', '취소됨'] and
                         start_time < cutoff_time):
                     scrims_to_remove.append(scrim_id)
 
             for scrim_id in scrims_to_remove:
                 del self.scrims_data[scrim_id]
-                self.logger.info(f"오래된 스크림 {scrim_id} 정리", extra={'guild_id': None})
+                self.logger.info(f"오래된 내전 {scrim_id} 정리", extra={'guild_id': None})
 
             if scrims_to_remove:
                 await self.save_scrims_data()
-                self.logger.info(f"{len(scrims_to_remove)}개의 오래된 스크림 정리", extra={'guild_id': None})
+                self.logger.info(f"{len(scrims_to_remove)}개의 오래된 내전 정리", extra={'guild_id': None})
 
         except Exception as e:
             self.logger.error(f"정리 태스크 중 오류: {e}", extra={'guild_id': None})
@@ -1923,7 +1922,7 @@ class ScrimCog(commands.Cog):
         # 기능 활성화 여부 확인
         if not config.is_feature_enabled(interaction.guild.id, 'scrim_system'):
             await interaction.response.send_message(
-                "❌ 이 서버에서 스크림 시스템이 비활성화되어 있습니다.",
+                "❌ 이 서버에서 내전 시스템이 비활성화되어 있습니다.",
                 ephemeral=True
             )
             return
@@ -2008,12 +2007,12 @@ class ScrimCog(commands.Cog):
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="내전기록", description="활성 스크림을 확인합니다.")
+    @app_commands.command(name="내전기록", description="활성 내전을 확인합니다.")
     async def list_scrims(self, interaction: discord.Interaction):
         # 기능 활성화 여부 확인
         if not config.is_feature_enabled(interaction.guild.id, 'scrim_system'):
             await interaction.response.send_message(
-                "❌ 이 서버에서 스크림 시스템이 비활성화되어 있습니다.",
+                "❌ 이 서버에서 내전 시스템이 비활성화되어 있습니다.",
                 ephemeral=True
             )
             return
@@ -2027,11 +2026,11 @@ class ScrimCog(commands.Cog):
         ]
 
         if not active_scrims:
-            await interaction.followup.send("현재 활성 스크림이 없습니다.", ephemeral=True)
+            await interaction.followup.send("현재 활성 내전이 없습니다.", ephemeral=True)
             return
 
         embed = discord.Embed(
-            title="🎮 활성 스크림",
+            title="🎮 활성 내전",
             color=discord.Color.blue(),
             timestamp=datetime.now(timezone.utc)
         )
@@ -2066,10 +2065,10 @@ class ScrimCog(commands.Cog):
 
         await interaction.followup.send(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="내전설정", description="스크림 시스템 설정을 구성합니다. (관리자 전용)")
+    @app_commands.command(name="내전설정", description="내전 시스템 설정을 구성합니다. (관리자 전용)")
     @app_commands.describe(
-        feature_enabled="스크림 시스템 활성화/비활성화",
-        scrim_channel="스크림 생성 패널이 표시될 채널"
+        feature_enabled="내전 시스템 활성화/비활성화",
+        scrim_channel="내전 생성 패널이 표시될 채널"
     )
     @app_commands.default_permissions(administrator=True)
     async def configure_scrim(self, interaction: discord.Interaction,
@@ -2090,30 +2089,30 @@ class ScrimCog(commands.Cog):
         if feature_enabled is not None:
             features['scrim_system'] = feature_enabled
             updated = True
-            self.logger.info(f"스크림 시스템이 길드 {guild_id}에서 {'활성화됨' if feature_enabled else '비활성화됨'}",
+            self.logger.info(f"내전 시스템이 길드 {guild_id}에서 {'활성화됨' if feature_enabled else '비활성화됨'}",
                              extra={'guild_id': guild_id})
 
-        # 스크림 채널 업데이트
+        # 내전 채널 업데이트
         if scrim_channel is not None:
             channels['scrim_channel'] = {'id': scrim_channel.id, 'name': scrim_channel.name}
             updated = True
-            self.logger.info(f"스크림 채널이 #{scrim_channel.name} ({scrim_channel.id})로 길드 {guild_id}에 설정됨",
+            self.logger.info(f"내전 채널이 #{scrim_channel.name} ({scrim_channel.id})로 길드 {guild_id}에 설정됨",
                              extra={'guild_id': guild_id})
 
         if updated:
             current_config['features'] = features
             current_config['channels'] = channels
             config.save_server_config(guild_id, current_config)
-            await interaction.followup.send("✅ 스크림 시스템 설정이 성공적으로 업데이트되었습니다.")
+            await interaction.followup.send("✅ 내전 시스템 설정이 성공적으로 업데이트되었습니다.")
 
-            # 채널이 설정되고 기능이 활성화된 경우 스크림 패널 설정
+            # 채널이 설정되고 기능이 활성화된 경우 내전 패널 설정
             if scrim_channel is not None and features.get('scrim_system'):
                 await self.setup_scrim_panel(scrim_channel)
         else:
             await interaction.followup.send("ℹ️ 설정에 변경 사항이 없습니다.")
 
-    @app_commands.command(name="내전강제취소", description="스크림을 강제로 취소합니다. (스태프 전용)")
-    @app_commands.describe(scrim_id="취소할 스크림의 ID")
+    @app_commands.command(name="내전강제취소", description="내전을 강제로 취소합니다. (스태프 전용)")
+    @app_commands.describe(scrim_id="취소할 내전의 ID")
     async def force_cancel_scrim(self, interaction: discord.Interaction, scrim_id: str):
         # 권한 확인
         if not self.has_staff_permissions(interaction.user):
@@ -2124,16 +2123,16 @@ class ScrimCog(commands.Cog):
 
         scrim_data = self.scrims_data.get(scrim_id)
         if not scrim_data:
-            await interaction.followup.send("❌ 스크림을 찾을 수 없습니다.", ephemeral=True)
+            await interaction.followup.send("❌ 내전을 찾을 수 없습니다.", ephemeral=True)
             return
 
         if scrim_data['guild_id'] != interaction.guild.id:
-            await interaction.followup.send("❌ 이 스크림은 이 서버에 속하지 않습니다.", ephemeral=True)
+            await interaction.followup.send("❌ 이 내전은 이 서버에 속하지 않습니다.", ephemeral=True)
             return
 
         success = await self.cancel_scrim(scrim_id, interaction.user.id)
         if success:
-            await interaction.followup.send(f"✅ 스크림 `{scrim_id}`이(가) 취소되었습니다.", ephemeral=True)
+            await interaction.followup.send(f"✅ 내전 `{scrim_id}`이(가) 취소되었습니다.", ephemeral=True)
 
             # 메시지가 존재하는 경우 메시지 업데이트 시도
             if 'message_id' in scrim_data:
@@ -2145,10 +2144,10 @@ class ScrimCog(commands.Cog):
                 except:
                     pass
         else:
-            await interaction.followup.send("❌ 스크림 취소 중 오류가 발생했습니다.", ephemeral=True)
+            await interaction.followup.send("❌ 내전 취소 중 오류가 발생했습니다.", ephemeral=True)
 
     @app_commands.command(name="내전엠베드",
-                          description="스크림 패널 메시지를 새로 고치고 맨 아래에 다시 게시합니다. (스태프 전용)")
+                          description="내전 패널 메시지를 새로 고치고 맨 아래에 다시 게시합니다. (스태프 전용)")
     @app_commands.default_permissions(administrator=True)
     async def refresh_scrim_panel(self, interaction: discord.Interaction):
         # 인터랙션 응답 지연
@@ -2158,34 +2157,34 @@ class ScrimCog(commands.Cog):
         scrim_channel_id = config.get_channel_id(guild_id, 'scrim_channel')
 
         if not scrim_channel_id:
-            await interaction.followup.send("❌ 스크림 채널이 설정되지 않았습니다.", ephemeral=True)
+            await interaction.followup.send("❌ 내전 채널이 설정되지 않았습니다.", ephemeral=True)
             return
 
         channel = interaction.guild.get_channel(scrim_channel_id)
         if not channel:
-            await interaction.followup.send("❌ 스크림 채널을 찾을 수 없습니다.", ephemeral=True)
+            await interaction.followup.send("❌ 내전 채널을 찾을 수 없습니다.", ephemeral=True)
             return
 
-        # 이전 스크림 패널 메시지 삭제
+        # 이전 내전 패널 메시지 삭제
         deleted_count = 0
         async for message in channel.history(limit=50):
-            if message.author == self.bot.user and message.embeds and "스크림 생성 패널" in message.embeds[0].title:
+            if message.author == self.bot.user and message.embeds and "내전 생성 패널" in message.embeds[0].title:
                 try:
                     await message.delete()
                     deleted_count += 1
                 except discord.errors.NotFound:
                     continue  # 메시지가 이미 삭제됨, 계속 진행
                 except Exception as e:
-                    self.logger.error(f"이전 스크림 패널 메시지 삭제 중 오류: {e}",
+                    self.logger.error(f"이전 내전 패널 메시지 삭제 중 오류: {e}",
                                       extra={'guild_id': guild_id})
                     await interaction.followup.send("❌ 이전 메시지 삭제 중 오류가 발생했습니다.", ephemeral=True)
                     return
 
-        # 새 스크림 패널 게시
+        # 새 내전 패널 게시
         await self.setup_scrim_panel(channel)
 
         # 사용자에게 확인
-        await interaction.followup.send("✅ 스크림 패널이 성공적으로 새로 고쳐졌습니다.", ephemeral=True)
+        await interaction.followup.send("✅ 내전 패널이 성공적으로 새로 고쳐졌습니다.", ephemeral=True)
 
 
 async def setup(bot):
