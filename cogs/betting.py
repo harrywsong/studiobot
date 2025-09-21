@@ -427,9 +427,9 @@ class BettingCog(commands.Cog):
                     options JSONB NOT NULL,
                     creator_id BIGINT NOT NULL,
                     status VARCHAR(20) DEFAULT 'active',
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    ends_at TIMESTAMP,
-                    resolved_at TIMESTAMP,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    ends_at TIMESTAMP WITH TIME ZONE,
+                    resolved_at TIMESTAMP WITH TIME ZONE,
                     winning_option INTEGER,
                     message_id BIGINT,
                     channel_id BIGINT,
@@ -447,7 +447,7 @@ class BettingCog(commands.Cog):
                     option_index INTEGER NOT NULL,
                     amount INTEGER NOT NULL,
                     potential_payout INTEGER,
-                    placed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    placed_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
                     resolved BOOLEAN DEFAULT FALSE,
                     payout_amount INTEGER DEFAULT 0
                 )
@@ -630,20 +630,25 @@ class BettingCog(commands.Cog):
             if not category:
                 return {'success': False, 'reason': '베팅 카테고리를 찾을 수 없습니다.'}
 
-            # Calculate end time - ensure it's timezone-aware
+            # Calculate end time - ensure it's timezone-aware using UTC
             end_time = datetime.now(timezone.utc) + timedelta(minutes=duration_minutes)
 
             # Create dedicated betting channel with proper formatting
-            channel_name = f"╠📋┆베팅-{title.replace(' ', '-')[:20]}"
+            channel_name = f"╠ 📋┆베팅-{title.replace(' ', '-')[:20]}"
 
-            # Set position to be directly below the control channel
-            # Position is 0-indexed, so we add 1 to place it right below
-            position = reference_channel.position + 1 if reference_channel else None
+            # Get the actual position index by counting channels above the reference channel
+            # Position channels in category start at 0, so we count channels positioned before reference
+            target_position = 0
+            if reference_channel and reference_channel.category_id == category.id:
+                for channel in category.channels:
+                    if channel.position < reference_channel.position:
+                        target_position += 1
+                target_position += 1  # Place directly after the reference channel
 
             betting_channel = await guild.create_text_channel(
                 name=channel_name,
                 category=category,
-                position=position,
+                position=target_position,
                 topic=f"베팅: {title} | 종료: {end_time.strftime('%Y-%m-%d %H:%M UTC')}",
                 reason=f"베팅 이벤트 채널 생성: {title}"
             )
@@ -679,7 +684,7 @@ class BettingCog(commands.Cog):
 
             await betting_channel.edit(overwrites=overwrites)
 
-            # Create event in database - ensure end_time is timezone-aware
+            # Create event in database
             event_id = await self.bot.pool.fetchval("""
                 INSERT INTO betting_events (guild_id, title, description, options, creator_id, ends_at, 
                                             channel_id, betting_channel_id)

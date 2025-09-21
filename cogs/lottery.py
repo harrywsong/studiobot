@@ -150,7 +150,7 @@ class LotteryCog(commands.Cog):
 
                             embed.add_field(
                                 name="⏰ 다음 자동 추첨",
-                                value="내일 오전 12시 (EST)",
+                                value="6시간 후",
                                 inline=False
                             )
                             embed.set_footer(text="매일 자동 추첨! 새로 참가해주세요!")
