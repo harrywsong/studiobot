@@ -205,7 +205,7 @@ class SimpleBettingCog(commands.Cog):
             self.logger.error(f"베팅 메시지 생성 실패: {e}")
 
     async def create_betting_embed(self, event_id: int, options: List[str], event) -> discord.Embed:
-        """베팅 임베드 생성"""
+        """베팅 임베드 생성 (플레이어 목록 포함)"""
         # 베팅 통계 가져오기
         stats = await self.bot.pool.fetch("""
             SELECT option_index, COUNT(*) as bets, SUM(amount) as total
@@ -213,6 +213,14 @@ class SimpleBettingCog(commands.Cog):
             WHERE event_id = $1
             GROUP BY option_index
             ORDER BY option_index
+        """, event_id)
+
+        # 각 옵션별 베팅한 플레이어 목록 가져오기
+        player_bets = await self.bot.pool.fetch("""
+            SELECT option_index, user_id, amount
+            FROM betting_bets_v2 
+            WHERE event_id = $1
+            ORDER BY option_index, amount DESC
         """, event_id)
 
         # 상태에 따른 제목과 색상 설정
@@ -241,6 +249,17 @@ class SimpleBettingCog(commands.Cog):
             SELECT COUNT(DISTINCT user_id) FROM betting_bets_v2 WHERE event_id = $1
         """, event_id) or 0
 
+        # 옵션별 플레이어 목록 정리
+        players_by_option = {}
+        for bet in player_bets:
+            option_idx = bet['option_index']
+            if option_idx not in players_by_option:
+                players_by_option[option_idx] = []
+            players_by_option[option_idx].append({
+                'user_id': bet['user_id'],
+                'amount': bet['amount']
+            })
+
         # 옵션별 정보 표시
         option_text = ""
         for i, option in enumerate(options):
@@ -251,7 +270,7 @@ class SimpleBettingCog(commands.Cog):
 
             percentage = (amount / total_pool * 100) if total_pool > 0 else 0
 
-            # 예상 배당률 계산 (전체 풀 / 해당 옵션 베팅액)
+            # 예상 배당률 계산
             payout_ratio = (total_pool / amount) if amount > 0 else 2.0
 
             # 진행 바 생성
@@ -262,10 +281,36 @@ class SimpleBettingCog(commands.Cog):
             option_text += f"**{i + 1}. {option}**\n"
             option_text += f"💰 **{amount:,}** 코인 ({bets_count}명) - **{percentage:.1f}%**\n"
             option_text += f"📊 {bar} **{percentage:.1f}%**\n"
+
             if event['status'] in ['active', 'closed']:
-                option_text += f"💸 예상 배당률: **x{payout_ratio:.2f}**\n\n"
-            else:
-                option_text += "\n"
+                option_text += f"💸 예상 배당률: **x{payout_ratio:.2f}**\n"
+
+            # 플레이어 목록 추가
+            if i in players_by_option:
+                players = players_by_option[i]
+                player_list = []
+
+                # 최대 5명까지만 표시 (너무 길어지지 않도록)
+                display_limit = 5
+                for j, player in enumerate(players[:display_limit]):
+                    try:
+                        user = self.bot.get_user(player['user_id'])
+                        username = user.display_name if user else f"User#{player['user_id']}"
+                        # 사용자명이 너무 길면 줄임
+                        if len(username) > 12:
+                            username = username[:10] + ".."
+                        player_list.append(f"{username}({player['amount']:,})")
+                    except:
+                        player_list.append(f"User#{player['user_id']}({player['amount']:,})")
+
+                # 더 많은 플레이어가 있으면 표시
+                if len(players) > display_limit:
+                    player_list.append(f"외 {len(players) - display_limit}명")
+
+                if player_list:
+                    option_text += f"👥 **베팅한 플레이어**: {', '.join(player_list)}\n"
+
+            option_text += "\n"
 
         if not option_text.strip():
             option_text = "아직 베팅이 없습니다.\n"
@@ -290,7 +335,6 @@ class SimpleBettingCog(commands.Cog):
             embed.set_footer(text="베팅이 종료되었습니다")
 
         return embed
-
     async def get_user_bet(self, user_id: int, event_id: int) -> Optional[Dict]:
         """사용자의 기존 베팅 확인"""
         bet = await self.bot.pool.fetchrow("""
