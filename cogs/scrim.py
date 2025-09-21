@@ -9,6 +9,7 @@ from datetime import datetime, timezone, timedelta
 import pytz
 import random
 import asyncio
+import traceback
 
 from utils.logger import get_logger
 from utils import config
@@ -73,7 +74,6 @@ class GameSelectView(discord.ui.View):
             for item in self.children:
                 item.disabled = True
 
-            # Try to edit the message to show it's expired
             if hasattr(self, 'message') and self.message:
                 embed = discord.Embed(
                     title="⏱️ 시간 초과",
@@ -81,8 +81,9 @@ class GameSelectView(discord.ui.View):
                     color=discord.Color.red()
                 )
                 await self.message.edit(embed=embed, view=self)
-        except:
-            pass  # Ignore errors during timeout handling
+        except Exception as e:
+            print(f"ERROR in PlayerCountSelectView on_timeout: {str(e)}\nFull traceback: {traceback.format_exc()}")
+            self.logger.error(f"Timeout error in PlayerCountSelectView: {traceback.format_exc()}")
 
     async def game_selected(self, interaction: discord.Interaction):
         """게임 선택 처리"""
@@ -117,11 +118,13 @@ class GameSelectView(discord.ui.View):
             gamemode_view.message = interaction.message  # ADD THIS LINE
 
         except Exception as e:
-            self.logger.error(f"Game selection error: {e}")
+            print(f"ERROR in game_selected: {str(e)}\nFull traceback: {traceback.format_exc()}")
+            self.logger.error(f"Game selection error: {traceback.format_exc()}")
             try:
-                await interaction.followup.send("⚠ 오류가 발생했습니다.", ephemeral=True)
+                await interaction.followup.send(f"⚠ 오류가 발생했습니다: {str(e)}", ephemeral=True)
             except:
                 pass
+
 class GameModeSelectView(discord.ui.View):
     """게임 모드 선택 뷰"""
 
@@ -160,6 +163,7 @@ class GameModeSelectView(discord.ui.View):
             for item in self.children:
                 item.disabled = True
 
+            # Try to edit the message to show it's expired
             if hasattr(self, 'message') and self.message:
                 embed = discord.Embed(
                     title="⏱️ 시간 초과",
@@ -167,8 +171,10 @@ class GameModeSelectView(discord.ui.View):
                     color=discord.Color.red()
                 )
                 await self.message.edit(embed=embed, view=self)
-        except:
-            pass
+        except Exception as e:
+            print(f"ERROR in GameSelectView on_timeout: {str(e)}\nFull traceback: {traceback.format_exc()}")
+            self.logger.error(f"Timeout error in GameSelectView: {traceback.format_exc()}")
+
     def get_gamemode_options(self, game: str) -> List[discord.SelectOption]:
         """선택된 게임에 따라 게임 모드 옵션 가져오기"""
         gamemode_map = {
@@ -220,9 +226,10 @@ class GameModeSelectView(discord.ui.View):
             tier_view.message = interaction.message  # ADD THIS LINE
 
         except Exception as e:
-            self.logger.error(f"Gamemode selection error: {e}")
+            print(f"ERROR in gamemode_selected: {str(e)}\nFull traceback: {traceback.format_exc()}")
+            self.logger.error(f"Gamemode selection error: {traceback.format_exc()}")
             try:
-                await interaction.followup.send("⚠ 오류가 발생했습니다.", ephemeral=True)
+                await interaction.followup.send(f"⚠ 오류가 발생했습니다: {str(e)}", ephemeral=True)
             except:
                 pass
 
@@ -242,9 +249,10 @@ class GameModeSelectView(discord.ui.View):
             await interaction.edit_original_response(embed=embed, view=game_view)
             game_view.message = interaction.message  # ADD THIS LINE
         except Exception as e:
-            self.logger.error(f"Back to game selection error: {e}")
+            print(f"ERROR in back_to_game_selection: {str(e)}\nFull traceback: {traceback.format_exc()}")
+            self.logger.error(f"Back to game selection error: {traceback.format_exc()}")
             try:
-                await interaction.followup.send("⚠ 오류가 발생했습니다.", ephemeral=True)
+                await interaction.followup.send(f"⚠ 오류가 발생했습니다: {str(e)}", ephemeral=True)
             except:
                 pass
 
@@ -305,8 +313,9 @@ class TierSelectView(discord.ui.View):
                     color=discord.Color.red()
                 )
                 await self.message.edit(embed=embed, view=self)
-        except:
-            pass
+        except Exception as e:
+            print(f"ERROR in GameModeSelectView on_timeout: {str(e)}\nFull traceback: {traceback.format_exc()}")
+            self.logger.error(f"Timeout error in GameModeSelectView: {traceback.format_exc()}")
 
     async def tier_selected(self, interaction: discord.Interaction):
         """티어 선택 처리"""
@@ -330,9 +339,10 @@ class TierSelectView(discord.ui.View):
             time_view.message = interaction.message  # ADD THIS LINE
 
         except Exception as e:
-            self.logger.error(f"Tier selection error: {e}")
+            print(f"ERROR in tier_selected: {str(e)}\nFull traceback: {traceback.format_exc()}")
+            self.logger.error(f"Tier selection error: {traceback.format_exc()}")
             try:
-                await interaction.followup.send("⚠ 오류가 발생했습니다.", ephemeral=True)
+                await interaction.followup.send(f"⚠ 오류가 발생했습니다: {str(e)}", ephemeral=True)
             except:
                 pass
 
@@ -358,12 +368,12 @@ class TierSelectView(discord.ui.View):
             gamemode_view.message = interaction.message  # ADD THIS LINE
 
         except Exception as e:
-            self.logger.error(f"Back to gamemode selection error: {e}")
+            print(f"ERROR in back_to_gamemode_selection: {str(e)}\nFull traceback: {traceback.format_exc()}")
+            self.logger.error(f"Back to gamemode selection error: {traceback.format_exc()}")
             try:
-                await interaction.followup.send("⚠ 오류가 발생했습니다.", ephemeral=True)
+                await interaction.followup.send(f"⚠ 오류가 발생했습니다: {str(e)}", ephemeral=True)
             except:
                 pass
-
 
 class TimeSelectView(discord.ui.View):
     """빠른 옵션과 함께하는 시간 선택 뷰"""
@@ -418,8 +428,10 @@ class TimeSelectView(discord.ui.View):
                     color=discord.Color.red()
                 )
                 await self.message.edit(embed=embed, view=self)
-        except:
-            pass
+        except Exception as e:
+            print(f"ERROR in TierSelectView on_timeout: {str(e)}\nFull traceback: {traceback.format_exc()}")
+            self.logger.error(f"Timeout error in TierSelectView: {traceback.format_exc()}")
+
     async def time_selected(self, interaction: discord.Interaction):
         """시간 선택 처리"""
         try:
@@ -456,12 +468,13 @@ class TimeSelectView(discord.ui.View):
             await self.continue_to_player_count(interaction)
 
         except Exception as e:
-            self.logger.error(f"Time selection error: {e}")
+            print(f"ERROR in time_selected: {str(e)}\nFull traceback: {traceback.format_exc()}")
+            self.logger.error(f"Time selection error: {traceback.format_exc()}")
             try:
                 if not interaction.response.is_done():
-                    await interaction.response.send_message("❌ 오류가 발생했습니다.", ephemeral=True)
+                    await interaction.response.send_message(f"⚠ 오류가 발생했습니다: {str(e)}", ephemeral=True)
                 else:
-                    await interaction.followup.send("❌ 오류가 발생했습니다.", ephemeral=True)
+                    await interaction.followup.send(f"⚠ 오류가 발생했습니다: {str(e)}", ephemeral=True)
             except:
                 pass
 
@@ -497,12 +510,12 @@ class TimeSelectView(discord.ui.View):
             await interaction.edit_original_response(embed=embed, view=tier_view)
             tier_view.message = interaction.message  # ADD THIS LINE
         except Exception as e:
-            self.logger.error(f"Back to tier selection error: {e}")
+            print(f"ERROR in back_to_tier_selection: {str(e)}\nFull traceback: {traceback.format_exc()}")
+            self.logger.error(f"Back to tier selection error: {traceback.format_exc()}")
             try:
-                await interaction.followup.send("⚠ 오류가 발생했습니다.", ephemeral=True)
+                await interaction.followup.send(f"⚠ 오류가 발생했습니다: {str(e)}", ephemeral=True)
             except:
                 pass
-
 
 class CustomTimeModal(discord.ui.Modal):
     """사용자 지정 시간 입력을 위한 모달"""
@@ -548,8 +561,10 @@ class CustomTimeModal(discord.ui.Modal):
             )
 
         except Exception as e:
+            print(f"ERROR in CustomTimeModal on_submit: {str(e)}\nFull traceback: {traceback.format_exc()}")
+            self.logger.error(f"Custom time submit error: {traceback.format_exc()}")
             await interaction.response.send_message(
-                "⚠ 시간 처리 중 오류가 발생했습니다. 다시 시도해주세요.", ephemeral=True
+                f"⚠ 시간 처리 중 오류가 발생했습니다: {str(e)}", ephemeral=True
             )
 
     async def parse_time_input(self, time_input: str, timezone) -> Optional[datetime]:
@@ -644,8 +659,10 @@ class PlayerCountSelectView(discord.ui.View):
                     color=discord.Color.red()
                 )
                 await self.message.edit(embed=embed, view=self)
-        except:
-            pass
+        except Exception as e:
+            print(f"ERROR in TimeSelectView on_timeout: {str(e)}\nFull traceback: {traceback.format_exc()}")
+            self.logger.error(f"Timeout error in TimeSelectView: {traceback.format_exc()}")
+
     async def player_count_selected(self, interaction: discord.Interaction):
         """플레이어 수 선택 처리"""
         try:
@@ -667,12 +684,13 @@ class PlayerCountSelectView(discord.ui.View):
             await self.create_scrim(interaction, max_players)
 
         except Exception as e:
-            self.logger.error(f"Player count selection error: {e}")
+            print(f"ERROR in player_count_selected: {str(e)}\nFull traceback: {traceback.format_exc()}")
+            self.logger.error(f"Player count selection error: {traceback.format_exc()}")
             try:
                 if not interaction.response.is_done():
-                    await interaction.response.send_message("❌ 오류가 발생했습니다.", ephemeral=True)
+                    await interaction.response.send_message(f"⚠ 오류가 발생했습니다: {str(e)}", ephemeral=True)
                 else:
-                    await interaction.followup.send("❌ 오류가 발생했습니다.", ephemeral=True)
+                    await interaction.followup.send(f"⚠ 오류가 발생했습니다: {str(e)}", ephemeral=True)
             except:
                 pass
 
@@ -762,9 +780,7 @@ class PlayerCountSelectView(discord.ui.View):
         try:
             await interaction.response.defer()
 
-            time_view = TimeSelectView(
-                self.bot, self.guild_id, self.game, self.gamemode, self.tier, self.role_id
-            )
+            time_view = TimeSelectView(self.bot, self.guild_id, self.game, self.gamemode, self.tier, self.role_id)
 
             embed = discord.Embed(
                 title="⏰ 시작 시간 선택",
@@ -774,10 +790,12 @@ class PlayerCountSelectView(discord.ui.View):
 
             await interaction.edit_original_response(embed=embed, view=time_view)
             time_view.message = interaction.message  # ADD THIS LINE
+
         except Exception as e:
-            self.logger.error(f"Back to time selection error: {e}")
+            print(f"ERROR in back_to_time_selection: {str(e)}\nFull traceback: {traceback.format_exc()}")
+            self.logger.error(f"Back to time selection error: {traceback.format_exc()}")
             try:
-                await interaction.followup.send("⚠ 오류가 발생했습니다.", ephemeral=True)
+                await interaction.followup.send(f"⚠ 오류가 발생했습니다: {str(e)}", ephemeral=True)
             except:
                 pass
 
