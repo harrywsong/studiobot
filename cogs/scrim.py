@@ -67,6 +67,22 @@ class GameSelectView(discord.ui.View):
         self.game_select.callback = self.game_selected
         self.add_item(self.game_select)
 
+    async def on_timeout(self):
+        """Handle view timeout"""
+        try:
+            for item in self.children:
+                item.disabled = True
+
+            # Try to edit the message to show it's expired
+            if hasattr(self, 'message') and self.message:
+                embed = discord.Embed(
+                    title="⏱️ 시간 초과",
+                    description="이 메뉴가 만료되었습니다. 새로운 스크림 생성을 시작해주세요.",
+                    color=discord.Color.red()
+                )
+                await self.message.edit(embed=embed, view=self)
+        except:
+            pass  # Ignore errors during timeout handling
     async def game_selected(self, interaction: discord.Interaction):
         """게임 선택 처리"""
         try:
@@ -137,6 +153,21 @@ class GameModeSelectView(discord.ui.View):
         back_button.callback = self.back_to_game_selection
         self.add_item(back_button)
 
+    async def on_timeout(self):
+        """Handle view timeout"""
+        try:
+            for item in self.children:
+                item.disabled = True
+
+            if hasattr(self, 'message') and self.message:
+                embed = discord.Embed(
+                    title="⏱️ 시간 초과",
+                    description="이 메뉴가 만료되었습니다. 새로운 스크림 생성을 시작해주세요.",
+                    color=discord.Color.red()
+                )
+                await self.message.edit(embed=embed, view=self)
+        except:
+            pass
     def get_gamemode_options(self, game: str) -> List[discord.SelectOption]:
         """선택된 게임에 따라 게임 모드 옵션 가져오기"""
         gamemode_map = {
@@ -260,6 +291,22 @@ class TierSelectView(discord.ui.View):
         back_button.callback = self.back_to_gamemode_selection
         self.add_item(back_button)
 
+    async def on_timeout(self):
+        """Handle view timeout"""
+        try:
+            for item in self.children:
+                item.disabled = True
+
+            if hasattr(self, 'message') and self.message:
+                embed = discord.Embed(
+                    title="⏱️ 시간 초과",
+                    description="이 메뉴가 만료되었습니다. 새로운 스크림 생성을 시작해주세요.",
+                    color=discord.Color.red()
+                )
+                await self.message.edit(embed=embed, view=self)
+        except:
+            pass
+
     async def tier_selected(self, interaction: discord.Interaction):
         """티어 선택 처리"""
         try:
@@ -356,6 +403,21 @@ class TimeSelectView(discord.ui.View):
         back_button.callback = self.back_to_tier_selection
         self.add_item(back_button)
 
+    async def on_timeout(self):
+        """Handle view timeout"""
+        try:
+            for item in self.children:
+                item.disabled = True
+
+            if hasattr(self, 'message') and self.message:
+                embed = discord.Embed(
+                    title="⏱️ 시간 초과",
+                    description="이 메뉴가 만료되었습니다. 새로운 스크림 생성을 시작해주세요.",
+                    color=discord.Color.red()
+                )
+                await self.message.edit(embed=embed, view=self)
+        except:
+            pass
     async def time_selected(self, interaction: discord.Interaction):
         """시간 선택 처리"""
         try:
@@ -415,12 +477,12 @@ class TimeSelectView(discord.ui.View):
         )
 
         # CHANGE THIS LINE:
-        await interaction.followup.edit_message(embed=embed, view=player_view)
+        await interaction.edit_original_response(embed=embed, view=player_view)
 
     async def back_to_tier_selection(self, interaction: discord.Interaction):
         """티어 선택으로 돌아가기"""
         try:
-            await interaction.response.defer()  # ADD THIS
+            await interaction.response.defer()
 
             tier_view = TierSelectView(self.bot, self.guild_id, self.game, self.gamemode, self.role_id)
 
@@ -430,11 +492,12 @@ class TimeSelectView(discord.ui.View):
                 color=discord.Color.gold()
             )
 
-            await interaction.followup.edit_message(embed=embed, view=tier_view)  # CHANGED
+            # CHANGE THIS LINE
+            await interaction.edit_original_response(embed=embed, view=tier_view)
         except Exception as e:
             self.logger.error(f"Back to tier selection error: {e}")
             try:
-                await interaction.followup.send("❌ 오류가 발생했습니다.", ephemeral=True)
+                await interaction.followup.send("⚠ 오류가 발생했습니다.", ephemeral=True)
             except:
                 pass
 
@@ -467,34 +530,24 @@ class CustomTimeModal(discord.ui.Modal):
             parsed_time = await self.parse_time_input(self.time_input.value, eastern)
             if not parsed_time:
                 await interaction.response.send_message(
-                    "❌ 잘못된 시간 형식입니다. 다시 시도해주세요.", ephemeral=True
+                    "⚠ 잘못된 시간 형식입니다. 다시 시도해주세요.", ephemeral=True
                 )
                 return
 
             if parsed_time <= datetime.now(eastern):
                 await interaction.response.send_message(
-                    "❌ 시작 시간은 미래여야 합니다.", ephemeral=True
+                    "⚠ 시작 시간은 미래여야 합니다.", ephemeral=True
                 )
                 return
 
-            # CHANGE THIS ENTIRE SECTION:
-            # OLD CODE (remove this):
-            # player_view = PlayerCountSelectView(
-            #     self.bot, self.guild_id, self.game, self.gamemode,
-            #     self.tier, parsed_time, self.role_id
-            # )
-            # embed = discord.Embed(...)
-            # await interaction.response.send_message(embed=embed, view=player_view, ephemeral=True)
-
-            # NEW CODE (replace with this):
             await interaction.response.send_message(
-                "✅ 시간이 설정되었습니다. 다시 스크림 생성을 시작해주세요.",
+                f"✅ 시간이 {parsed_time.strftime('%Y-%m-%d %H:%M EST')}로 설정되었습니다. 다시 스크림 생성을 시작해주세요.",
                 ephemeral=True
             )
 
         except Exception as e:
             await interaction.response.send_message(
-                "❌ 시간 처리 중 오류가 발생했습니다. 다시 시도해주세요.", ephemeral=True
+                "⚠ 시간 처리 중 오류가 발생했습니다. 다시 시도해주세요.", ephemeral=True
             )
 
     async def parse_time_input(self, time_input: str, timezone) -> Optional[datetime]:
@@ -576,6 +629,21 @@ class PlayerCountSelectView(discord.ui.View):
         back_button.callback = self.back_to_time_selection
         self.add_item(back_button)
 
+    async def on_timeout(self):
+        """Handle view timeout"""
+        try:
+            for item in self.children:
+                item.disabled = True
+
+            if hasattr(self, 'message') and self.message:
+                embed = discord.Embed(
+                    title="⏱️ 시간 초과",
+                    description="이 메뉴가 만료되었습니다. 새로운 스크림 생성을 시작해주세요.",
+                    color=discord.Color.red()
+                )
+                await self.message.edit(embed=embed, view=self)
+        except:
+            pass
     async def player_count_selected(self, interaction: discord.Interaction):
         """플레이어 수 선택 처리"""
         try:
@@ -690,7 +758,7 @@ class PlayerCountSelectView(discord.ui.View):
     async def back_to_time_selection(self, interaction: discord.Interaction):
         """시간 선택으로 돌아가기"""
         try:
-            await interaction.response.defer()  # ADD THIS
+            await interaction.response.defer()
 
             time_view = TimeSelectView(
                 self.bot, self.guild_id, self.game, self.gamemode, self.tier, self.role_id
@@ -702,11 +770,12 @@ class PlayerCountSelectView(discord.ui.View):
                 color=discord.Color.orange()
             )
 
-            await interaction.followup.edit_message(embed=embed, view=time_view)  # CHANGED
+            # CHANGE THIS LINE
+            await interaction.edit_original_response(embed=embed, view=time_view)
         except Exception as e:
             self.logger.error(f"Back to time selection error: {e}")
             try:
-                await interaction.followup.send("❌ 오류가 발생했습니다.", ephemeral=True)
+                await interaction.followup.send("⚠ 오류가 발생했습니다.", ephemeral=True)
             except:
                 pass
 
@@ -739,16 +808,10 @@ class CustomPlayerCountModal(discord.ui.Modal):
             max_players = int(self.player_input.value)
             if max_players < 2 or max_players > 50:
                 await interaction.response.send_message(
-                    "❌ 플레이어 수는 2-50 사이여야 합니다.", ephemeral=True
+                    "⚠ 플레이어 수는 2-50 사이여야 합니다.", ephemeral=True
                 )
                 return
 
-            # CHANGE THIS SECTION:
-            # OLD CODE (remove this):
-            # player_view = PlayerCountSelectView(...)
-            # await player_view.create_scrim(interaction, max_players)
-
-            # NEW CODE (replace with this):
             await interaction.response.send_message(
                 f"✅ 플레이어 수가 {max_players}명으로 설정되었습니다. 다시 스크림 생성을 시작해주세요.",
                 ephemeral=True
@@ -756,7 +819,7 @@ class CustomPlayerCountModal(discord.ui.Modal):
 
         except ValueError:
             await interaction.response.send_message(
-                "❌ 유효한 숫자를 입력하세요.", ephemeral=True
+                "⚠ 유효한 숫자를 입력하세요.", ephemeral=True
             )
 
 
