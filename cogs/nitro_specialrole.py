@@ -68,15 +68,30 @@ class SpecialRoleControlView(discord.ui.View):
         )
         await interaction.followup.send(embed=embed, ephemeral=True)
 
-    @discord.ui.button(label="[ 키키 <a:30671jiji:1417778842818314300> ] 역할 받기", style=discord.ButtonStyle.primary, custom_id="get_special_role_one")
+    @discord.ui.button(
+        label="키키 역할 받기",
+        style=discord.ButtonStyle.primary,
+        custom_id="get_special_role_one",
+        emoji="<a:30671jiji:1417778842818314300>"  # animated custom emoji
+    )
     async def get_role_one(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self._handle_role_selection(interaction, ROLE_ONE_ID)
 
-    @discord.ui.button(label="[ 석탄이 <:4995sootsprite:1417779584845217832> ] 역할 받기", style=discord.ButtonStyle.primary, custom_id="get_special_role_two")
+    @discord.ui.button(
+        label="석탄이 역할 받기",
+        style=discord.ButtonStyle.primary,
+        custom_id="get_special_role_two",
+        emoji="<:4995sootsprite:1417779584845217832>"  # static custom emoji
+    )
     async def get_role_two(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self._handle_role_selection(interaction, ROLE_TWO_ID)
 
-    @discord.ui.button(label="역할 제거", style=discord.ButtonStyle.danger, custom_id="remove_special_role")
+    @discord.ui.button(
+        label="역할 제거",
+        style=discord.ButtonStyle.danger,
+        custom_id="remove_special_role",
+        emoji="🗑️"  # Unicode emoji
+    )
     async def remove_roles(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
         member = interaction.user
