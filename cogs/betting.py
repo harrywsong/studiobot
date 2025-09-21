@@ -193,16 +193,14 @@ class BettingView(discord.ui.View):
                 emoji="💰"
             )
 
-            # Fix closure issue by using default parameter to capture current value
-            def make_callback(option_index=i):
-                async def callback(interaction):
-                    await self.handle_bet(interaction, option_index)
-
-                return callback
-
-            button.callback = make_callback()
+            # Use functools.partial to properly capture the current value of i
+            import functools
+            button.callback = functools.partial(self._betting_button_callback, i)
             self.add_item(button)
 
+    async def _betting_button_callback(self, option_index: int, interaction: discord.Interaction):
+        """Callback for betting buttons"""
+        await self.handle_bet(interaction, option_index)
     async def handle_bet(self, interaction: discord.Interaction, option_index: int):
         """Handle betting on an option"""
         guild_id = interaction.guild.id
