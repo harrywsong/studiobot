@@ -152,8 +152,7 @@ class BettingCreationModal(discord.ui.Modal):
             self.betting_cog.logger.error(f"베팅 생성 모달 오류: {e}", extra={'guild_id': interaction.guild.id})
 
 
-# Fixed BettingView class that creates buttons dynamically
-# Fixed BettingView class that properly handles persistent views
+# Improved BettingView with better error handling and registration
 class BettingView(discord.ui.View):
     def __init__(self, bot, event_data: dict):
         super().__init__(timeout=None)  # Never timeout
@@ -161,18 +160,14 @@ class BettingView(discord.ui.View):
         self.event_data = event_data
         self.logger = get_logger("베팅 시스템")
 
+        # Store event_id for easier access
+        self.event_id = event_data['event_id']
+
         # Dynamically create buttons based on number of options
         self.create_betting_buttons()
 
         # Add the status button
-        status_button = discord.ui.Button(
-            label="내 베팅 현황",
-            style=discord.ButtonStyle.secondary,
-            custom_id=f"betting_status_{event_data['event_id']}",  # Make unique per event
-            emoji="📊"
-        )
-        status_button.callback = self.show_betting_status
-        self.add_item(status_button)
+        self.add_status_button()
 
     def create_betting_buttons(self):
         """Create betting buttons dynamically based on number of options"""
@@ -184,109 +179,153 @@ class BettingView(discord.ui.View):
         ]
 
         for i, option in enumerate(self.event_data['options']):
-            if i >= 8:  # Discord limit of components (minus status button)
+            if i >= 7:  # Leave room for status button (max 5 action rows, each with max 5 components)
                 break
 
             button = discord.ui.Button(
                 label=f"{option['name']} (0명)",
                 style=colors[i % len(colors)],
-                custom_id=f"bet_option_{self.event_data['event_id']}_{i}",  # Make unique per event
+                custom_id=f"bet_{self.event_id}_{i}",  # Simplified but unique custom_id
                 emoji="💰"
             )
 
-            # Use a closure to properly capture the current value of i
-            def make_callback(option_index):
-                async def callback(interaction):
-                    await self.handle_bet(interaction, option_index)
+            # Create a proper callback using closure
+            async def make_bet_callback(option_index):
+                async def bet_callback(interaction):
+                    try:
+                        await self.handle_bet(interaction, option_index)
+                    except Exception as e:
+                        self.logger.error(f"Button callback error for option {option_index}: {e}")
+                        if not interaction.response.is_done():
+                            await interaction.response.send_message("오류가 발생했습니다. 다시 시도해주세요.", ephemeral=True)
 
-                return callback
+                return bet_callback
 
-            button.callback = make_callback(i)
+            button.callback = make_bet_callback(i)
             self.add_item(button)
+
+    def add_status_button(self):
+        """Add the betting status button"""
+        status_button = discord.ui.Button(
+            label="내 베팅 현황",
+            style=discord.ButtonStyle.secondary,
+            custom_id=f"status_{self.event_id}",
+            emoji="📊"
+        )
+
+        async def status_callback(interaction):
+            try:
+                await self.show_betting_status(interaction)
+            except Exception as e:
+                self.logger.error(f"Status button callback error: {e}")
+                if not interaction.response.is_done():
+                    await interaction.response.send_message("오류가 발생했습니다. 다시 시도해주세요.", ephemeral=True)
+
+        status_button.callback = status_callback
+        self.add_item(status_button)
 
     async def handle_bet(self, interaction: discord.Interaction, option_index: int):
         """Handle betting on an option"""
-        guild_id = interaction.guild.id
-        user_id = interaction.user.id
+        try:
+            guild_id = interaction.guild.id
+            user_id = interaction.user.id
 
-        # Check if the option index is valid for this event
-        if option_index >= len(self.event_data['options']):
-            await interaction.response.send_message("⛔ 유효하지 않은 베팅 옵션입니다.", ephemeral=True)
-            return
+            self.logger.info(f"Processing bet from user {user_id} for option {option_index} on event {self.event_id}")
 
-        # Check if casino games are enabled
-        if not config.is_feature_enabled(guild_id, 'casino_games'):
-            await interaction.response.send_message(
-                "⛔ 이 서버에서는 베팅 시스템이 비활성화되어 있습니다.",
-                ephemeral=True
-            )
-            return
+            # Check if the option index is valid for this event
+            if option_index >= len(self.event_data['options']):
+                await interaction.response.send_message("⛔ 유효하지 않은 베팅 옵션입니다.", ephemeral=True)
+                return
 
-        # Get betting cog
-        betting_cog = self.bot.get_cog('BettingCog')
-        if not betting_cog:
-            await interaction.response.send_message("⛔ 베팅 시스템을 찾을 수 없습니다.", ephemeral=True)
-            return
+            # Check if casino games are enabled
+            if not config.is_feature_enabled(guild_id, 'casino_games'):
+                await interaction.response.send_message(
+                    "⛔ 이 서버에서는 베팅 시스템이 비활성화되어 있습니다.",
+                    ephemeral=True
+                )
+                return
 
-        # Check if event is still active
-        event = await betting_cog.get_event(self.event_data['event_id'], guild_id)
-        if not event or event['status'] != 'active':
-            await interaction.response.send_message("⛔ 이 베팅은 더 이상 활성화되어 있지 않습니다.", ephemeral=True)
-            return
+            # Get betting cog
+            betting_cog = self.bot.get_cog('BettingCog')
+            if not betting_cog:
+                await interaction.response.send_message("⛔ 베팅 시스템을 찾을 수 없습니다.", ephemeral=True)
+                return
 
-        # Show betting modal
-        modal = BettingModal(betting_cog, event, option_index)
-        await interaction.response.send_modal(modal)
+            # Check if event is still active (refresh from database)
+            event = await betting_cog.get_event(self.event_id, guild_id)
+            if not event or event['status'] != 'active':
+                await interaction.response.send_message("⛔ 이 베팅은 더 이상 활성화되어 있지 않습니다.", ephemeral=True)
+                return
+
+            # Show betting modal
+            modal = BettingModal(betting_cog, event, option_index)
+            await interaction.response.send_modal(modal)
+
+        except Exception as e:
+            self.logger.error(f"Error in handle_bet: {e}")
+            import traceback
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message("베팅 처리 중 오류가 발생했습니다.", ephemeral=True)
 
     async def show_betting_status(self, interaction: discord.Interaction):
         """Show user's current bets on this event"""
-        guild_id = interaction.guild.id
-        user_id = interaction.user.id
+        try:
+            guild_id = interaction.guild.id
+            user_id = interaction.user.id
 
-        betting_cog = self.bot.get_cog('BettingCog')
-        if not betting_cog:
-            await interaction.response.send_message("⛔ 베팅 시스템을 찾을 수 없습니다.", ephemeral=True)
-            return
+            betting_cog = self.bot.get_cog('BettingCog')
+            if not betting_cog:
+                await interaction.response.send_message("⛔ 베팅 시스템을 찾을 수 없습니다.", ephemeral=True)
+                return
 
-        user_bets = await betting_cog.get_user_bets(user_id, self.event_data['event_id'], guild_id)
+            user_bets = await betting_cog.get_user_bets(user_id, self.event_id, guild_id)
 
-        if not user_bets:
-            await interaction.response.send_message("📊 이 이벤트에 베팅하지 않았습니다.", ephemeral=True)
-            return
+            if not user_bets:
+                await interaction.response.send_message("📊 이 이벤트에 베팅하지 않았습니다.", ephemeral=True)
+                return
 
-        embed = discord.Embed(
-            title="📊 내 베팅 현황",
-            description=f"**이벤트:** {self.event_data['title']}",
-            color=discord.Color.blue(),
-            timestamp=datetime.now(timezone.utc)
-        )
-
-        total_bet = 0
-        for bet in user_bets:
-            option_name = self.event_data['options'][bet['option_index']]['name']
-            embed.add_field(
-                name=f"🎯 {option_name}",
-                value=f"{bet['amount']:,} 코인",
-                inline=True
+            embed = discord.Embed(
+                title="📊 내 베팅 현황",
+                description=f"**이벤트:** {self.event_data['title']}",
+                color=discord.Color.blue(),
+                timestamp=datetime.now(timezone.utc)
             )
-            total_bet += bet['amount']
 
-        embed.add_field(name="💰 총 베팅액", value=f"{total_bet:,} 코인", inline=False)
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+            total_bet = 0
+            for bet in user_bets:
+                option_name = self.event_data['options'][bet['option_index']]['name']
+                embed.add_field(
+                    name=f"🎯 {option_name}",
+                    value=f"{bet['amount']:,} 코인",
+                    inline=True
+                )
+                total_bet += bet['amount']
+
+            embed.add_field(name="💰 총 베팅액", value=f"{total_bet:,} 코인", inline=False)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+
+        except Exception as e:
+            self.logger.error(f"Error in show_betting_status: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message("상태 조회 중 오류가 발생했습니다.", ephemeral=True)
 
     def update_button_labels(self, stats: dict):
         """Update button labels with current betting stats"""
-        for child in self.children:
-            if hasattr(child, 'custom_id') and child.custom_id.startswith(f'bet_option_{self.event_data["event_id"]}_'):
-                # Extract option index from custom_id
-                try:
-                    option_index = int(child.custom_id.split('_')[-1])
-                    if option_index < len(self.event_data['options']):
-                        option_stats = stats['option_stats'].get(option_index, {'bettors': 0})
-                        option_name = self.event_data['options'][option_index]['name']
-                        child.label = f"{option_name} ({option_stats['bettors']}명)"
-                except (ValueError, IndexError):
-                    continue
+        try:
+            for child in self.children:
+                if hasattr(child, 'custom_id') and child.custom_id.startswith(f'bet_{self.event_id}_'):
+                    # Extract option index from custom_id
+                    try:
+                        option_index = int(child.custom_id.split('_')[-1])
+                        if option_index < len(self.event_data['options']):
+                            option_stats = stats['option_stats'].get(option_index, {'bettors': 0})
+                            option_name = self.event_data['options'][option_index]['name']
+                            child.label = f"{option_name} ({option_stats['bettors']}명)"
+                    except (ValueError, IndexError):
+                        continue
+        except Exception as e:
+            self.logger.error(f"Error updating button labels: {e}")
 
 class BettingModal(discord.ui.Modal):
     """Modal for entering bet amount"""
@@ -349,41 +388,56 @@ class BettingModal(discord.ui.Modal):
             await interaction.followup.send(f"⛔ 베팅 실패: {result['reason']}", ephemeral=True)
 
 
+# Improved AdminBettingView
 class AdminBettingView(discord.ui.View):
     def __init__(self, bot, event_id: int):
-        super().__init__(timeout=None)  # Never timeout
+        super().__init__(timeout=None)
         self.bot = bot
         self.event_id = event_id
+        self.logger = get_logger("베팅 시스템")
 
         close_button = discord.ui.Button(
             label="베팅 즉시 종료",
             style=discord.ButtonStyle.danger,
-            custom_id=f"admin_close_bet_{event_id}",  # Keep unique custom_id
+            custom_id=f"admin_close_{event_id}",
             emoji="⏹️"
         )
-        close_button.callback = self.close_betting
+
+        async def close_callback(interaction):
+            try:
+                await self.close_betting(interaction)
+            except Exception as e:
+                self.logger.error(f"Admin close callback error: {e}")
+                if not interaction.response.is_done():
+                    await interaction.response.send_message("오류가 발생했습니다.", ephemeral=True)
+
+        close_button.callback = close_callback
         self.add_item(close_button)
 
     async def close_betting(self, interaction: discord.Interaction):
         """Close betting immediately"""
-        betting_cog = self.bot.get_cog('BettingCog')
-        if not betting_cog:
-            await interaction.response.send_message("베팅 시스템을 찾을 수 없습니다.", ephemeral=True)
-            return
+        try:
+            betting_cog = self.bot.get_cog('BettingCog')
+            if not betting_cog:
+                await interaction.response.send_message("베팅 시스템을 찾을 수 없습니다.", ephemeral=True)
+                return
 
-        if not betting_cog.has_admin_permissions(interaction.user):
-            await interaction.response.send_message("이 기능을 사용할 권한이 없습니다.", ephemeral=True)
-            return
+            if not betting_cog.has_admin_permissions(interaction.user):
+                await interaction.response.send_message("이 기능을 사용할 권한이 없습니다.", ephemeral=True)
+                return
 
-        # Show option selection for winner
-        await self.show_winner_selection(interaction)
+            await self.show_winner_selection(interaction)
+        except Exception as e:
+            self.logger.error(f"Error in close_betting: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message("베팅 종료 처리 중 오류가 발생했습니다.", ephemeral=True)
 
     async def show_winner_selection(self, interaction: discord.Interaction):
         """Show dropdown to select winning option"""
         betting_cog = self.bot.get_cog('BettingCog')
         event_data = await betting_cog.get_event(self.event_id, interaction.guild.id)
 
-        if not event_data or event_data['status'] != 'active':
+        if not event_data or event_data['status'] not in ['active', 'expired']:
             await interaction.response.send_message("이미 종료된 베팅입니다.", ephemeral=True)
             return
 
@@ -418,7 +472,6 @@ class AdminBettingView(discord.ui.View):
         )
 
         await interaction.response.send_message(embed=embed, view=WinnerView(), ephemeral=True)
-
 
 class BettingCog(commands.Cog):
     def __init__(self, bot):
@@ -759,6 +812,9 @@ class BettingCog(commands.Cog):
     async def create_initial_betting_display(self, event_data: dict, channel: discord.TextChannel):
         """Create the initial betting display in the dedicated channel"""
         try:
+            self.logger.info(
+                f"Creating initial betting display for event {event_data['event_id']} in channel {channel.id}")
+
             # Ensure event_data has all required fields for BettingView
             complete_event_data = {
                 'event_id': event_data['event_id'],
@@ -769,7 +825,7 @@ class BettingCog(commands.Cog):
                 'status': event_data['status'],
                 'ends_at': event_data['ends_at'],
                 'betting_channel_id': channel.id,
-                'message_id': None  # Will be set after message creation
+                'message_id': None
             }
 
             # Create betting embed
@@ -779,40 +835,55 @@ class BettingCog(commands.Cog):
             view = BettingView(self.bot, complete_event_data)
             admin_view = AdminBettingView(self.bot, event_data['event_id'])
 
-            # Send messages
+            # Send betting message first
             betting_message = await channel.send(embed=embed, view=view)
+            self.logger.info(f"Created betting message {betting_message.id} for event {event_data['event_id']}")
 
+            # Send admin message
             admin_embed = discord.Embed(
                 title="🔧 관리자 제어",
                 description="베팅을 수동으로 종료하려면 아래 버튼을 사용하세요.",
                 color=discord.Color.orange()
             )
             admin_message = await channel.send(embed=admin_embed, view=admin_view)
+            self.logger.info(f"Created admin message {admin_message.id} for event {event_data['event_id']}")
 
-            # Register views with specific message IDs properly
-            self.bot.add_view(view, message_id=betting_message.id)
-            self.bot.add_view(admin_view, message_id=admin_message.id)
+            # CRITICAL: Add views to bot with explicit message IDs
+            try:
+                self.bot.add_view(view, message_id=betting_message.id)
+                self.logger.info(f"Registered betting view for message {betting_message.id}")
 
-            # Update database and tracking
+                self.bot.add_view(admin_view, message_id=admin_message.id)
+                self.logger.info(f"Registered admin view for message {admin_message.id}")
+            except Exception as view_error:
+                self.logger.error(f"Failed to register views: {view_error}")
+                raise
+
+            # Update database with message ID
             await self.bot.pool.execute("""
                 UPDATE betting_events SET message_id = $1 WHERE event_id = $2
             """, betting_message.id, event_data['event_id'])
 
+            # Update tracking dictionaries
             guild_id = channel.guild.id
             if guild_id not in self.betting_displays:
                 self.betting_displays[guild_id] = {}
             self.betting_displays[guild_id][event_data['event_id']] = betting_message.id
 
-            # Update the event_data with message_id for future use
+            # Update event_data for consistency
             event_data['message_id'] = betting_message.id
             complete_event_data['message_id'] = betting_message.id
 
+            # Create initial graph
             await self.create_and_send_graph(event_data['event_id'], channel)
+
+            self.logger.info(f"Successfully created initial betting display for event {event_data['event_id']}")
 
         except Exception as e:
             self.logger.error(f"초기 베팅 디스플레이 생성 실패: {e}", extra={'guild_id': channel.guild.id})
             import traceback
             self.logger.error(f"Traceback: {traceback.format_exc()}")
+            raise  # Re-raise so the calling function knows it failed
     async def reload_persistent_views(self):
         """Reload persistent views for active betting events"""
         try:
@@ -1869,6 +1940,175 @@ class BettingCog(commands.Cog):
         if not hasattr(self, '_control_panel_setup'):
             await self.setup_control_panel()
             self._control_panel_setup = True
+
+    # Add these methods to your BettingCog class for debugging
+
+    @app_commands.command(name="베팅디버그", description="베팅 시스템 디버깅 정보를 표시합니다. (관리자 전용)")
+    async def debug_betting(self, interaction: discord.Interaction):
+        """Debug command to check betting system status"""
+        if not self.has_admin_permissions(interaction.user):
+            await interaction.response.send_message("이 명령어를 사용할 권한이 없습니다.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            guild_id = interaction.guild.id
+
+            # Check active events
+            active_events_db = await self.bot.pool.fetch("""
+                SELECT event_id, title, status, message_id, betting_channel_id
+                FROM betting_events 
+                WHERE guild_id = $1 AND status IN ('active', 'expired')
+            """, guild_id)
+
+            # Check registered views
+            registered_views = []
+            for view in self.bot.persistent_views:
+                if hasattr(view, 'event_id'):
+                    registered_views.append(f"Event {view.event_id} - View type: {type(view).__name__}")
+
+            embed = discord.Embed(
+                title="🔧 베팅 시스템 디버그 정보",
+                color=discord.Color.orange(),
+                timestamp=datetime.now(timezone.utc)
+            )
+
+            # Active events in database
+            db_events = "\n".join([
+                f"ID: {e['event_id']}, 상태: {e['status']}, 메시지: {e['message_id']}, 채널: <#{e['betting_channel_id']}>"
+                for e in active_events_db
+            ]) or "없음"
+            embed.add_field(name="DB의 활성 이벤트", value=db_events[:1024], inline=False)
+
+            # Active events in memory
+            memory_events = []
+            if guild_id in self.active_events:
+                for event_id, event in self.active_events[guild_id].items():
+                    memory_events.append(f"ID: {event_id}, 상태: {event['status']}")
+            memory_text = "\n".join(memory_events) or "없음"
+            embed.add_field(name="메모리의 활성 이벤트", value=memory_text[:1024], inline=False)
+
+            # Betting displays tracking
+            displays = []
+            if guild_id in self.betting_displays:
+                for event_id, message_id in self.betting_displays[guild_id].items():
+                    displays.append(f"Event {event_id}: Message {message_id}")
+            display_text = "\n".join(displays) or "없음"
+            embed.add_field(name="추적 중인 베팅 디스플레이", value=display_text[:1024], inline=False)
+
+            # Registered persistent views
+            view_text = "\n".join(registered_views[:10]) or "없음"  # Limit to 10 for space
+            embed.add_field(name="등록된 지속성 뷰 (최대 10개)", value=view_text[:1024], inline=False)
+
+            # Bot persistent views count
+            embed.add_field(
+                name="총 지속성 뷰 수",
+                value=f"{len(self.bot.persistent_views)}개",
+                inline=True
+            )
+
+            await interaction.followup.send(embed=embed, ephemeral=True)
+
+        except Exception as e:
+            await interaction.followup.send(f"디버그 정보 조회 실패: {e}", ephemeral=True)
+            self.logger.error(f"Debug command failed: {e}")
+
+    @app_commands.command(name="뷰재등록", description="베팅 뷰를 강제로 재등록합니다. (관리자 전용)")
+    @app_commands.describe(event_id="재등록할 이벤트 ID (선택사항)")
+    async def force_reregister_views(self, interaction: discord.Interaction, event_id: Optional[int] = None):
+        """Force re-register betting views"""
+        if not self.has_admin_permissions(interaction.user):
+            await interaction.response.send_message("이 명령어를 사용할 권한이 없습니다.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            guild_id = interaction.guild.id
+            reregistered = 0
+
+            if event_id:
+                # Re-register specific event
+                event_data = await self.get_event(event_id, guild_id)
+                if not event_data:
+                    await interaction.followup.send(f"이벤트 {event_id}를 찾을 수 없습니다.", ephemeral=True)
+                    return
+
+                if not event_data['message_id'] or not event_data['betting_channel_id']:
+                    await interaction.followup.send(f"이벤트 {event_id}에 메시지 ID 또는 채널 ID가 없습니다.", ephemeral=True)
+                    return
+
+                channel = self.bot.get_channel(event_data['betting_channel_id'])
+                if not channel:
+                    await interaction.followup.send(f"채널을 찾을 수 없습니다.", ephemeral=True)
+                    return
+
+                try:
+                    message = await channel.fetch_message(event_data['message_id'])
+
+                    # Create and register new view
+                    view = BettingView(self.bot, event_data)
+                    self.bot.add_view(view, message_id=event_data['message_id'])
+
+                    # Update the message with the new view
+                    embed = await self.create_betting_embed(event_data, guild_id)
+                    await message.edit(embed=embed, view=view)
+
+                    reregistered = 1
+
+                except discord.NotFound:
+                    await interaction.followup.send(f"메시지 {event_data['message_id']}를 찾을 수 없습니다.", ephemeral=True)
+                    return
+
+            else:
+                # Re-register all active events
+                await self.reload_persistent_views()
+
+                # Count registered views for this guild
+                active_events = await self.bot.pool.fetch("""
+                    SELECT event_id FROM betting_events 
+                    WHERE guild_id = $1 AND status IN ('active', 'expired') AND message_id IS NOT NULL
+                """, guild_id)
+                reregistered = len(active_events)
+
+            await interaction.followup.send(f"✅ {reregistered}개의 베팅 뷰가 재등록되었습니다.", ephemeral=True)
+            self.logger.info(f"Force re-registered {reregistered} betting views for guild {guild_id}")
+
+        except Exception as e:
+            await interaction.followup.send(f"뷰 재등록 실패: {e}", ephemeral=True)
+            self.logger.error(f"Force reregister failed: {e}")
+
+    # Improved wait_and_start_tasks method
+    async def wait_and_start_tasks(self):
+        """Wait for bot to be ready then start tasks"""
+        try:
+            await self.bot.wait_until_ready()
+            self.logger.info("Bot is ready, initializing betting system...")
+
+            await self.setup_database()
+            self.logger.info("Database setup completed")
+
+            await self.load_active_events()
+            self.logger.info("Active events loaded")
+
+            # Small delay to ensure bot is fully ready
+            await asyncio.sleep(2)
+
+            await self.reload_persistent_views()
+            self.logger.info("Persistent views reloaded")
+
+            await self.setup_control_panel()
+            self.logger.info("Control panel setup completed")
+
+            self.cleanup_expired_events.start()
+            self.update_graphs.start()
+            self.logger.info("Background tasks started")
+
+        except Exception as e:
+            self.logger.error(f"Error in wait_and_start_tasks: {e}")
+            import traceback
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
 
 
 async def setup(bot):
