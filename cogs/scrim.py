@@ -269,14 +269,14 @@ class TierSelectView(discord.ui.View):
         tier_options = [
             discord.SelectOption(label="모든 티어", value="All tiers", emoji="🌐"),
             discord.SelectOption(label="아이언 - 브론즈", value="Iron-Bronze",
-                                 emoji="<:valorantbronze:1367050339987095563> "),
-            discord.SelectOption(label="실버 - 골드", value="Silver-Gold", emoji="<:valorantgold:1367050331242106951> "),
+                                 emoji="<:valorantbronze:1367050339987095563>"),
+            discord.SelectOption(label="실버 - 골드", value="Silver-Gold", emoji="<:valorantgold:1367050331242106951>"),
             discord.SelectOption(label="골드 - 플래티넘", value="Gold-Platinum",
-                                 emoji="<:valorantplatinum:1367055859435175986> "),
+                                 emoji="<:valorantplatinum:1367055859435175986>"),
             discord.SelectOption(label="플래티넘 - 다이아몬드", value="Plat-Diamond",
-                                 emoji="<:valorantdiamond:1367055861351972905> "),
-            discord.SelectOption(label="초월자", value="Ascendant", emoji="<:valorantascendant:1367050328976920606> "),
-            discord.SelectOption(label="불멸+", value="Immortal+", emoji="<:valorantimmortal:1367050346874011668> "),
+                                 emoji="<:valorantdiamond:1367055861351972905>"),
+            discord.SelectOption(label="초월자", value="Ascendant", emoji="<:valorantascendant:1367050328976920606>"),
+            discord.SelectOption(label="불멸+", value="Immortal+", emoji="<:valorantimmortal:1367050346874011668>"),
             discord.SelectOption(label="초보자 친화", value="Beginner", emoji="🌱"),
             discord.SelectOption(label="경쟁전", value="Competitive", emoji="🏆")
         ]
@@ -488,37 +488,44 @@ class CustomTimeModal(discord.ui.Modal, title="사용자 지정 시간 입력"):
         self.original_view = original_view
         self.logger = get_logger("내부 매치")
 
+        # Updated placeholder to include timezone
         self.time_input = discord.ui.TextInput(
-            label="시간 입력 (예: 2025-09-21 00:00 또는 30분 후)",
+            label="시간 입력 (예: 22:00 EST 또는 30분 후)",
             style=discord.TextStyle.short,
-            placeholder="YYYY-MM-DD HH:MM 또는 상대 시간 (X분 후)",
+            placeholder="HH:MM TZ (예: 21:30 PST) 또는 X분 후",
             required=True
         )
         self.add_item(self.time_input)
 
     async def on_submit(self, interaction: discord.Interaction):
-        eastern = pytz.timezone('America/New_York')
+        # We don't need to define the timezone here anymore, the parser will handle it.
         try:
-            parsed_time = await self.parse_time_input(self.time_input.value, eastern)
+            # Pass the default timezone to the parser
+            parsed_time = await self.parse_time_input(self.time_input.value, default_tz_str='America/New_York')
             if not parsed_time:
-                await interaction.response.send_message("⚠ 잘못된 시간 형식입니다. `YYYY-MM-DD HH:MM` 또는 `X분 후` 형식으로 시도해주세요.",
+                await interaction.response.send_message("⚠ 잘못된 시간 형식입니다. `HH:MM TZ` 또는 `X분 후` 형식으로 시도해주세요.",
                                                         ephemeral=True)
                 return
 
-            if parsed_time <= datetime.now(eastern):
-                await interaction.response.send_message("⚠ 시작 시간은 미래여야 합니다.", ephemeral=True)
+            # The parsed_time is already timezone-aware, so we get the current time in UTC for a safe comparison.
+            if parsed_time <= datetime.now(pytz.utc):
+                await interaction.response.send_message("⚠ 시작 시간은 미래여야 합니다. (이미 지난 시간으로 설정된 것 같습니다)", ephemeral=True)
                 return
 
-            await interaction.response.defer()  # Defer the modal interaction
+            await interaction.response.defer()
 
             if self.original_view and self.original_view.message:
                 player_view = PlayerCountSelectView(
                     self.bot, self.guild_id, self.game, self.gamemode,
                     self.tier, parsed_time, self.role_id
                 )
+
+                # Display the time in EST for consistency in the message
+                est_time = parsed_time.astimezone(pytz.timezone('America/New_York'))
+
                 embed = discord.Embed(
                     title="👥 최대 플레이어 수 선택",
-                    description=f"**게임:** {self.game}\n**모드:** {self.gamemode}\n**티어:** {self.tier}\n**시작 시간:** {parsed_time.strftime('%Y-%m-%d %H:%M EST')}\n\n최대 플레이어 수를 선택하세요:",
+                    description=f"**게임:** {self.game}\n**모드:** {self.gamemode}\n**티어:** {self.tier}\n**시작 시간:** {est_time.strftime('%Y-%m-%d %H:%M EST')}\n\n최대 플레이어 수를 선택하세요:",
                     color=discord.Color.purple()
                 )
                 await self.original_view.message.edit(embed=embed, view=player_view)
@@ -533,21 +540,59 @@ class CustomTimeModal(discord.ui.Modal, title="사용자 지정 시간 입력"):
             else:
                 await interaction.followup.send(f"⚠ 시간 처리 중 오류가 발생했습니다.", ephemeral=True)
 
-    async def parse_time_input(self, input_str: str, tz) -> Optional[datetime]:
-        now = datetime.now(tz)
+    async def parse_time_input(self, input_str: str, default_tz_str: str) -> Optional[datetime]:
+        """
+        Parses flexible time formats including timezones:
+        1. 'X분 후' (relative time)
+        2. 'HH:MM TZ' (e.g., '21:30 PST')
+        3. 'HH:MM' (assumes default timezone)
+        """
         input_str = input_str.strip()
-        try:
-            if '분 후' in input_str:
+
+        # Handle 'X분 후' first as it's unambiguous
+        if '분 후' in input_str:
+            try:
                 minutes_str = input_str.split('분 후')[0]
                 minutes = int(minutes_str)
-                return now + timedelta(minutes=minutes)
-            else:
-                # Handle formats like "YYYY-MM-DD HH:MM"
-                dt_obj = datetime.strptime(input_str, '%Y-%m-%d %H:%M')
-                return tz.localize(dt_obj)
-        except (ValueError, IndexError):
-            return None
+                # Relative time is always based on the current moment, timezone aware
+                return datetime.now(pytz.utc) + timedelta(minutes=minutes)
+            except (ValueError, IndexError):
+                return None
 
+        # Map common TZ abbreviations to IANA names to handle DST correctly
+        tz_map = {
+            'est': 'America/New_York', 'edt': 'America/New_York',
+            'cst': 'America/Chicago', 'cdt': 'America/Chicago',
+            'pst': 'America/Los_Angeles', 'pdt': 'America/Los_Angeles',
+        }
+
+        parts = input_str.rsplit(' ', 1)
+        time_str = input_str
+        target_tz_str = default_tz_str  # Default timezone
+
+        # Check if the last part of the string is a recognized timezone
+        if len(parts) > 1 and parts[1].lower() in tz_map:
+            time_str = parts[0]
+            target_tz_str = tz_map[parts[1].lower()]
+
+        try:
+            target_tz = pytz.timezone(target_tz_str)
+            now_in_target_tz = datetime.now(target_tz)
+
+            time_obj = datetime.strptime(time_str, '%H:%M').time()
+
+            # Combine with today's date in the target timezone
+            potential_dt = now_in_target_tz.replace(
+                hour=time_obj.hour, minute=time_obj.minute, second=0, microsecond=0
+            )
+
+            # If the calculated time is in the past (in that timezone), assume it's for the next day
+            if potential_dt <= now_in_target_tz:
+                potential_dt += timedelta(days=1)
+
+            return potential_dt
+        except (ValueError, pytz.UnknownTimeZoneError):
+            return None  # Return None if parsing fails
 
 class PlayerCountSelectView(discord.ui.View):
     """플레이어 수 선택 뷰"""
@@ -567,8 +612,8 @@ class PlayerCountSelectView(discord.ui.View):
 
         player_options = [
             discord.SelectOption(label="10명", value="10", emoji="👥"),
-            discord.SelectOption(label="20명", value="20", emoji="👥👥"),
-            discord.SelectOption(label="30명", value="30", emoji="👥👥👥"),
+            discord.SelectOption(label="20명", value="20", emoji="👥"),
+            discord.SelectOption(label="30명", value="30", emoji="👥"),
             discord.SelectOption(label="사용자 지정", value="custom", emoji="⚙️")
         ]
 
