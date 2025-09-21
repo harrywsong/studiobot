@@ -54,9 +54,16 @@ class LotteryCog(commands.Cog):
         """Clean up when cog is unloaded"""
         self.daily_lottery_draw.cancel()
 
-    @tasks.loop(hours=6, time=time(hour=4, minute=0, tzinfo=timezone.utc))
+    @tasks.loop(
+        time=[
+            time(hour=4, minute=0, tzinfo=timezone.utc),
+            time(hour=10, minute=0, tzinfo=timezone.utc),
+            time(hour=16, minute=0, tzinfo=timezone.utc),
+            time(hour=22, minute=0, tzinfo=timezone.utc),
+        ]
+    )
     async def daily_lottery_draw(self):
-        """Automatically conduct daily lottery draws at 12 AM EST"""
+        """Automatically conduct lottery draws at 12 AM, 6 AM, 12 PM, and 6 PM EST"""
         try:
             self.logger.info("Starting automated daily lottery draw...")
 
