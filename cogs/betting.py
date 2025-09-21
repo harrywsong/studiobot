@@ -167,7 +167,7 @@ class BettingView(discord.ui.View):
                 custom_id=f"bet_{event_data['event_id']}_{i}",  # Keep this format
                 emoji="💰"
             )
-            # Don't set callback here - handle in on_interaction instead
+            button.callback = self.create_bet_callback(i)  # ← Actually set the callback!
             self.add_item(button)
 
         # Add status button
@@ -177,6 +177,7 @@ class BettingView(discord.ui.View):
             custom_id=f"betting_status_{event_data['event_id']}",
             emoji="📊"
         )
+        status_button.callback = self.show_betting_status  # ← CORRECT!
         self.add_item(status_button)
 
     def create_bet_callback(self, option_index):
@@ -318,13 +319,13 @@ class AdminBettingView(discord.ui.View):
         self.bot = bot
         self.event_id = event_id
 
-        # Use static custom_id
         close_button = discord.ui.Button(
             label="베팅 즉시 종료",
             style=discord.ButtonStyle.danger,
             custom_id=f"admin_close_bet_{event_id}",
             emoji="⏹️"
         )
+        close_button.callback = self.close_betting  # ← ADD THIS LINE
         self.add_item(close_button)
 
     async def close_betting(self, interaction: discord.Interaction):
@@ -746,21 +747,13 @@ class BettingCog(commands.Cog):
             # Create betting embed
             embed = await self.create_betting_embed(event_data, channel.guild.id)
 
-            # Create persistent view
+            # Create persistent views with proper callbacks
             view = BettingView(self.bot, event_data)
-
-            # IMPORTANT: Add view to bot's persistent views BEFORE sending message
-            self.bot.add_view(view, message_id=None)
-
-            # Create admin controls
             admin_view = AdminBettingView(self.bot, event_data['event_id'])
-            admin_view.timeout = None
-            self.bot.add_view(admin_view, message_id=None)
 
-            # Send betting message
+            # Send messages
             betting_message = await channel.send(embed=embed, view=view)
 
-            # Send admin controls message
             admin_embed = discord.Embed(
                 title="🔧 관리자 제어",
                 description="베팅을 수동으로 종료하려면 아래 버튼을 사용하세요.",
@@ -768,34 +761,21 @@ class BettingCog(commands.Cog):
             )
             admin_message = await channel.send(embed=admin_embed, view=admin_view)
 
-            # NOW update the views with the specific message IDs
-            # Remove old views and add new ones with message IDs
-            for view_to_remove in list(self.bot._view_store._views.values()):
-                if hasattr(view_to_remove, 'event_data') and view_to_remove.event_data['event_id'] == event_data[
-                    'event_id']:
-                    self.bot._view_store.remove_view(view_to_remove)
-
-            # Re-add with proper message IDs
+            # Register views with specific message IDs
             self.bot.add_view(view, message_id=betting_message.id)
             self.bot.add_view(admin_view, message_id=admin_message.id)
 
-            # Update database with message ID
+            # Update database and tracking
             await self.bot.pool.execute("""
-                UPDATE betting_events 
-                SET message_id = $1
-                WHERE event_id = $2
+                UPDATE betting_events SET message_id = $1 WHERE event_id = $2
             """, betting_message.id, event_data['event_id'])
 
-            # Track the betting display
             guild_id = channel.guild.id
             if guild_id not in self.betting_displays:
                 self.betting_displays[guild_id] = {}
             self.betting_displays[guild_id][event_data['event_id']] = betting_message.id
-
-            # Update event data
             event_data['message_id'] = betting_message.id
 
-            # Create initial graph
             await self.create_and_send_graph(event_data['event_id'], channel)
 
         except Exception as e:
