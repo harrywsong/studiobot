@@ -41,12 +41,19 @@ class BettingControlView(discord.ui.View):
         emoji="🎲"
     )
     async def create_betting_event(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Callback for creating a new betting event"""
-        try:
-            await interaction.response.send_modal(self.create_betting_event_modal())
-        except Exception as e:
-            self.logger.error(f"베팅 생성 버튼 상호작용 실패: {e}", extra={'guild_id': interaction.guild_id})
-            await interaction.response.send_message("베팅 생성 중 오류가 발생했습니다.", ephemeral=True)
+        """Button to create new betting event"""
+        betting_cog = self.bot.get_cog('BettingCog')
+        if not betting_cog:
+            await interaction.response.send_message("베팅 시스템을 찾을 수 없습니다.", ephemeral=True)
+            return
+
+        # Check admin permissions
+        if not betting_cog.has_admin_permissions(interaction.user):
+            await interaction.response.send_message("이 기능을 사용할 권한이 없습니다.", ephemeral=True)
+            return
+
+        modal = BettingCreationModal(betting_cog)
+        await interaction.response.send_modal(modal)
 
 
 class BettingCreationModal(discord.ui.Modal):
