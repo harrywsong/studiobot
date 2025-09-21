@@ -631,9 +631,19 @@ class BettingCog(commands.Cog):
                 return {'success': False, 'reason': '베팅 카테고리를 찾을 수 없습니다.'}
 
             # Calculate end time - ensure it's timezone-aware using UTC
+            # Create timezone-aware current time explicitly
             current_time_utc = datetime.now(timezone.utc)
+            # Create timedelta (this is timezone-naive by design)
             duration_delta = timedelta(minutes=duration_minutes)
+            # Add them together (timezone-aware + timedelta = timezone-aware)
             end_time = current_time_utc + duration_delta
+
+            # Ensure end_time is definitely timezone-aware
+            if end_time.tzinfo is None:
+                end_time = end_time.replace(tzinfo=timezone.utc)
+
+            # Debug logging
+            self.logger.info(f"End time created: {end_time} (tzinfo: {end_time.tzinfo})")
 
             # Create dedicated betting channel with proper formatting
             channel_name = f"╠ 📋┆베팅-{title.replace(' ', '-')[:20]}"
@@ -687,14 +697,27 @@ class BettingCog(commands.Cog):
 
             await betting_channel.edit(overwrites=overwrites)
 
-            # Create event in database
-            event_id = await self.bot.pool.fetchval("""
-                INSERT INTO betting_events (guild_id, title, description, options, creator_id, ends_at, 
-                                            channel_id, betting_channel_id)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-                RETURNING event_id
-            """, guild_id, title, description, json.dumps(options), creator_id, end_time,
-                                                    BETTING_CONTROL_CHANNEL_ID, betting_channel.id)
+            # Debug logging before database insert
+            self.logger.info(
+                f"About to insert into DB - end_time: {end_time} (type: {type(end_time)}, tzinfo: {end_time.tzinfo})")
+
+            # Create event in database - ensure timezone is handled properly
+            try:
+                event_id = await self.bot.pool.fetchval("""
+                    INSERT INTO betting_events (guild_id, title, description, options, creator_id, ends_at, 
+                                                channel_id, betting_channel_id)
+                    VALUES ($1, $2, $3, $4, $5, $6::timestamptz, $7, $8)
+                    RETURNING event_id
+                """, guild_id, title, description, json.dumps(options), creator_id, end_time,
+                                                        BETTING_CONTROL_CHANNEL_ID, betting_channel.id)
+            except Exception as db_error:
+                self.logger.error(f"Database insert failed: {db_error}")
+                # Clean up the created channel
+                try:
+                    await betting_channel.delete()
+                except:
+                    pass
+                return {'success': False, 'reason': f'데이터베이스 오류: {db_error}'}
 
             # Create event data
             event_data = {
