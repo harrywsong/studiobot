@@ -49,15 +49,23 @@ class LotteryCog(commands.Cog):
         # Start the draw task
         self.daily_lottery_draw.start()
 
-        # Immediately schedule the embed setup task to run when the cog is loaded.
-        # This handles both initial bot startup and cog reloads.
-        self.bot.loop.create_task(self.setup_and_post_interface())
+        # Schedule the full initialization sequence.
+        self.bot.loop.create_task(self.initialize())
 
     async def setup_and_post_interface(self):
         """Waits for the bot to be ready and posts the lottery embed."""
         await self.bot.wait_until_ready()
         # Use the correct function that handles creating/finding the interface
         await self.setup_lottery_interface()
+
+    async def initialize(self):
+        """Waits for the bot, loads state from DB, and posts the interface."""
+        await self.bot.wait_until_ready()
+        self.logger.info("Initializing LotteryCog: Loading saved states from database...")
+        await self.load_lottery_states()
+        self.logger.info("Database states loaded. Setting up lottery interface...")
+        await self.setup_lottery_interface()
+        self.logger.info("LotteryCog initialization complete.")
 
     def cog_unload(self):
         """Clean up when cog is unloaded"""
