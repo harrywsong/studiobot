@@ -818,7 +818,8 @@ class MyBot(commands.Bot):
             'cogs.scrim',
             'cogs.coin_loan',
             'cogs.nitro',
-            'cogs.nitro_voice'
+            'cogs.nitro_voice',
+            'cogs.nitro_specialrole'
         ]
 
         # Casino extensions (depend on coins)
