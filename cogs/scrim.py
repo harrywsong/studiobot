@@ -83,6 +83,7 @@ class GameSelectView(discord.ui.View):
                 await self.message.edit(embed=embed, view=self)
         except:
             pass  # Ignore errors during timeout handling
+
     async def game_selected(self, interaction: discord.Interaction):
         """게임 선택 처리"""
         try:
@@ -112,13 +113,13 @@ class GameSelectView(discord.ui.View):
                 color=discord.Color.blue()
             )
 
-            # CHANGE THIS LINE:
             await interaction.edit_original_response(embed=embed, view=gamemode_view)
+            gamemode_view.message = interaction.message  # ADD THIS LINE
 
         except Exception as e:
             self.logger.error(f"Game selection error: {e}")
             try:
-                await interaction.followup.send("❌ 오류가 발생했습니다.", ephemeral=True)
+                await interaction.followup.send("⚠ 오류가 발생했습니다.", ephemeral=True)
             except:
                 pass
 class GameModeSelectView(discord.ui.View):
@@ -215,13 +216,13 @@ class GameModeSelectView(discord.ui.View):
                 color=discord.Color.gold()
             )
 
-            # CHANGE THIS LINE:
             await interaction.edit_original_response(embed=embed, view=tier_view)
+            tier_view.message = interaction.message  # ADD THIS LINE
 
         except Exception as e:
             self.logger.error(f"Gamemode selection error: {e}")
             try:
-                await interaction.followup.send("❌ 오류가 발생했습니다.", ephemeral=True)
+                await interaction.followup.send("⚠ 오류가 발생했습니다.", ephemeral=True)
             except:
                 pass
 
@@ -238,12 +239,12 @@ class GameModeSelectView(discord.ui.View):
                 color=discord.Color.green()
             )
 
-            # CHANGE THIS LINE:
             await interaction.edit_original_response(embed=embed, view=game_view)
+            game_view.message = interaction.message  # ADD THIS LINE
         except Exception as e:
             self.logger.error(f"Back to game selection error: {e}")
             try:
-                await interaction.followup.send("❌ 오류가 발생했습니다.", ephemeral=True)
+                await interaction.followup.send("⚠ 오류가 발생했습니다.", ephemeral=True)
             except:
                 pass
 
@@ -325,13 +326,13 @@ class TierSelectView(discord.ui.View):
                 color=discord.Color.orange()
             )
 
-            # CHANGE THIS LINE:
             await interaction.edit_original_response(embed=embed, view=time_view)
+            time_view.message = interaction.message  # ADD THIS LINE
 
         except Exception as e:
             self.logger.error(f"Tier selection error: {e}")
             try:
-                await interaction.followup.send("❌ 오류가 발생했습니다.", ephemeral=True)
+                await interaction.followup.send("⚠ 오류가 발생했습니다.", ephemeral=True)
             except:
                 pass
 
@@ -354,11 +355,12 @@ class TierSelectView(discord.ui.View):
 
             # Edit the message to go back
             await interaction.edit_original_response(embed=embed, view=gamemode_view)
+            gamemode_view.message = interaction.message  # ADD THIS LINE
 
         except Exception as e:
             self.logger.error(f"Back to gamemode selection error: {e}")
             try:
-                await interaction.followup.send("❌ 오류가 발생했습니다.", ephemeral=True)
+                await interaction.followup.send("⚠ 오류가 발생했습니다.", ephemeral=True)
             except:
                 pass
 
@@ -476,8 +478,8 @@ class TimeSelectView(discord.ui.View):
             color=discord.Color.purple()
         )
 
-        # CHANGE THIS LINE:
         await interaction.edit_original_response(embed=embed, view=player_view)
+        player_view.message = interaction.message  # ADD THIS LINE
 
     async def back_to_tier_selection(self, interaction: discord.Interaction):
         """티어 선택으로 돌아가기"""
@@ -492,8 +494,8 @@ class TimeSelectView(discord.ui.View):
                 color=discord.Color.gold()
             )
 
-            # CHANGE THIS LINE
             await interaction.edit_original_response(embed=embed, view=tier_view)
+            tier_view.message = interaction.message  # ADD THIS LINE
         except Exception as e:
             self.logger.error(f"Back to tier selection error: {e}")
             try:
@@ -770,8 +772,8 @@ class PlayerCountSelectView(discord.ui.View):
                 color=discord.Color.orange()
             )
 
-            # CHANGE THIS LINE
             await interaction.edit_original_response(embed=embed, view=time_view)
+            time_view.message = interaction.message  # ADD THIS LINE
         except Exception as e:
             self.logger.error(f"Back to time selection error: {e}")
             try:
@@ -1143,7 +1145,7 @@ class ScrimCreateView(discord.ui.View):
 
             if not config.is_feature_enabled(interaction.guild.id, 'scrim_system'):
                 await interaction.followup.send(
-                    "❌ 이 서버에서 스크림 시스템이 비활성화되어 있습니다.",
+                    "⚠ 이 서버에서 스크림 시스템이 비활성화되어 있습니다.",
                     ephemeral=True
                 )
                 return
@@ -1157,13 +1159,14 @@ class ScrimCreateView(discord.ui.View):
             )
             embed.set_footer(text="아래 드롭다운을 사용하여 게임을 선택하세요")
 
-            # CHANGE: Use followup instead of response
-            await interaction.followup.send(embed=embed, view=game_view, ephemeral=True)
+            # Store the message reference for the new view
+            message = await interaction.followup.send(embed=embed, view=game_view, ephemeral=True)
+            game_view.message = message  # ADD THIS LINE
 
         except Exception as e:
             self.logger.error(f"Create scrim button error: {e}", exc_info=True)
             try:
-                await interaction.followup.send("❌ 오류가 발생했습니다.", ephemeral=True)
+                await interaction.followup.send("⚠ 오류가 발생했습니다.", ephemeral=True)
             except:
                 pass
 
