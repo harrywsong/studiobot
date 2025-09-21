@@ -152,7 +152,6 @@ class BettingCreationModal(discord.ui.Modal):
             self.betting_cog.logger.error(f"베팅 생성 모달 오류: {e}", extra={'guild_id': interaction.guild.id})
 
 
-# Fixed BettingView class with duplicate method removed
 # Fixed BettingView class that creates buttons dynamically
 class BettingView(discord.ui.View):
     def __init__(self, bot, event_data: dict):
@@ -194,14 +193,14 @@ class BettingView(discord.ui.View):
                 emoji="💰"
             )
 
-            # Create callback dynamically
-            async def make_callback(option_index):
+            # Fix closure issue by using default parameter to capture current value
+            def make_callback(option_index=i):
                 async def callback(interaction):
                     await self.handle_bet(interaction, option_index)
 
                 return callback
 
-            button.callback = make_callback(i)
+            button.callback = make_callback()
             self.add_item(button)
 
     async def handle_bet(self, interaction: discord.Interaction, option_index: int):
