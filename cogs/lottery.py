@@ -43,17 +43,18 @@ class LotteryCog(commands.Cog):
         self.bot = bot
         self.logger = get_logger("복권")
         self.guild_lotteries: Dict[int, LotterySystem] = {}
-        self.lottery_interface_message = None
+        self.lottery_interface_message: Optional[discord.Message] = None
         self.lottery_channel_id = 1418763263721869403
-        self._setup_completed = False
 
         # Start the draw task
         self.daily_lottery_draw.start()
 
-        # Immediately schedule a task to post/update the embed when the cog loads
+        # Immediately schedule the embed setup task to run when the cog is loaded.
+        # This handles both initial bot startup and cog reloads.
         self.bot.loop.create_task(self.setup_and_post_interface())
 
     async def setup_and_post_interface(self):
+        """Waits for the bot to be ready and posts the lottery embed."""
         await self.bot.wait_until_ready()
         await self.update_lottery_interface_message(self.lottery_channel_id)
 
@@ -432,13 +433,6 @@ class LotteryCog(commands.Cog):
             )
 
         await interaction.followup.send(embed=embed, ephemeral=True)
-    @commands.Cog.listener()
-    async def on_ready(self):
-        """Run setup tasks once the bot is ready."""
-        if not self._setup_completed:
-            self.logger.info("복권 시스템 초기화 시작...")
-            # Use asyncio.create_task instead of the loop decorator
-            asyncio.create_task(self._initialize_lottery_system())
 
     async def _initialize_lottery_system(self):
         """Initialize the lottery system components"""
