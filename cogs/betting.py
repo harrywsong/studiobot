@@ -520,6 +520,9 @@ class BettingCog(commands.Cog):
             if not found_control_panel:
                 embed = self.create_control_panel_embed()
                 view = BettingControlView(self.bot)
+                # Make control panel persistent
+                view.timeout = None
+                self.bot.add_view(view)
                 await channel.send(embed=embed, view=view)
                 self.logger.info("새로운 베팅 제어 패널을 생성했습니다.")
 
@@ -758,10 +761,19 @@ class BettingCog(commands.Cog):
         try:
             # Create betting embed
             embed = await self.create_betting_embed(event_data, channel.guild.id)
+
+            # Create persistent view
             view = BettingView(self.bot, event_data)
+            # Make the view persistent (no timeout)
+            view.timeout = None
+
+            # Add the view to the bot's persistent views
+            self.bot.add_view(view)
 
             # Create admin controls
             admin_view = AdminBettingView(self.bot, event_data['event_id'])
+            admin_view.timeout = None
+            self.bot.add_view(admin_view)
 
             # Send betting message
             betting_message = await channel.send(embed=embed, view=view)
