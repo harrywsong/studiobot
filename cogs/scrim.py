@@ -18,7 +18,7 @@ class GameSelectView(discord.ui.View):
     """Game selection view with role tagging support"""
 
     def __init__(self, bot, guild_id: int):
-        super().__init__(timeout=300)
+        super().__init__(timeout=1800)  # 30 minutes for creation flow
         self.bot = bot
         self.guild_id = guild_id
         self.selected_game = None
@@ -101,7 +101,7 @@ class GameModeSelectView(discord.ui.View):
     """Game mode selection view"""
 
     def __init__(self, bot, guild_id: int, game: str, role_id: int):
-        super().__init__(timeout=300)
+        super().__init__(timeout=1800)  # 30 minutes for creation flow
         self.bot = bot
         self.guild_id = guild_id
         self.game = game
@@ -192,7 +192,7 @@ class TierSelectView(discord.ui.View):
     """Tier range selection view"""
 
     def __init__(self, bot, guild_id: int, game: str, gamemode: str, role_id: int):
-        super().__init__(timeout=300)
+        super().__init__(timeout=1800)  # 30 minutes for creation flow
         self.bot = bot
         self.guild_id = guild_id
         self.game = game
@@ -265,7 +265,7 @@ class TimeSelectView(discord.ui.View):
     """Time selection view with quick options"""
 
     def __init__(self, bot, guild_id: int, game: str, gamemode: str, tier: str, role_id: int):
-        super().__init__(timeout=300)
+        super().__init__(timeout=1800)  # 30 minutes for creation flow
         self.bot = bot
         self.guild_id = guild_id
         self.game = game
@@ -364,7 +364,7 @@ class CustomTimeModal(discord.ui.Modal):
     """Modal for custom time input"""
 
     def __init__(self, bot, guild_id: int, game: str, gamemode: str, tier: str, role_id: int):
-        super().__init__(title="Custom Time", timeout=300)
+        super().__init__(title="Custom Time", timeout=1800)  # 30 minutes for creation flow
         self.bot = bot
         self.guild_id = guild_id
         self.game = game
@@ -458,7 +458,7 @@ class PlayerCountSelectView(discord.ui.View):
     """Player count selection view"""
 
     def __init__(self, bot, guild_id: int, game: str, gamemode: str, tier: str, start_time: datetime, role_id: int):
-        super().__init__(timeout=300)
+        super().__init__(timeout=1800)  # 30 minutes for creation flow
         self.bot = bot
         self.guild_id = guild_id
         self.game = game
@@ -571,7 +571,7 @@ class CustomPlayerCountModal(discord.ui.Modal):
     """Modal for custom player count input"""
 
     def __init__(self, bot, guild_id: int, game: str, gamemode: str, tier: str, start_time: datetime, role_id: int):
-        super().__init__(title="Custom Player Count", timeout=300)
+        super().__init__(title="Custom Player Count", timeout=1800)  # 30 minutes for creation flow
         self.bot = bot
         self.guild_id = guild_id
         self.game = game
