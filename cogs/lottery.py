@@ -4,7 +4,7 @@ from discord.ext import commands, tasks
 from discord import app_commands
 import random
 import asyncio
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, time
 from typing import Dict, List, Optional
 import json
 import pytz
@@ -54,7 +54,7 @@ class LotteryCog(commands.Cog):
         """Clean up when cog is unloaded"""
         self.daily_lottery_draw.cancel()
 
-    @tasks.loop(time=datetime.time(hour=4, minute=0, tzinfo=timezone.utc))  # 12 AM EST = 4 AM UTC (standard time)
+    @tasks.loop(time=time(hour=4, minute=0, tzinfo=timezone.utc))
     async def daily_lottery_draw(self):
         """Automatically conduct daily lottery draws at 12 AM EST"""
         try:
