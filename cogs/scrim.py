@@ -376,8 +376,7 @@ class TierSelectView(discord.ui.View):
                 pass
 
 class TimeSelectView(discord.ui.View):
-    """빠른 옵션과 함께하는 시간 선택 뷰"""
-
+    """시작 시간 선택 뷰"""
     def __init__(self, bot, guild_id: int, game: str, gamemode: str, tier: str, role_id: int):
         super().__init__(timeout=900)
         self.bot = bot
@@ -386,15 +385,16 @@ class TimeSelectView(discord.ui.View):
         self.gamemode = gamemode
         self.tier = tier
         self.role_id = role_id
-        self.logger = get_logger("내부 매치")
         self.selected_time = None
+        self.logger = get_logger("내부 매치")
 
-        # 빠른 시간 옵션
+        # 시간 옵션 (customize as needed)
         time_options = [
-            discord.SelectOption(label="30분 후", value="30min", emoji="⏰"),
+            discord.SelectOption(label="30분 후", value="30min", emoji="⏱️"),
             discord.SelectOption(label="1시간 후", value="1hour", emoji="🕐"),
             discord.SelectOption(label="2시간 후", value="2hour", emoji="🕑"),
-            discord.SelectOption(label="사용자 지정 시간", value="custom", emoji="⚙️")
+            discord.SelectOption(label="오늘 저녁 8시", value="tonight", emoji="🌙"),
+            discord.SelectOption(label="사용자 지정", value="custom", emoji="⚙️")
         ]
 
         self.time_select = discord.ui.Select(
@@ -428,8 +428,8 @@ class TimeSelectView(discord.ui.View):
                 )
                 await self.message.edit(embed=embed, view=self)
         except Exception as e:
-            print(f"ERROR in TierSelectView on_timeout: {str(e)}\nFull traceback: {traceback.format_exc()}")
-            self.logger.error(f"Timeout error in TierSelectView: {traceback.format_exc()}")
+            print(f"ERROR in TimeSelectView on_timeout: {str(e)}\nFull traceback: {traceback.format_exc()}")
+            self.logger.error(f"Timeout error in TimeSelectView: {traceback.format_exc()}")
 
     async def time_selected(self, interaction: discord.Interaction):
         """시간 선택 처리"""
@@ -437,11 +437,10 @@ class TimeSelectView(discord.ui.View):
             selection = self.time_select.values[0]
 
             if selection == "custom":
-                # For custom time, we can't defer and then show modal
-                # Show modal immediately
+                # For custom time, show modal immediately
                 modal = CustomTimeModal(
                     self.bot, self.guild_id, self.game, self.gamemode,
-                    self.tier, self.role_id
+                    self.tier, self.role_id, original_view=self  # Pass self for message reference
                 )
                 await interaction.response.send_modal(modal)
                 return
@@ -464,7 +463,20 @@ class TimeSelectView(discord.ui.View):
                     tonight += timedelta(days=1)
                 self.selected_time = tonight
 
-            await self.continue_to_player_count(interaction)
+            # Continue to player count view
+            player_view = PlayerCountSelectView(
+                self.bot, self.guild_id, self.game, self.gamemode,
+                self.tier, self.selected_time, self.role_id
+            )
+
+            embed = discord.Embed(
+                title="👥 최대 플레이어 수 선택",
+                description=f"**게임:** {self.game}\n**모드:** {self.gamemode}\n**티어:** {self.tier}\n**시작 시간:** {self.selected_time.strftime('%Y-%m-%d %H:%M EST')}\n\n최대 플레이어 수를 선택하세요:",
+                color=discord.Color.purple()
+            )
+
+            await interaction.edit_original_response(embed=embed, view=player_view)
+            player_view.message = interaction.message
 
         except Exception as e:
             print(f"ERROR in time_selected: {str(e)}\nFull traceback: {traceback.format_exc()}")
@@ -507,7 +519,7 @@ class TimeSelectView(discord.ui.View):
             )
 
             await interaction.edit_original_response(embed=embed, view=tier_view)
-            tier_view.message = interaction.message  # ADD THIS LINE
+            tier_view.message = interaction.message
         except Exception as e:
             print(f"ERROR in back_to_tier_selection: {str(e)}\nFull traceback: {traceback.format_exc()}")
             self.logger.error(f"Back to tier selection error: {traceback.format_exc()}")
@@ -516,96 +528,81 @@ class TimeSelectView(discord.ui.View):
             except:
                 pass
 
-class CustomTimeModal(discord.ui.Modal):
-    """사용자 지정 시간 입력을 위한 모달"""
-
-    def __init__(self, bot, guild_id: int, game: str, gamemode: str, tier: str, role_id: int):
-        super().__init__(title="사용자 지정 시간", timeout=300)
+class CustomTimeModal(discord.ui.Modal, title="사용자 지정 시간 입력"):
+    def __init__(self, bot, guild_id: int, game: str, gamemode: str, tier: str, role_id: int, original_view=None):
+        super().__init__()
         self.bot = bot
         self.guild_id = guild_id
         self.game = game
         self.gamemode = gamemode
         self.tier = tier
         self.role_id = role_id
-        self.logger = get_logger("내부 매치")
+        self.original_view = original_view  # Reference for editing original message
+
         self.time_input = discord.ui.TextInput(
-            label="시작 시간 (EST)",
-            placeholder="예: 2024-12-25 19:30, 오늘 20:00, 내일 15:00",
-            required=True,
-            max_length=50
+            label="시간 입력 (예: 2025-09-21 00:00 EST 또는 30분 후)",
+            style=discord.TextStyle.short,
+            placeholder="YYYY-MM-DD HH:MM EST 또는 상대 시간",
+            required=True
         )
         self.add_item(self.time_input)
 
     async def on_submit(self, interaction: discord.Interaction):
-        """사용자 지정 시간 제출 처리"""
         eastern = pytz.timezone('America/New_York')
-
         try:
             parsed_time = await self.parse_time_input(self.time_input.value, eastern)
             if not parsed_time:
-                await interaction.response.send_message(
-                    "⚠ 잘못된 시간 형식입니다. 다시 시도해주세요.", ephemeral=True
-                )
+                await interaction.response.send_message("⚠ 잘못된 시간 형식입니다. 다시 시도해주세요.", ephemeral=True)
                 return
 
             if parsed_time <= datetime.now(eastern):
-                await interaction.response.send_message(
-                    "⚠ 시작 시간은 미래여야 합니다.", ephemeral=True
-                )
+                await interaction.response.send_message("⚠ 시작 시간은 미래여야 합니다.", ephemeral=True)
                 return
 
-            await interaction.response.send_message(
-                f"✅ 시간이 {parsed_time.strftime('%Y-%m-%d %H:%M EST')}로 설정되었습니다. 다시 내전 생성을 시작해주세요.",
-                ephemeral=True
-            )
+            if self.original_view and hasattr(self.original_view, 'message') and self.original_view.message:
+                await interaction.response.defer()
+
+                player_view = PlayerCountSelectView(
+                    self.bot, self.guild_id, self.game, self.gamemode,
+                    self.tier, parsed_time, self.role_id
+                )
+
+                embed = discord.Embed(
+                    title="👥 최대 플레이어 수 선택",
+                    description=f"**게임:** {self.game}\n**모드:** {self.gamemode}\n**티어:** {self.tier}\n**시작 시간:** {parsed_time.strftime('%Y-%m-%d %H:%M EST')}\n\n최대 플레이어 수를 선택하세요:",
+                    color=discord.Color.purple()
+                )
+
+                await self.original_view.message.edit(embed=embed, view=player_view)
+                player_view.message = self.original_view.message
+
+                await interaction.followup.send(f"✅ 시간이 {parsed_time.strftime('%Y-%m-%d %H:%M EST')}로 설정되었습니다. 계속 진행 중...", ephemeral=True)
+            else:
+                await interaction.response.send_message(
+                    f"✅ 시간이 {parsed_time.strftime('%Y-%m-%d %H:%M EST')}로 설정되었습니다. 다시 내전 생성을 시작해주세요.",
+                    ephemeral=True
+                )
 
         except Exception as e:
             print(f"ERROR in CustomTimeModal on_submit: {str(e)}\nFull traceback: {traceback.format_exc()}")
             self.logger.error(f"Custom time submit error: {traceback.format_exc()}")
-            await interaction.response.send_message(
-                f"⚠ 시간 처리 중 오류가 발생했습니다: {str(e)}", ephemeral=True
-            )
+            await interaction.response.send_message(f"⚠ 시간 처리 중 오류가 발생했습니다: {str(e)}", ephemeral=True)
 
-    async def parse_time_input(self, time_input: str, timezone) -> Optional[datetime]:
-        """다양한 시간 입력 형식 파싱"""
-        time_input = time_input.strip().lower()
-        now = datetime.now(timezone)
-
+    async def parse_time_input(self, input_str: str, tz) -> Optional[datetime]:
+        # Implement parsing logic here (example: handle absolute/relative times)
+        # This is a placeholder - customize based on your needs
         try:
-            # 형식: "YYYY-MM-DD HH:MM"
-            if len(time_input.split()) == 2 and '-' in time_input:
-                return datetime.strptime(time_input, "%Y-%m-%d %H:%M").replace(tzinfo=timezone)
-
-            # 형식: "오늘 HH:MM"
-            if time_input.startswith("오늘"):
-                time_part = time_input.replace("오늘", "").strip()
-                time_obj = datetime.strptime(time_part, "%H:%M").time()
-                return datetime.combine(now.date(), time_obj).replace(tzinfo=timezone)
-
-            # 형식: "내일 HH:MM"
-            if time_input.startswith("내일"):
-                time_part = time_input.replace("내일", "").strip()
-                time_obj = datetime.strptime(time_part, "%H:%M").time()
-                tomorrow = now.date() + timedelta(days=1)
-                return datetime.combine(tomorrow, time_obj).replace(tzinfo=timezone)
-
-            # 형식: "HH:MM" (오늘)
-            if ':' in time_input and len(time_input.split(':')) == 2:
-                time_obj = datetime.strptime(time_input, "%H:%M").time()
-                result = datetime.combine(now.date(), time_obj).replace(tzinfo=timezone)
-                if result <= now:
-                    result += timedelta(days=1)
-                return result
-
-        except (ValueError, TypeError):
-            pass
-
-        return None
+            if '후' in input_str:  # Relative time, e.g., "30분 후"
+                minutes = int(input_str.split()[0].replace('분', ''))
+                return datetime.now(tz) + timedelta(minutes=minutes)
+            else:  # Absolute time, e.g., "2025-09-21 00:00 EST"
+                return tz.localize(datetime.strptime(input_str, '%Y-%m-%d %H:%M EST'))
+        except:
+            return None
 
 
 class PlayerCountSelectView(discord.ui.View):
     """플레이어 수 선택 뷰"""
-
     def __init__(self, bot, guild_id: int, game: str, gamemode: str, tier: str, start_time: datetime, role_id: int):
         super().__init__(timeout=900)
         self.bot = bot
@@ -615,17 +612,15 @@ class PlayerCountSelectView(discord.ui.View):
         self.tier = tier
         self.start_time = start_time
         self.role_id = role_id
+        self.selected_max_players = None
         self.logger = get_logger("내부 매치")
 
-        # 공통 플레이어 수 옵션
+        # 플레이어 수 옵션 (customize as needed for your games)
         player_options = [
-            discord.SelectOption(label="6명", value="6", emoji="6️⃣"),
-            discord.SelectOption(label="8명", value="8", emoji="8️⃣"),
-            discord.SelectOption(label="10명", value="10", emoji="🔟"),
-            discord.SelectOption(label="12명", value="12", emoji="🕛"),
-            discord.SelectOption(label="16명", value="16", emoji="👥"),
-            discord.SelectOption(label="20명", value="20", emoji="👥"),
-            discord.SelectOption(label="사용자 지정 수", value="custom", emoji="⚙️")
+            discord.SelectOption(label="10명", value="10", emoji="👥"),
+            discord.SelectOption(label="20명", value="20", emoji="👥👥"),
+            discord.SelectOption(label="30명", value="30", emoji="👥👥👥"),
+            discord.SelectOption(label="사용자 지정", value="custom", emoji="⚙️")
         ]
 
         self.player_select = discord.ui.Select(
@@ -633,7 +628,7 @@ class PlayerCountSelectView(discord.ui.View):
             options=player_options,
             custom_id="player_select"
         )
-        self.player_select.callback = self.player_count_selected
+        self.player_select.callback = self.player_selected
         self.add_item(self.player_select)
 
         # 뒤로 가기 버튼
@@ -659,37 +654,35 @@ class PlayerCountSelectView(discord.ui.View):
                 )
                 await self.message.edit(embed=embed, view=self)
         except Exception as e:
-            print(f"ERROR in TimeSelectView on_timeout: {str(e)}\nFull traceback: {traceback.format_exc()}")
-            self.logger.error(f"Timeout error in TimeSelectView: {traceback.format_exc()}")
+            print(f"ERROR in PlayerCountSelectView on_timeout: {str(e)}\nFull traceback: {traceback.format_exc()}")
+            self.logger.error(f"Timeout error in PlayerCountSelectView: {traceback.format_exc()}")
 
-    async def player_count_selected(self, interaction: discord.Interaction):
+    async def player_selected(self, interaction: discord.Interaction):
         """플레이어 수 선택 처리"""
         try:
             selection = self.player_select.values[0]
 
             if selection == "custom":
-                # For custom player count, show modal immediately
+                # Handle custom player count with a modal (similar to time)
                 modal = CustomPlayerCountModal(
                     self.bot, self.guild_id, self.game, self.gamemode,
-                    self.tier, self.start_time, self.role_id
+                    self.tier, self.start_time, self.role_id, original_view=self
                 )
                 await interaction.response.send_modal(modal)
                 return
 
-            # For non-custom selections, defer first
-            await interaction.response.defer(ephemeral=True)
+            await interaction.response.defer()
 
-            max_players = int(selection)
-            await self.create_scrim(interaction, max_players)
+            self.selected_max_players = int(selection)
+
+            # Proceed to create the scrim (implement this method in ScrimCog if missing)
+            await self.create_scrim(interaction, self.selected_max_players)  # This line calls your scrim creation logic
 
         except Exception as e:
-            print(f"ERROR in player_count_selected: {str(e)}\nFull traceback: {traceback.format_exc()}")
-            self.logger.error(f"Player count selection error: {traceback.format_exc()}")
+            print(f"ERROR in player_selected: {str(e)}\nFull traceback: {traceback.format_exc()}")
+            self.logger.error(f"Player selection error: {traceback.format_exc()}")
             try:
-                if not interaction.response.is_done():
-                    await interaction.response.send_message(f"⚠ 오류가 발생했습니다: {str(e)}", ephemeral=True)
-                else:
-                    await interaction.followup.send(f"⚠ 오류가 발생했습니다: {str(e)}", ephemeral=True)
+                await interaction.followup.send(f"⚠ 오류가 발생했습니다: {str(e)}", ephemeral=True)
             except:
                 pass
 
@@ -788,8 +781,7 @@ class PlayerCountSelectView(discord.ui.View):
             )
 
             await interaction.edit_original_response(embed=embed, view=time_view)
-            time_view.message = interaction.message  # ADD THIS LINE
-
+            time_view.message = interaction.message
         except Exception as e:
             print(f"ERROR in back_to_time_selection: {str(e)}\nFull traceback: {traceback.format_exc()}")
             self.logger.error(f"Back to time selection error: {traceback.format_exc()}")
@@ -798,6 +790,52 @@ class PlayerCountSelectView(discord.ui.View):
             except:
                 pass
 
+class CustomPlayerCountModal(discord.ui.Modal, title="사용자 지정 플레이어 수 입력"):
+    def __init__(self, bot, guild_id: int, game: str, gamemode: str, tier: str, start_time: datetime, role_id: int, original_view=None):
+        super().__init__()
+        self.bot = bot
+        self.guild_id = guild_id
+        self.game = game
+        self.gamemode = gamemode
+        self.tier = tier
+        self.start_time = start_time
+        self.role_id = role_id
+        self.original_view = original_view
+
+        self.player_input = discord.ui.TextInput(
+            label="최대 플레이어 수 입력 (예: 15)",
+            style=discord.TextStyle.short,
+            placeholder="숫자만 입력",
+            required=True
+        )
+        self.add_item(self.player_input)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            max_players = int(self.player_input.value)
+            if max_players <= 0:
+                await interaction.response.send_message("⚠ 플레이어 수는 1 이상이어야 합니다.", ephemeral=True)
+                return
+
+            if self.original_view and hasattr(self.original_view, 'message') and self.original_view.message:
+                await interaction.response.defer()
+
+                # Proceed to create scrim directly after custom input
+                await self.original_view.create_scrim(interaction, max_players)  # Call create_scrim
+
+                await interaction.followup.send(f"✅ 플레이어 수가 {max_players}로 설정되었습니다. 내전 생성 중...", ephemeral=True)
+            else:
+                await interaction.response.send_message(
+                    f"✅ 플레이어 수가 {max_players}로 설정되었습니다. 다시 내전 생성을 시작해주세요.",
+                    ephemeral=True
+                )
+
+        except ValueError:
+            await interaction.response.send_message("⚠ 유효한 숫자를 입력해주세요.", ephemeral=True)
+        except Exception as e:
+            print(f"ERROR in CustomPlayerCountModal on_submit: {str(e)}\nFull traceback: {traceback.format_exc()}")
+            self.logger.error(f"Custom player submit error: {traceback.format_exc()}")
+            await interaction.response.send_message(f"⚠ 플레이어 수 처리 중 오류가 발생했습니다: {str(e)}", ephemeral=True)
 
 class CustomPlayerCountModal(discord.ui.Modal):
     """사용자 지정 플레이어 수 입력을 위한 모달"""
@@ -1388,45 +1426,45 @@ class ScrimCog(commands.Cog):
         embed.set_footer(text="개선된 내전 시스템 v2.0 • 시작하려면 버튼을 클릭하세요!")
         return embed
 
-    async def create_scrim(self, guild_id: int, organizer_id: int, game: str, gamemode: str,
-                           tier_range: str, start_time: datetime, max_players: int, channel_id: int) -> Optional[str]:
-        """새로운 내전 생성 - 개선된 버전"""
+    async def create_scrim(self, interaction: discord.Interaction, max_players: int):
         try:
-            eastern = pytz.timezone('America/New_York')
-            scrim_id = f"{guild_id}_{int(datetime.now(eastern).timestamp())}"
-
+            # Example logic: Save scrim data to self.scrims_data
+            scrim_id = str(random.randint(100000, 999999))  # Generate ID
             scrim_data = {
-                'id': scrim_id,
-                'guild_id': guild_id,
-                'organizer_id': organizer_id,
-                'game': game,
-                'gamemode': gamemode,
-                'tier_range': tier_range,
-                'start_time': start_time,
+                'guild_id': self.guild_id,
+                'game': self.game,
+                'gamemode': self.gamemode,
+                'tier': self.tier,
+                'start_time': self.start_time,
                 'max_players': max_players,
-                'channel_id': channel_id,
+                'role_id': self.role_id,
                 'participants': [],
                 'queue': [],
                 'status': '활성',
-                'created_at': datetime.now(eastern),
-                'notifications_sent': {
-                    '10min': False,
-                    '2min': False
-                }
+                'channel_id': interaction.channel_id,
+                # Add message_id if sending a new message
             }
-
             self.scrims_data[scrim_id] = scrim_data
 
-            # CHANGE THIS LINE - don't wait for file save:
-            asyncio.create_task(self.save_scrims_data())
+            # Send confirmation embed
+            embed = discord.Embed(
+                title="✅ 내전 생성 완료",
+                description=f"ID: {scrim_id}\n게임: {self.game}\n모드: {self.gamemode}\n티어: {self.tier}\n시작: {self.start_time.strftime('%Y-%m-%d %H:%M EST')}\n최대 플레이어: {max_players}",
+                color=discord.Color.green()
+            )
+            role = interaction.guild.get_role(self.role_id)
+            if role:
+                await interaction.channel.send(f"{role.mention} 새 내전이 생성되었습니다!", embed=embed)
+            else:
+                await interaction.channel.send(embed=embed)
 
-            self.logger.info(f"길드 {guild_id}에서 게임 {game}의 새 내전 {scrim_id} 생성",
-                             extra={'guild_id': guild_id})
-            return scrim_id
+            # Clean up the selection message
+            await interaction.edit_original_response(content="내전 생성이 완료되었습니다.", embed=None, view=None)
 
         except Exception as e:
-            self.logger.error(f"길드 {guild_id}에서 내전 생성 중 오류: {e}", extra={'guild_id': guild_id})
-            return None
+            print(f"ERROR in create_scrim: {str(e)}\nFull traceback: {traceback.format_exc()}")
+            self.logger.error(f"Scrim creation error: {traceback.format_exc()}")
+            await interaction.followup.send(f"⚠ 내전 생성 중 오류가 발생했습니다: {str(e)}", ephemeral=True)
 
     async def post_scrim_message(self, channel: discord.TextChannel, scrim_id: str):
         """인터랙티브 버튼과 함께 내전 메시지 게시"""
