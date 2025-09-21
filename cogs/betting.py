@@ -476,21 +476,47 @@ class BettingCog(commands.Cog):
                 self.logger.warning(f"베팅 제어 채널 {BETTING_CONTROL_CHANNEL_ID}를 찾을 수 없습니다.")
                 return
 
-            # Check for existing control panel message
+            # Check for existing control panel message and clean up duplicates
             found_control_panel = False
-            async for message in channel.history(limit=50):
+            control_panel_messages = []
+
+            async for message in channel.history(limit=100):
                 if (message.author == self.bot.user and
                         message.embeds and
+                        message.embeds[0].title and
                         "베팅 제어 패널" in message.embeds[0].title):
-                    # Update existing message
+                    control_panel_messages.append(message)
+
+            # If we found control panel messages
+            if control_panel_messages:
+                # Keep the most recent one and delete the rest
+                most_recent = control_panel_messages[0]  # First in history is most recent
+
+                # Delete duplicate messages
+                for message in control_panel_messages[1:]:
+                    try:
+                        await message.delete()
+                        self.logger.info(f"중복된 베팅 제어 패널 메시지를 삭제했습니다: {message.id}")
+                    except discord.NotFound:
+                        pass  # Already deleted
+                    except Exception as e:
+                        self.logger.warning(f"중복 메시지 삭제 실패: {e}")
+
+                # Update the remaining message
+                try:
                     embed = self.create_control_panel_embed()
                     view = BettingControlView(self.bot)
-                    await message.edit(embed=embed, view=view)
+                    await most_recent.edit(embed=embed, view=view)
                     found_control_panel = True
                     self.logger.info("기존 베팅 제어 패널을 업데이트했습니다.")
-                    break
+                except discord.NotFound:
+                    # Message was deleted, create new one
+                    found_control_panel = False
+                except Exception as e:
+                    self.logger.error(f"기존 제어 패널 업데이트 실패: {e}")
+                    found_control_panel = False
 
-            # Create new control panel if not found
+            # Create new control panel if not found or update failed
             if not found_control_panel:
                 embed = self.create_control_panel_embed()
                 view = BettingControlView(self.bot)
