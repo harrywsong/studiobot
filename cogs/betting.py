@@ -631,27 +631,30 @@ class BettingCog(commands.Cog):
                 return {'success': False, 'reason': '베팅 카테고리를 찾을 수 없습니다.'}
 
             # Calculate end time - ensure it's timezone-aware using UTC
-            end_time = datetime.now(timezone.utc) + timedelta(minutes=duration_minutes)
+            current_time_utc = datetime.now(timezone.utc)
+            duration_delta = timedelta(minutes=duration_minutes)
+            end_time = current_time_utc + duration_delta
 
             # Create dedicated betting channel with proper formatting
             channel_name = f"╠ 📋┆베팅-{title.replace(' ', '-')[:20]}"
 
-            # Get the actual position index by counting channels above the reference channel
-            # Position channels in category start at 0, so we count channels positioned before reference
-            target_position = 0
-            if reference_channel and reference_channel.category_id == category.id:
-                for channel in category.channels:
-                    if channel.position < reference_channel.position:
-                        target_position += 1
-                target_position += 1  # Place directly after the reference channel
-
+            # First create the channel without specifying position
             betting_channel = await guild.create_text_channel(
                 name=channel_name,
                 category=category,
-                position=target_position,
                 topic=f"베팅: {title} | 종료: {end_time.strftime('%Y-%m-%d %H:%M UTC')}",
                 reason=f"베팅 이벤트 채널 생성: {title}"
             )
+
+            # Then move it to the correct position (directly after the reference channel)
+            if reference_channel and reference_channel.category_id == category.id:
+                try:
+                    # Move to position right after the reference channel
+                    await betting_channel.edit(position=reference_channel.position + 1)
+                except discord.HTTPException:
+                    # If positioning fails, just log it but continue
+                    self.logger.warning(f"채널 위치 조정 실패, 기본 위치 사용")
+                    pass
 
             # Set permissions - users can't send messages, only interact with buttons
             overwrites = {
