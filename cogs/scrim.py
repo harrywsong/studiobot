@@ -288,6 +288,33 @@ class TierSelectView(discord.ui.View):
             except:
                 pass
 
+    async def back_to_gamemode_selection(self, interaction: discord.Interaction):
+        """게임 모드 선택으로 돌아가기"""
+        try:
+            await interaction.response.defer()
+
+            # Re-create the previous view (GameModeSelectView)
+            gamemode_view = GameModeSelectView(
+                self.bot, self.guild_id, self.game, self.role_id
+            )
+
+            # Re-create the embed for that view
+            embed = discord.Embed(
+                title="🎮 게임 모드 선택",
+                description=f"**선택된 게임:** {self.game}\n\n이제 게임 모드를 선택하세요:",
+                color=discord.Color.blue()
+            )
+
+            # Edit the message to go back
+            await interaction.edit_original_response(embed=embed, view=gamemode_view)
+
+        except Exception as e:
+            self.logger.error(f"Back to gamemode selection error: {e}")
+            try:
+                await interaction.followup.send("❌ 오류가 발생했습니다.", ephemeral=True)
+            except:
+                pass
+
 
 class TimeSelectView(discord.ui.View):
     """빠른 옵션과 함께하는 시간 선택 뷰"""
