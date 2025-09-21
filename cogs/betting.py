@@ -153,6 +153,7 @@ class BettingCreationModal(discord.ui.Modal):
 
 
 # Fixed BettingView class that creates buttons dynamically
+# Fixed BettingView class that properly handles persistent views
 class BettingView(discord.ui.View):
     def __init__(self, bot, event_data: dict):
         super().__init__(timeout=None)  # Never timeout
@@ -167,7 +168,7 @@ class BettingView(discord.ui.View):
         status_button = discord.ui.Button(
             label="내 베팅 현황",
             style=discord.ButtonStyle.secondary,
-            custom_id="betting_status",
+            custom_id=f"betting_status_{event_data['event_id']}",  # Make unique per event
             emoji="📊"
         )
         status_button.callback = self.show_betting_status
@@ -183,24 +184,26 @@ class BettingView(discord.ui.View):
         ]
 
         for i, option in enumerate(self.event_data['options']):
-            if i >= 8:  # Discord limit of components
+            if i >= 8:  # Discord limit of components (minus status button)
                 break
 
             button = discord.ui.Button(
                 label=f"{option['name']} (0명)",
                 style=colors[i % len(colors)],
-                custom_id=f"bet_option_{i}",
+                custom_id=f"bet_option_{self.event_data['event_id']}_{i}",  # Make unique per event
                 emoji="💰"
             )
 
-            # Use functools.partial to properly capture the current value of i
-            import functools
-            button.callback = functools.partial(self._betting_button_callback, i)
+            # Use a closure to properly capture the current value of i
+            def make_callback(option_index):
+                async def callback(interaction):
+                    await self.handle_bet(interaction, option_index)
+
+                return callback
+
+            button.callback = make_callback(i)
             self.add_item(button)
 
-    async def _betting_button_callback(self, option_index: int, interaction: discord.Interaction):
-        """Callback for betting buttons"""
-        await self.handle_bet(interaction, option_index)
     async def handle_bet(self, interaction: discord.Interaction, option_index: int):
         """Handle betting on an option"""
         guild_id = interaction.guild.id
@@ -273,18 +276,17 @@ class BettingView(discord.ui.View):
 
     def update_button_labels(self, stats: dict):
         """Update button labels with current betting stats"""
-        for i, child in enumerate(self.children):
-            # Skip the status button (last item)
-            if hasattr(child, 'custom_id') and child.custom_id == "betting_status":
-                continue
-
-            if hasattr(child, 'custom_id') and child.custom_id.startswith('bet_option_'):
-                option_index = int(child.custom_id.split('_')[-1])
-                if option_index < len(self.event_data['options']):
-                    option_stats = stats['option_stats'].get(option_index, {'bettors': 0})
-                    option_name = self.event_data['options'][option_index]['name']
-                    child.label = f"{option_name} ({option_stats['bettors']}명)"
-
+        for child in self.children:
+            if hasattr(child, 'custom_id') and child.custom_id.startswith(f'bet_option_{self.event_data["event_id"]}_'):
+                # Extract option index from custom_id
+                try:
+                    option_index = int(child.custom_id.split('_')[-1])
+                    if option_index < len(self.event_data['options']):
+                        option_stats = stats['option_stats'].get(option_index, {'bettors': 0})
+                        option_name = self.event_data['options'][option_index]['name']
+                        child.label = f"{option_name} ({option_stats['bettors']}명)"
+                except (ValueError, IndexError):
+                    continue
 
 class BettingModal(discord.ui.Modal):
     """Modal for entering bet amount"""
@@ -356,10 +358,9 @@ class AdminBettingView(discord.ui.View):
         close_button = discord.ui.Button(
             label="베팅 즉시 종료",
             style=discord.ButtonStyle.danger,
-            custom_id=f"admin_close_bet_{event_id}",
+            custom_id=f"admin_close_bet_{event_id}",  # Keep unique custom_id
             emoji="⏹️"
         )
-        # FIXED: Properly assign callback
         close_button.callback = self.close_betting
         self.add_item(close_button)
 
@@ -652,7 +653,7 @@ class BettingCog(commands.Cog):
                 end_time = end_time.replace(tzinfo=timezone.utc)
 
             # Create dedicated betting channel with proper formatting
-            channel_name = f"╠ 📋┆베팅-{title.replace(' ', '-')[:20]}"
+            channel_name = f"╠ 📋┆베팅{title.replace(' ', '-')[:20]}"
 
             # First create the channel without specifying position
             betting_channel = await guild.create_text_channel(
@@ -758,11 +759,24 @@ class BettingCog(commands.Cog):
     async def create_initial_betting_display(self, event_data: dict, channel: discord.TextChannel):
         """Create the initial betting display in the dedicated channel"""
         try:
+            # Ensure event_data has all required fields for BettingView
+            complete_event_data = {
+                'event_id': event_data['event_id'],
+                'title': event_data['title'],
+                'description': event_data.get('description'),
+                'options': event_data['options'],
+                'creator_id': event_data['creator_id'],
+                'status': event_data['status'],
+                'ends_at': event_data['ends_at'],
+                'betting_channel_id': channel.id,
+                'message_id': None  # Will be set after message creation
+            }
+
             # Create betting embed
-            embed = await self.create_betting_embed(event_data, channel.guild.id)
+            embed = await self.create_betting_embed(complete_event_data, channel.guild.id)
 
             # Create persistent views with proper callbacks
-            view = BettingView(self.bot, event_data)
+            view = BettingView(self.bot, complete_event_data)
             admin_view = AdminBettingView(self.bot, event_data['event_id'])
 
             # Send messages
@@ -775,7 +789,7 @@ class BettingCog(commands.Cog):
             )
             admin_message = await channel.send(embed=admin_embed, view=admin_view)
 
-            # FIXED: Register views with specific message IDs properly
+            # Register views with specific message IDs properly
             self.bot.add_view(view, message_id=betting_message.id)
             self.bot.add_view(admin_view, message_id=admin_message.id)
 
@@ -788,13 +802,17 @@ class BettingCog(commands.Cog):
             if guild_id not in self.betting_displays:
                 self.betting_displays[guild_id] = {}
             self.betting_displays[guild_id][event_data['event_id']] = betting_message.id
+
+            # Update the event_data with message_id for future use
             event_data['message_id'] = betting_message.id
+            complete_event_data['message_id'] = betting_message.id
 
             await self.create_and_send_graph(event_data['event_id'], channel)
 
         except Exception as e:
             self.logger.error(f"초기 베팅 디스플레이 생성 실패: {e}", extra={'guild_id': channel.guild.id})
-
+            import traceback
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
     async def reload_persistent_views(self):
         """Reload persistent views for active betting events"""
         try:
@@ -806,6 +824,8 @@ class BettingCog(commands.Cog):
             """)
 
             views_reloaded = 0
+            admin_views_reloaded = 0
+
             for event_row in active_events:
                 if not event_row['message_id'] or not event_row['betting_channel_id']:
                     continue
@@ -821,15 +841,16 @@ class BettingCog(commands.Cog):
                     continue
 
                 try:
-                    # Try to fetch the message to see if it exists
-                    message = await channel.fetch_message(event_row['message_id'])
+                    # Try to fetch the main betting message
+                    betting_message = await channel.fetch_message(event_row['message_id'])
 
-                    # Create event data structure
+                    # Create event data structure with all required fields
                     event_data = {
                         'event_id': event_row['event_id'],
                         'title': event_row['title'],
                         'options': event_row['options'],
-                        'message_id': event_row['message_id']
+                        'message_id': event_row['message_id'],
+                        'betting_channel_id': event_row['betting_channel_id']
                     }
 
                     # Create and add persistent view for betting buttons
@@ -847,7 +868,7 @@ class BettingCog(commands.Cog):
                     try:
                         # Search for admin control message (usually comes after the betting message)
                         admin_message = None
-                        async for msg in channel.history(after=message, limit=10):
+                        async for msg in channel.history(after=betting_message, limit=10):
                             if (msg.author == self.bot.user and msg.embeds and
                                     msg.embeds[0].title and "관리자 제어" in msg.embeds[0].title):
                                 admin_message = msg
@@ -856,10 +877,25 @@ class BettingCog(commands.Cog):
                         if admin_message:
                             admin_view = AdminBettingView(self.bot, event_row['event_id'])
                             self.bot.add_view(admin_view, message_id=admin_message.id)
+                            admin_views_reloaded += 1
+                            self.logger.debug(f"Reloaded admin view for event {event_row['event_id']}")
                     except Exception as admin_error:
                         # Admin view reload is not critical
                         self.logger.debug(
                             f"Could not reload admin view for event {event_row['event_id']}: {admin_error}")
+
+                    # Update the view with current betting stats to ensure buttons show correct counts
+                    try:
+                        stats = await self.get_betting_stats(event_row['event_id'], event_row['guild_id'])
+                        betting_view.update_button_labels(stats)
+
+                        # Update the message with the current view state
+                        embed = await self.create_betting_embed(event_data, event_row['guild_id'])
+                        await betting_message.edit(embed=embed, view=betting_view)
+                    except Exception as update_error:
+                        # If update fails, the view is still registered so it's not critical
+                        self.logger.debug(
+                            f"Could not update betting display for event {event_row['event_id']}: {update_error}")
 
                     self.logger.debug(f"Reloaded persistent view for event {event_row['event_id']}")
 
@@ -878,13 +914,15 @@ class BettingCog(commands.Cog):
                     self.logger.warning(f"Failed to reload view for event {event_row['event_id']}: {e}")
 
             if views_reloaded > 0:
-                self.logger.info(f"Successfully reloaded {views_reloaded} persistent betting views")
+                self.logger.info(
+                    f"Successfully reloaded {views_reloaded} betting views and {admin_views_reloaded} admin views")
             else:
                 self.logger.info("No persistent views to reload")
 
         except Exception as e:
             self.logger.error(f"Failed to reload persistent views: {e}")
-
+            import traceback
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
     async def create_and_send_graph(self, event_id: int, channel: discord.TextChannel):
         """Create and send betting statistics graph"""
         try:
