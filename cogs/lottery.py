@@ -34,6 +34,8 @@ class LotterySystem:
         self.winning_numbers: List[int] = []
         self.last_winner_id = None
         self.last_prize_amount = 0
+        self.predetermined_numbers: Optional[List[int]] = None  # NEW: For predetermined draws
+
 
 
 class LotteryCog(commands.Cog):
@@ -474,7 +476,7 @@ class LotteryCog(commands.Cog):
             return
 
         try:
-            # Lottery state table
+            # Lottery state table - ADD predetermined_numbers column
             await self.bot.pool.execute("""
                    CREATE TABLE IF NOT EXISTS lottery_state (
                        guild_id BIGINT PRIMARY KEY,
@@ -483,11 +485,18 @@ class LotteryCog(commands.Cog):
                        last_draw_time TIMESTAMPTZ,
                        winning_numbers TEXT,
                        last_winner_id BIGINT,
-                       last_prize_amount BIGINT DEFAULT 0
+                       last_prize_amount BIGINT DEFAULT 0,
+                       predetermined_numbers TEXT
                    );
                """)
 
-            # Current entries table
+            # Add the column if it doesn't exist (for existing databases)
+            await self.bot.pool.execute("""
+                ALTER TABLE lottery_state 
+                ADD COLUMN IF NOT EXISTS predetermined_numbers TEXT;
+            """)
+
+            # Current entries table (unchanged)
             await self.bot.pool.execute("""
                    CREATE TABLE IF NOT EXISTS lottery_entries (
                        guild_id BIGINT,
@@ -498,7 +507,7 @@ class LotteryCog(commands.Cog):
                    );
                """)
 
-            # Historical draws table
+            # Historical draws table (unchanged)
             await self.bot.pool.execute("""
                    CREATE TABLE IF NOT EXISTS lottery_history (
                        draw_id SERIAL PRIMARY KEY,
@@ -515,7 +524,6 @@ class LotteryCog(commands.Cog):
 
         except Exception as e:
             self.logger.error(f"복권 테이블 설정 실패: {e}", exc_info=True)
-
     async def load_lottery_states(self):
         """Load lottery states from database"""
         if not self.bot.pool:
@@ -536,6 +544,10 @@ class LotteryCog(commands.Cog):
                 if state['winning_numbers']:
                     lottery.winning_numbers = json.loads(state['winning_numbers'])
 
+                # Load predetermined numbers if they exist
+                if state.get('predetermined_numbers'):
+                    lottery.predetermined_numbers = json.loads(state['predetermined_numbers'])
+
                 # Load current entries
                 entries = await self.bot.pool.fetch(
                     "SELECT * FROM lottery_entries WHERE guild_id = $1", guild_id)
@@ -550,7 +562,6 @@ class LotteryCog(commands.Cog):
 
         except Exception as e:
             self.logger.error(f"복권 상태 로드 실패: {e}", exc_info=True)
-
     def get_lottery(self, guild_id: int) -> LotterySystem:
         """Get or create lottery system for guild"""
         if guild_id not in self.guild_lotteries:
@@ -729,12 +740,30 @@ class LotteryCog(commands.Cog):
             if lottery.pot_amount <= 0:
                 return False, "복권 팟이 비어있습니다.", {}
 
-            # Capture entry count before clearing (FIX: moved this before clearing entries)
+            # Capture entry count before clearing
             entry_count = len(lottery.entries)
 
-            # Generate winning numbers (5 numbers from 1-35)
-            winning_numbers = sorted(random.sample(range(1, 36), 5))
+            # Generate winning numbers - use predetermined if set, otherwise random
+            if lottery.predetermined_numbers:
+                winning_numbers = lottery.predetermined_numbers.copy()
+                lottery.predetermined_numbers = None  # Clear after use
+                self.logger.info(f"Using predetermined numbers: {winning_numbers}")
+
+                # Clear from database too
+                if self.bot.pool:
+                    await self.bot.pool.execute("""
+                        UPDATE lottery_state 
+                        SET predetermined_numbers = NULL 
+                        WHERE guild_id = $1
+                    """, guild_id)
+            else:
+                winning_numbers = sorted(random.sample(range(1, 36), 5))
+                self.logger.info(f"Using random numbers: {winning_numbers}")
+
             lottery.winning_numbers = winning_numbers
+
+            # Rest of the conduct_draw method remains the same...
+            # [Continue with existing winner calculation and prize distribution logic]
 
             # Find winners by match count (3+ matches win prizes)
             results = {}
@@ -795,7 +824,7 @@ class LotteryCog(commands.Cog):
                         "lottery_win", f"복권 당첨 ({win_data['matches']}개 일치)"
                     )
 
-            # Record draw in history (FIX: use captured entry_count)
+            # Record draw in history
             await self.bot.pool.execute("""
                 INSERT INTO lottery_history (guild_id, winning_numbers, winner_id, prize_amount, total_entries)
                 VALUES ($1, $2, $3, $4, $5)
@@ -822,7 +851,7 @@ class LotteryCog(commands.Cog):
             draw_results = {
                 'winning_numbers': winning_numbers,
                 'winners': winners,
-                'total_entries': entry_count,  # FIX: use captured count instead of len(lottery.entries)
+                'total_entries': entry_count,
                 'total_awarded': total_awarded,
                 'remaining_pot': remaining_pot
             }
@@ -1213,6 +1242,158 @@ class LotteryCog(commands.Cog):
         except Exception as e:
             self.logger.error(f"복권 이력 조회 실패: {e}")
             await interaction.response.send_message("이력 조회 중 오류가 발생했습니다.", ephemeral=True)
+
+    async def set_predetermined_numbers(self, guild_id: int, numbers: List[int]) -> tuple[bool, str]:
+        """Set predetermined numbers for the next draw"""
+        try:
+            # Validate numbers
+            valid, error_msg = self.validate_lottery_numbers(numbers)
+            if not valid:
+                return False, error_msg
+
+            lottery = self.get_lottery(guild_id)
+            lottery.predetermined_numbers = sorted(numbers)
+
+            # Save to database
+            if self.bot.pool:
+                await self.bot.pool.execute("""
+                    INSERT INTO lottery_state (guild_id, predetermined_numbers)
+                    VALUES ($1, $2)
+                    ON CONFLICT (guild_id)
+                    DO UPDATE SET predetermined_numbers = $2
+                """, guild_id, json.dumps(numbers))
+
+            self.logger.info(f"Predetermined numbers set for guild {guild_id}: {numbers}")
+            return True, f"다음 추첨 번호가 미리 설정되었습니다: {sorted(numbers)}"
+
+        except Exception as e:
+            self.logger.error(f"Failed to set predetermined numbers: {e}")
+            return False, f"번호 설정 중 오류가 발생했습니다: {str(e)}"
+
+    async def clear_predetermined_numbers(self, guild_id: int) -> tuple[bool, str]:
+        """Clear predetermined numbers"""
+        try:
+            lottery = self.get_lottery(guild_id)
+            lottery.predetermined_numbers = None
+
+            # Update database
+            if self.bot.pool:
+                await self.bot.pool.execute("""
+                    UPDATE lottery_state 
+                    SET predetermined_numbers = NULL 
+                    WHERE guild_id = $1
+                """, guild_id)
+
+            self.logger.info(f"Predetermined numbers cleared for guild {guild_id}")
+            return True, "미리 설정된 번호가 제거되었습니다. 다음 추첨은 랜덤으로 진행됩니다."
+
+        except Exception as e:
+            self.logger.error(f"Failed to clear predetermined numbers: {e}")
+            return False, f"설정 제거 중 오류가 발생했습니다: {str(e)}"
+
+    @app_commands.command(name="복권번호설정", description="다음 추첨의 번호를 미리 설정합니다 (관리자 전용)")
+    @app_commands.describe(
+        n1="첫 번째 번호 (1-35)", n2="두 번째 번호", n3="세 번째 번호", n4="네 번째 번호", n5="다섯 번째 번호"
+    )
+    async def set_lottery_numbers(self, interaction: discord.Interaction,
+                                  n1: int, n2: int, n3: int, n4: int, n5: int):
+        """Set predetermined lottery numbers (admin only)"""
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("⛔ 관리자만 사용할 수 있습니다.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        numbers = [n1, n2, n3, n4, n5]
+        success, message = await self.set_predetermined_numbers(interaction.guild.id, numbers)
+
+        if success:
+            embed = discord.Embed(
+                title="✅ 복권 번호 설정 완료",
+                description=message,
+                color=discord.Color.green()
+            )
+            embed.add_field(
+                name="⚠️ 주의사항",
+                value="이 번호는 다음 추첨에서 한 번만 사용되며, 사용 후 자동으로 제거됩니다.",
+                inline=False
+            )
+        else:
+            embed = discord.Embed(
+                title="❌ 복권 번호 설정 실패",
+                description=message,
+                color=discord.Color.red()
+            )
+
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+    @app_commands.command(name="복권번호제거", description="미리 설정된 번호를 제거합니다 (관리자 전용)")
+    async def clear_lottery_numbers(self, interaction: discord.Interaction):
+        """Clear predetermined lottery numbers (admin only)"""
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("⛔ 관리자만 사용할 수 있습니다.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        success, message = await self.clear_predetermined_numbers(interaction.guild.id)
+
+        if success:
+            embed = discord.Embed(
+                title="✅ 설정 제거 완료",
+                description=message,
+                color=discord.Color.green()
+            )
+        else:
+            embed = discord.Embed(
+                title="❌ 설정 제거 실패",
+                description=message,
+                color=discord.Color.red()
+            )
+
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+    @app_commands.command(name="복권설정상태", description="현재 복권 설정 상태를 확인합니다 (관리자 전용)")
+    async def lottery_config_status(self, interaction: discord.Interaction):
+        """Check lottery configuration status (admin only)"""
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("⛔ 관리자만 사용할 수 있습니다.", ephemeral=True)
+            return
+
+        lottery = self.get_lottery(interaction.guild.id)
+
+        embed = discord.Embed(
+            title="🔧 복권 설정 상태",
+            color=discord.Color.blue(),
+            timestamp=datetime.now(timezone.utc)
+        )
+
+        if lottery.predetermined_numbers:
+            embed.add_field(
+                name="🎯 미리 설정된 번호",
+                value=" ".join(map(str, lottery.predetermined_numbers)),
+                inline=False
+            )
+            embed.add_field(
+                name="⚠️ 알림",
+                value="다음 추첨에서 위 번호가 사용됩니다.",
+                inline=False
+            )
+        else:
+            embed.add_field(
+                name="🎲 추첨 방식",
+                value="랜덤 추첨 (기본 설정)",
+                inline=False
+            )
+
+        embed.add_field(name="💰 현재 팟", value=f"{lottery.pot_amount:,} 코인", inline=True)
+        embed.add_field(name="👥 참가자", value=f"{len(lottery.entries)}명", inline=True)
+
+        automation_status = "🟢 활성화" if hasattr(self,
+                                               'daily_lottery_draw') and self.daily_lottery_draw.is_running() else "🔴 비활성화"
+        embed.add_field(name="🤖 자동 추첨", value=automation_status, inline=True)
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 class LotteryEntryModal(discord.ui.Modal, title="복권 번호 선택"):
