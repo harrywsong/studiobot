@@ -334,21 +334,33 @@ class SimpleBettingCog(commands.Cog):
             embed.set_footer(text="베팅이 종료되었습니다")
 
         return embed
+
     async def get_user_bet(self, user_id: int, event_id: int) -> Optional[Dict]:
         """사용자의 기존 베팅 확인"""
-        bet = await self.bot.pool.fetchrow("""
-            SELECT option_index, amount FROM betting_bets_v2 
-            WHERE user_id = $1 AND event_id = $2
-        """, user_id, event_id)
+        try:
+            bet = await self.bot.pool.fetchrow("""
+                SELECT option_index, amount FROM betting_bets_v2 
+                WHERE user_id = $1 AND event_id = $2
+            """, user_id, event_id)
 
-        if bet:
-            return {'option_index': bet['option_index'], 'amount': bet['amount']}
-        return None
+            if bet:
+                result = {'option_index': bet['option_index'], 'amount': bet['amount']}
+                self.logger.info(f"Found existing bet for user {user_id}, event {event_id}: {result}")
+                return result
+            else:
+                self.logger.info(f"No existing bet found for user {user_id}, event {event_id}")
+                return None
+        except Exception as e:
+            self.logger.error(f"Error in get_user_bet: {e}")
+            return None
 
     async def place_bet(self, user_id: int, guild_id: int, event_id: int,
                         option_index: int, amount: int) -> Dict:
         """베팅 하기 (같은 옵션에 추가 베팅 허용)"""
         try:
+            self.logger.info(
+                f"place_bet called: user_id={user_id}, event_id={event_id}, option_index={option_index}, amount={amount}")
+
             # 이벤트가 활성화되어 있는지 확인
             event = await self.bot.pool.fetchrow("""
                 SELECT * FROM betting_events_v2 
@@ -372,6 +384,8 @@ class SimpleBettingCog(commands.Cog):
 
             # 기존 베팅 확인
             existing_bet = await self.get_user_bet(user_id, event_id)
+            self.logger.info(f"Existing bet: {existing_bet}")
+
             if existing_bet:
                 # 다른 옵션에 베팅하려는 경우 거부
                 if existing_bet['option_index'] != option_index:
@@ -407,13 +421,19 @@ class SimpleBettingCog(commands.Cog):
             options = json.loads(event['options'])
 
             if existing_bet:
+                self.logger.info(
+                    f"Updating existing bet from {existing_bet['amount']} to {existing_bet['amount'] + amount}")
                 # 기존 베팅에 추가
                 new_total_amount = existing_bet['amount'] + amount
-                await self.bot.pool.execute("""
+
+                # Check if the update actually happens
+                update_result = await self.bot.pool.execute("""
                     UPDATE betting_bets_v2 
                     SET amount = $1, placed_at = NOW()
                     WHERE user_id = $2 AND event_id = $3
                 """, new_total_amount, user_id, event_id)
+
+                self.logger.info(f"Update result: {update_result}")
 
                 result = {
                     'success': True,
@@ -424,6 +444,7 @@ class SimpleBettingCog(commands.Cog):
                     'is_additional_bet': True
                 }
             else:
+                self.logger.info("Creating new bet")
                 # 새 베팅 기록
                 await self.bot.pool.execute("""
                     INSERT INTO betting_bets_v2 (event_id, user_id, guild_id, option_index, amount)
@@ -440,12 +461,16 @@ class SimpleBettingCog(commands.Cog):
                 }
 
             # 베팅 디스플레이 업데이트 (중요: 두 경우 모두에서 실행되어야 함)
+            self.logger.info("About to update betting display")
             await self.update_betting_display(event_id)
+            self.logger.info("Betting display update completed")
 
             return result
 
         except Exception as e:
             self.logger.error(f"베팅 실패: {e}")
+            import traceback
+            self.logger.error(f"베팅 실패 스택트레이스: {traceback.format_exc()}")
             return {'success': False, 'reason': '내부 오류가 발생했습니다'}
 
     async def update_betting_display(self, event_id: int):
@@ -983,6 +1008,7 @@ class BettingEventView(discord.ui.View):
 
             # 기존 베팅 확인
             existing_bet = await betting_cog.get_user_bet(interaction.user.id, self.event_id)
+            betting_cog.logger.info(f"handle_bet_option - existing bet: {existing_bet}")
 
             if existing_bet:
                 if existing_bet['option_index'] != option_index:
@@ -997,6 +1023,8 @@ class BettingEventView(discord.ui.View):
                     return
                 else:
                     # 같은 옵션에 추가 베팅하는 경우
+                    betting_cog.logger.info(
+                        f"Creating additional bet modal for existing amount: {existing_bet['amount']}")
                     modal = BetAmountModal(
                         self.event_id,
                         option_index,
@@ -1006,13 +1034,15 @@ class BettingEventView(discord.ui.View):
                     await interaction.response.send_modal(modal)
             else:
                 # 첫 베팅인 경우
+                betting_cog.logger.info("Creating new bet modal")
                 modal = BetAmountModal(self.event_id, option_index, self.options[option_index])
                 await interaction.response.send_modal(modal)
 
         except Exception as e:
             betting_cog.logger.error(f"베팅 옵션 처리 오류: {e}")
+            import traceback
+            betting_cog.logger.error(f"handle_bet_option traceback: {traceback.format_exc()}")
             await interaction.response.send_message("오류가 발생했습니다", ephemeral=True)
-
 
 class BetAmountModal(discord.ui.Modal):
     def __init__(self, event_id: int, option_index: int, option_name: str, existing_amount: int = 0):
