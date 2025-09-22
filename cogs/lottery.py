@@ -213,10 +213,10 @@ class LotteryCog(commands.Cog):
 
     @tasks.loop(
         time=[
-            time(hour=5, minute=0),  # 12:00 AM EST (UTC-5) / 1:00 AM EDT (UTC-4)
-            time(hour=11, minute=0),  # 6:00 AM EST / 7:00 AM EDT
-            time(hour=17, minute=0),  # 12:00 PM EST / 1:00 PM EDT
-            time(hour=23, minute=0),  # 6:00 PM EST / 7:00 PM EDT
+            time(hour=4, minute=0),  # 12:00 AM EST (UTC-5) / 1:00 AM EDT (UTC-4)
+            time(hour=10, minute=0),  # 6:00 AM EST / 7:00 AM EDT
+            time(hour=16, minute=0),  # 12:00 PM EST / 1:00 PM EDT
+            time(hour=22, minute=0),  # 6:00 PM EST / 7:00 PM EDT
         ]
     )
     async def daily_lottery_draw(self):
@@ -467,7 +467,7 @@ class LotteryCog(commands.Cog):
 
                 # Draw times in Eastern (12 AM, 6 AM, 12 PM, 6 PM)
                 # Convert to UTC hours for comparison
-                draw_times_utc = [5, 11, 17, 23]  # UTC equivalents
+                draw_times_utc = [4, 10, 16, 22]  # UTC equivalents
 
                 current_utc_hour = now_utc.hour
                 next_draw_hour_utc = None
