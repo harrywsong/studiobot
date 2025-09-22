@@ -1108,13 +1108,13 @@ class ScrimCog(commands.Cog):
                 with open(self.scrims_file, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                     for scrim_id, scrim_data in data.items():
-                        # Load as UTC then convert to Eastern
+                        # The times are stored as UTC, so we load them as UTC and keep them timezone-aware
                         start_time_utc = datetime.fromisoformat(scrim_data['start_time']).replace(tzinfo=pytz.utc)
                         created_at_utc = datetime.fromisoformat(scrim_data['created_at']).replace(tzinfo=pytz.utc)
 
-                        # Convert to Eastern for storage (this maintains the original intended time)
-                        scrim_data['start_time'] = start_time_utc.astimezone(pytz.timezone('America/New_York'))
-                        scrim_data['created_at'] = created_at_utc.astimezone(pytz.timezone('America/New_York'))
+                        # Store them as UTC - conversion to Eastern happens only in display logic
+                        scrim_data['start_time'] = start_time_utc
+                        scrim_data['created_at'] = created_at_utc
 
                     self.scrims_data = data
                 self.logger.info("Successfully loaded scrims data.")
@@ -1286,11 +1286,11 @@ class ScrimCog(commands.Cog):
         eastern = pytz.timezone('America/New_York')
         start_time = scrim_data['start_time']
 
-        # Handle timezone conversion properly
-        if start_time.tzinfo is None:
-            start_time = eastern.localize(start_time)
-        elif start_time.tzinfo != eastern:
+        if start_time.tzinfo == pytz.utc:
             start_time = start_time.astimezone(eastern)
+        elif start_time.tzinfo is None:
+            # If somehow no timezone, assume UTC and convert
+            start_time = pytz.utc.localize(start_time).astimezone(eastern)
 
         now = datetime.now(eastern)
 
