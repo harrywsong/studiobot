@@ -1081,6 +1081,7 @@ class ScrimCog(commands.Cog):
         """Waits for the bot to be ready before starting tasks."""
         await self.bot.wait_until_ready()
         await self.load_scrims_data()
+        await self.migrate_timezone_data()  # Add this line
         await self.load_map_pools()
         self.setup_persistent_views()
         await self.setup_scrim_panels()
@@ -1576,6 +1577,59 @@ class ScrimCog(commands.Cog):
                 self.logger.info(f"Cleaned up {len(scrims_to_remove)} old scrim(s).")
         except Exception as e:
             self.logger.error(f"Error in cleanup task: {e}", exc_info=True)
+
+    async def migrate_timezone_data(self):
+        """One-time migration to fix timezone data in existing scrims."""
+        try:
+            eastern = pytz.timezone('America/New_York')
+            migration_needed = False
+
+            for scrim_id, scrim_data in self.scrims_data.items():
+                start_time = scrim_data['start_time']
+
+                # Check if this looks like it needs migration
+                if isinstance(start_time, str):
+                    # If it's still a string, parse and assume it's Eastern time
+                    dt = datetime.fromisoformat(start_time)
+                    if dt.tzinfo is None:
+                        # Assume this was stored as Eastern time, convert to UTC
+                        eastern_time = eastern.localize(dt)
+                        scrim_data['start_time'] = eastern_time.astimezone(pytz.utc)
+                        migration_needed = True
+                elif start_time.tzinfo is None:
+                    # Naive datetime, assume Eastern and convert to UTC
+                    eastern_time = eastern.localize(start_time)
+                    scrim_data['start_time'] = eastern_time.astimezone(pytz.utc)
+                    migration_needed = True
+                elif start_time.tzinfo != pytz.utc:
+                    # Already has timezone but not UTC, convert to UTC
+                    scrim_data['start_time'] = start_time.astimezone(pytz.utc)
+                    migration_needed = True
+
+                # Do the same for created_at
+                created_at = scrim_data['created_at']
+                if isinstance(created_at, str):
+                    dt = datetime.fromisoformat(created_at)
+                    if dt.tzinfo is None:
+                        eastern_time = eastern.localize(dt)
+                        scrim_data['created_at'] = eastern_time.astimezone(pytz.utc)
+                        migration_needed = True
+                elif created_at.tzinfo is None:
+                    eastern_time = eastern.localize(created_at)
+                    scrim_data['created_at'] = eastern_time.astimezone(pytz.utc)
+                    migration_needed = True
+                elif created_at.tzinfo != pytz.utc:
+                    scrim_data['created_at'] = created_at.astimezone(pytz.utc)
+                    migration_needed = True
+
+            if migration_needed:
+                await self.save_scrims_data()
+                self.logger.info("Completed timezone data migration.")
+            else:
+                self.logger.info("No timezone migration needed.")
+
+        except Exception as e:
+            self.logger.error(f"Error during timezone migration: {e}", exc_info=True)
 
     @app_commands.command(name="맵선택", description="활성 맵 풀에서 무작위 맵을 선택합니다.")
     @app_commands.describe(count="선택할 맵의 수 (기본값: 1)")
