@@ -903,9 +903,15 @@ class ScrimView(discord.ui.View):
         """Check if the scrim is within the 30-minute lock window."""
         eastern = pytz.timezone('America/New_York')
         now = datetime.now(eastern)
+
         start_time = scrim_data['start_time']
-        if start_time.tzinfo is None:
-            start_time = eastern.localize(start_time)
+        # Ensure start_time is in Eastern timezone for comparison
+        if start_time.tzinfo == pytz.utc:
+            start_time = start_time.astimezone(eastern)
+        elif start_time.tzinfo is None:
+            start_time = pytz.utc.localize(start_time).astimezone(eastern)
+        elif start_time.tzinfo != eastern:
+            start_time = start_time.astimezone(eastern)
 
         return start_time - now <= timedelta(minutes=30)
 
@@ -1107,14 +1113,26 @@ class ScrimCog(commands.Cog):
             if os.path.exists(self.scrims_file):
                 with open(self.scrims_file, 'r', encoding='utf-8') as f:
                     data = json.load(f)
-                    for scrim_id, scrim_data in data.items():
-                        # The times are stored as UTC, so we load them as UTC and keep them timezone-aware
-                        start_time_utc = datetime.fromisoformat(scrim_data['start_time']).replace(tzinfo=pytz.utc)
-                        created_at_utc = datetime.fromisoformat(scrim_data['created_at']).replace(tzinfo=pytz.utc)
+                    eastern = pytz.timezone('America/New_York')
 
-                        # Store them as UTC - conversion to Eastern happens only in display logic
-                        scrim_data['start_time'] = start_time_utc
-                        scrim_data['created_at'] = created_at_utc
+                    for scrim_id, scrim_data in data.items():
+                        # Load stored times - they should be stored as UTC ISO strings
+                        start_time_str = scrim_data['start_time']
+                        created_at_str = scrim_data['created_at']
+
+                        # Parse the datetime strings
+                        start_time = datetime.fromisoformat(start_time_str)
+                        created_at = datetime.fromisoformat(created_at_str)
+
+                        # If no timezone info, assume they were stored as UTC
+                        if start_time.tzinfo is None:
+                            start_time = pytz.utc.localize(start_time)
+                        if created_at.tzinfo is None:
+                            created_at = pytz.utc.localize(created_at)
+
+                        # Store as timezone-aware UTC times
+                        scrim_data['start_time'] = start_time
+                        scrim_data['created_at'] = created_at
 
                     self.scrims_data = data
                 self.logger.info("Successfully loaded scrims data.")
@@ -1126,20 +1144,24 @@ class ScrimCog(commands.Cog):
         try:
             os.makedirs(os.path.dirname(self.scrims_file), exist_ok=True)
             data_to_save = {}
+
             for scrim_id, scrim_data in self.scrims_data.items():
                 data_copy = scrim_data.copy()
 
-                # Ensure timezone-aware datetimes are converted to UTC for storage
+                # Convert timezone-aware datetimes to UTC for storage
                 start_time = data_copy['start_time']
                 if start_time.tzinfo is None:
-                    # If no timezone info, assume it's Eastern
-                    start_time = pytz.timezone('America/New_York').localize(start_time)
-                data_copy['start_time'] = start_time.astimezone(pytz.utc).replace(tzinfo=None).isoformat()
+                    # If somehow no timezone, assume it's Eastern and convert to UTC
+                    eastern = pytz.timezone('America/New_York')
+                    start_time = eastern.localize(start_time)
+                # Convert to UTC and store as ISO string
+                data_copy['start_time'] = start_time.astimezone(pytz.utc).isoformat()
 
                 created_at = data_copy['created_at']
                 if created_at.tzinfo is None:
-                    created_at = pytz.timezone('America/New_York').localize(created_at)
-                data_copy['created_at'] = created_at.astimezone(pytz.utc).replace(tzinfo=None).isoformat()
+                    eastern = pytz.timezone('America/New_York')
+                    created_at = eastern.localize(created_at)
+                data_copy['created_at'] = created_at.astimezone(pytz.utc).isoformat()
 
                 data_to_save[scrim_id] = data_copy
 
@@ -1284,16 +1306,22 @@ class ScrimCog(commands.Cog):
 
     def create_scrim_embed(self, scrim_data: Dict) -> discord.Embed:
         eastern = pytz.timezone('America/New_York')
+        now = datetime.now(eastern)
+
+        # Get the start time and ensure it's in Eastern timezone for display
         start_time = scrim_data['start_time']
 
+        # Convert UTC time to Eastern for display
         if start_time.tzinfo == pytz.utc:
             start_time = start_time.astimezone(eastern)
         elif start_time.tzinfo is None:
-            # If somehow no timezone, assume UTC and convert
+            # If no timezone info, assume UTC and convert
             start_time = pytz.utc.localize(start_time).astimezone(eastern)
+        elif start_time.tzinfo != eastern:
+            # Convert any other timezone to Eastern
+            start_time = start_time.astimezone(eastern)
 
-        now = datetime.now(eastern)
-
+        # Rest of the embed creation logic...
         status_colors = {'활성': discord.Color.green(), '취소됨': discord.Color.red(), '완료됨': discord.Color.blue()}
         status_emojis = {'활성': '🟢', '취소됨': '🔴', '완료됨': '🔵'}
         game_emojis = {'발로란트': '🎯', '리그 오브 레전드': '⚔️', '팀파이트 택틱스': '♟️', '배틀그라운드': '🔫', '기타 게임': '🎮'}
@@ -1319,20 +1347,20 @@ class ScrimCog(commands.Cog):
                 time_text = f" • {mins}분 후 시작"
 
         status_text = f"{status_emoji} {scrim_data['status']}"
-
         p_count = len(scrim_data['participants'])
         max_p = scrim_data['max_players']
 
         embed.description = (
             f"**모드:** {scrim_data['gamemode']}\n"
             f"**티어:** {scrim_data['tier_range']}\n"
-            f"**시작:** <t:{int(start_time.timestamp())}:F> ({time_text})\n"
+            f"**시작:** <t:{int(start_time.timestamp())}:F>{time_text}\n"
             f"**상태:** {status_text}\n"
             f"**플레이어:** {p_count}/{max_p}"
             f"{' ✅' if p_count >= max_p else ''}"
             f" • **대기열:** {len(scrim_data['queue'])}"
         )
 
+        # Rest of the method remains the same...
         guild = self.bot.get_guild(scrim_data['guild_id'])
         if guild:
             organizer = guild.get_member(scrim_data['organizer_id'])
