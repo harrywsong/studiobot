@@ -781,41 +781,114 @@ class CreateBettingModal(discord.ui.Modal, title="베팅 이벤트 생성"):
         max_length=500
     )
 
-    duration_input = discord.ui.TextInput(
-        label="지속 시간 (분)",
-        placeholder="30",
+    end_time_input = discord.ui.TextInput(
+        label="종료 시간 (Eastern 시간대, 예: 14:30, 23:45)",
+        placeholder="14:30",
         required=True,
         max_length=10
+    )
+
+    end_date_input = discord.ui.TextInput(
+        label="종료 날짜 (Eastern, 선택사항, 예: 2024-12-25)",
+        placeholder="오늘 날짜로 설정하려면 비워두세요 (Eastern 기준)",
+        required=False,
+        max_length=15
     )
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
 
         try:
-            duration = int(self.duration_input.value)
-            if duration < 1 or duration > 1440:  # 최대 24시간
-                await interaction.followup.send("지속 시간은 1-1440분이어야 합니다", ephemeral=True)
+            # Import timezone support for Eastern Time
+            from zoneinfo import ZoneInfo
+
+            # Parse the end time
+            time_str = self.end_time_input.value.strip()
+            if ':' not in time_str:
+                await interaction.followup.send("시간 형식이 올바르지 않습니다. HH:MM 형식으로 입력하세요 (예: 14:30)", ephemeral=True)
                 return
 
+            try:
+                hour, minute = map(int, time_str.split(':'))
+                if not (0 <= hour <= 23 and 0 <= minute <= 59):
+                    raise ValueError
+            except ValueError:
+                await interaction.followup.send("올바른 시간을 입력하세요 (00:00 - 23:59)", ephemeral=True)
+                return
+
+            # Get current time in Eastern timezone
+            eastern_tz = ZoneInfo("America/New_York")
+            now_eastern = datetime.now(eastern_tz)
+            now_utc = datetime.now(timezone.utc)
+
+            # Parse the end date (if provided)
+            if self.end_date_input.value.strip():
+                date_str = self.end_date_input.value.strip()
+                try:
+                    # Parse date in YYYY-MM-DD format
+                    year, month, day = map(int, date_str.split('-'))
+                    # Create datetime in Eastern timezone
+                    target_date_eastern = datetime(year, month, day, hour, minute, tzinfo=eastern_tz)
+                except ValueError:
+                    await interaction.followup.send("날짜 형식이 올바르지 않습니다. YYYY-MM-DD 형식으로 입력하세요 (예: 2024-12-25)",
+                                                    ephemeral=True)
+                    return
+            else:
+                # Use today's date in Eastern timezone
+                target_date_eastern = datetime(now_eastern.year, now_eastern.month, now_eastern.day,
+                                               hour, minute, tzinfo=eastern_tz)
+
+                # If the time has already passed today, set it for tomorrow
+                if target_date_eastern <= now_eastern:
+                    target_date_eastern += timedelta(days=1)
+
+            # Convert Eastern time to UTC for storage
+            target_date_utc = target_date_eastern.astimezone(timezone.utc)
+
+            # Validate that the end time is in the future
+            if target_date_utc <= now_utc:
+                await interaction.followup.send("종료 시간은 현재 시간보다 미래여야 합니다", ephemeral=True)
+                return
+
+            # Validate maximum duration (e.g., max 7 days)
+            max_duration = timedelta(days=7)
+            if target_date_utc - now_utc > max_duration:
+                await interaction.followup.send("베팅 이벤트는 최대 7일까지만 설정할 수 있습니다", ephemeral=True)
+                return
+
+            # Validate minimum duration (e.g., at least 5 minutes)
+            min_duration = timedelta(minutes=5)
+            if target_date_utc - now_utc < min_duration:
+                await interaction.followup.send("베팅 이벤트는 최소 5분 후에 종료되도록 설정해야 합니다", ephemeral=True)
+                return
+
+            # Parse options
             options = [opt.strip() for opt in self.options_input.value.split('\n') if opt.strip()]
             if len(options) < 2 or len(options) > 8:
                 await interaction.followup.send("2-8개의 옵션이 필요합니다", ephemeral=True)
                 return
 
+            # Create the betting event with the specific end time (in UTC)
             betting_cog = interaction.client.get_cog('SimpleBettingCog')
-            result = await betting_cog.create_betting_event(
+            result = await betting_cog.create_betting_event_with_end_time(
                 interaction.guild.id,
                 self.title_input.value,
                 options,
                 interaction.user.id,
-                duration
+                target_date_utc
             )
 
             if result['success']:
+                # Show current Eastern time for reference
+                current_eastern = now_eastern.strftime("%Y-%m-%d %H:%M EST/EDT")
+                target_eastern_display = target_date_eastern.strftime("%Y-%m-%d %H:%M EST/EDT")
+
                 await interaction.followup.send(
                     f"✅ 베팅 이벤트가 생성되었습니다!\n"
                     f"채널: <#{result['channel_id']}>\n"
-                    f"종료: <t:{int(result['ends_at'].timestamp())}:R>\n\n"
+                    f"종료: <t:{int(result['ends_at'].timestamp())}:F> (<t:{int(result['ends_at'].timestamp())}:R>)\n"
+                    f"🕐 현재 Eastern 시간: {current_eastern}\n"
+                    f"📅 설정된 종료 시간 (Eastern): {target_eastern_display}\n\n"
                     f"🔧 **관리자 제어**\n"
                     f"베팅 마감: `/베팅마감 event_id:{result['event_id']}`\n"
                     f"베팅 종료: `/베팅종료 event_id:{result['event_id']} winner_option:[1-8]`",
@@ -824,11 +897,10 @@ class CreateBettingModal(discord.ui.Modal, title="베팅 이벤트 생성"):
             else:
                 await interaction.followup.send(f"❌ 실패: {result['reason']}", ephemeral=True)
 
-        except ValueError:
-            await interaction.followup.send("지속 시간에 올바른 숫자를 입력하세요", ephemeral=True)
+        except ImportError:
+            await interaction.followup.send("시간대 처리 모듈을 찾을 수 없습니다. 시스템 관리자에게 문의하세요.", ephemeral=True)
         except Exception as e:
             await interaction.followup.send(f"오류: {e}", ephemeral=True)
-
 
 class BettingEventView(discord.ui.View):
     def __init__(self, event_id: int, options: List[str]):
