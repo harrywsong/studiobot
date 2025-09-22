@@ -404,6 +404,8 @@ class SimpleBettingCog(commands.Cog):
                 return {'success': False, 'reason': '코인 차감에 실패했습니다'}
 
             # 기존 베팅이 있으면 업데이트, 없으면 새로 생성
+            options = json.loads(event['options'])
+
             if existing_bet:
                 # 기존 베팅에 추가
                 new_total_amount = existing_bet['amount'] + amount
@@ -413,9 +415,7 @@ class SimpleBettingCog(commands.Cog):
                     WHERE user_id = $2 AND event_id = $3
                 """, new_total_amount, user_id, event_id)
 
-                # 반환값에 총 베팅 금액과 추가된 금액 모두 포함
-                options = json.loads(event['options'])
-                return {
+                result = {
                     'success': True,
                     'option_name': options[option_index],
                     'added_amount': amount,
@@ -430,8 +430,7 @@ class SimpleBettingCog(commands.Cog):
                     VALUES ($1, $2, $3, $4, $5)
                 """, event_id, user_id, guild_id, option_index, amount)
 
-                options = json.loads(event['options'])
-                return {
+                result = {
                     'success': True,
                     'option_name': options[option_index],
                     'added_amount': amount,
@@ -440,8 +439,10 @@ class SimpleBettingCog(commands.Cog):
                     'is_additional_bet': False
                 }
 
-            # 베팅 디스플레이 업데이트는 두 경우 모두에서 실행
+            # 베팅 디스플레이 업데이트 (중요: 두 경우 모두에서 실행되어야 함)
             await self.update_betting_display(event_id)
+
+            return result
 
         except Exception as e:
             self.logger.error(f"베팅 실패: {e}")
