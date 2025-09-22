@@ -1107,10 +1107,15 @@ class ScrimCog(commands.Cog):
             if os.path.exists(self.scrims_file):
                 with open(self.scrims_file, 'r', encoding='utf-8') as f:
                     data = json.load(f)
-                    eastern = pytz.timezone('America/New_York')
                     for scrim_id, scrim_data in data.items():
-                        scrim_data['start_time'] = eastern.localize(datetime.fromisoformat(scrim_data['start_time']))
-                        scrim_data['created_at'] = eastern.localize(datetime.fromisoformat(scrim_data['created_at']))
+                        # Load as UTC then convert to Eastern
+                        start_time_utc = datetime.fromisoformat(scrim_data['start_time']).replace(tzinfo=pytz.utc)
+                        created_at_utc = datetime.fromisoformat(scrim_data['created_at']).replace(tzinfo=pytz.utc)
+
+                        # Convert to Eastern for storage (this maintains the original intended time)
+                        scrim_data['start_time'] = start_time_utc.astimezone(pytz.timezone('America/New_York'))
+                        scrim_data['created_at'] = created_at_utc.astimezone(pytz.timezone('America/New_York'))
+
                     self.scrims_data = data
                 self.logger.info("Successfully loaded scrims data.")
         except Exception as e:
@@ -1123,8 +1128,19 @@ class ScrimCog(commands.Cog):
             data_to_save = {}
             for scrim_id, scrim_data in self.scrims_data.items():
                 data_copy = scrim_data.copy()
-                data_copy['start_time'] = data_copy['start_time'].astimezone(pytz.utc).replace(tzinfo=None).isoformat()
-                data_copy['created_at'] = data_copy['created_at'].astimezone(pytz.utc).replace(tzinfo=None).isoformat()
+
+                # Ensure timezone-aware datetimes are converted to UTC for storage
+                start_time = data_copy['start_time']
+                if start_time.tzinfo is None:
+                    # If no timezone info, assume it's Eastern
+                    start_time = pytz.timezone('America/New_York').localize(start_time)
+                data_copy['start_time'] = start_time.astimezone(pytz.utc).replace(tzinfo=None).isoformat()
+
+                created_at = data_copy['created_at']
+                if created_at.tzinfo is None:
+                    created_at = pytz.timezone('America/New_York').localize(created_at)
+                data_copy['created_at'] = created_at.astimezone(pytz.utc).replace(tzinfo=None).isoformat()
+
                 data_to_save[scrim_id] = data_copy
 
             def write_file():
@@ -1269,8 +1285,13 @@ class ScrimCog(commands.Cog):
     def create_scrim_embed(self, scrim_data: Dict) -> discord.Embed:
         eastern = pytz.timezone('America/New_York')
         start_time = scrim_data['start_time']
+
+        # Handle timezone conversion properly
         if start_time.tzinfo is None:
             start_time = eastern.localize(start_time)
+        elif start_time.tzinfo != eastern:
+            start_time = start_time.astimezone(eastern)
+
         now = datetime.now(eastern)
 
         status_colors = {'활성': discord.Color.green(), '취소됨': discord.Color.red(), '완료됨': discord.Color.blue()}
@@ -1278,7 +1299,7 @@ class ScrimCog(commands.Cog):
         game_emojis = {'발로란트': '🎯', '리그 오브 레전드': '⚔️', '팀파이트 택틱스': '♟️', '배틀그라운드': '🔫', '기타 게임': '🎮'}
 
         color = status_colors.get(scrim_data['status'], discord.Color.default())
-        status_emoji = status_emojis.get(scrim_data['status'], '❔')
+        status_emoji = status_emojis.get(scrim_data['status'], '❓')
         game_emoji = game_emojis.get(scrim_data['game'], '🎮')
 
         embed = discord.Embed(
@@ -1431,9 +1452,6 @@ class ScrimCog(commands.Cog):
         except Exception as e:
             self.logger.error(f"Error updating scrim message {scrim_id}: {e}", exc_info=True)
 
-    # ... (Rest of the cog methods: scrim_notifications, cleanup_old_scrims, commands) ...
-    # ... These methods seem mostly correct and do not require major fixes. ...
-    # ... I have included them here without change for completeness. ...
     @tasks.loop(minutes=1)
     async def scrim_notifications(self):
         """내전 시작 시간 전에 알림 전송"""
