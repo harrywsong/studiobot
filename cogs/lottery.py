@@ -65,18 +65,75 @@ class LotteryCog(commands.Cog):
             self.logger.info("Setting up lottery interface...")
             await self.ensure_lottery_interface()
 
-            # Start the draw task (safe to call multiple times)
-            if not self.daily_lottery_draw.is_running():
+            # Start the draw task with better error handling
+            self.logger.info("Starting automated draw task...")
+            try:
+                if self.daily_lottery_draw.is_running():
+                    self.logger.info("Task was already running, cancelling first...")
+                    self.daily_lottery_draw.cancel()
+                    await asyncio.sleep(1)  # Wait for cleanup
+
                 self.daily_lottery_draw.start()
-                self.logger.info("Daily lottery draw task started")
-            else:
-                self.logger.info("Daily lottery draw task was already running")
+                await asyncio.sleep(2)  # Give it time to start
+
+                if self.daily_lottery_draw.is_running():
+                    self.logger.info("✅ Daily lottery draw task started successfully")
+                else:
+                    self.logger.error("❌ Daily lottery draw task failed to start")
+
+            except Exception as task_error:
+                self.logger.error(f"Error starting lottery task: {task_error}", exc_info=True)
 
             self._interface_setup_complete = True
-            self.logger.info("Lottery system initialization completed successfully")
+            self.logger.info("Lottery system initialization completed")
+
+            # Debug current status
+            await self.debug_automation_status()
 
         except Exception as e:
             self.logger.error(f"Critical error during lottery initialization: {e}", exc_info=True)
+
+    async def test_lottery_task(self):
+        """Test if the lottery task is properly configured"""
+        self.logger.info("Testing lottery task configuration...")
+
+        # Check if times are valid
+        loop_times = self.daily_lottery_draw.time
+        self.logger.info(f"Configured loop times: {loop_times}")
+
+        # Check next iteration
+        if self.daily_lottery_draw.next_iteration:
+            next_time = self.daily_lottery_draw.next_iteration
+            self.logger.info(f"Next iteration scheduled for: {next_time}")
+
+            # Check if next iteration is reasonable (not too far in future)
+            now = datetime.now(timezone.utc)
+            time_diff = next_time - now
+            self.logger.info(f"Time until next iteration: {time_diff}")
+
+            if time_diff.total_seconds() > 86400:  # More than 24 hours
+                self.logger.warning("Next iteration is more than 24 hours away - this might be wrong")
+        else:
+            self.logger.warning("No next iteration scheduled")
+
+    @app_commands.command(name="복권테스트", description="복권 시스템 테스트 (관리자 전용)")
+    async def test_lottery_system(self, interaction: discord.Interaction):
+        """Test lottery system configuration"""
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("⛔ 관리자만 사용할 수 있습니다.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        await self.test_lottery_task()
+
+        embed = discord.Embed(
+            title="🧪 복권 시스템 테스트 완료",
+            description="테스트 결과가 로그에 기록되었습니다.",
+            color=discord.Color.blue()
+        )
+
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
     async def ensure_lottery_interface(self):
         """Ensure the lottery interface is posted and current (handles both new and existing)"""
@@ -602,6 +659,100 @@ class LotteryCog(commands.Cog):
 
         return True, "Draw successful", results
 
+    async def debug_automation_status(self):
+        """Debug method to check automation status"""
+        self.logger.info("=== LOTTERY AUTOMATION DEBUG ===")
+        self.logger.info(f"Task is_running(): {self.daily_lottery_draw.is_running()}")
+        self.logger.info(f"Task current_loop: {self.daily_lottery_draw.current_loop}")
+        self.logger.info(f"Task next_iteration: {self.daily_lottery_draw.next_iteration}")
+        self.logger.info(f"Task failed(): {self.daily_lottery_draw.failed()}")
+        if self.daily_lottery_draw.failed():
+            self.logger.error(f"Task exception: {self.daily_lottery_draw.exception()}")
+        self.logger.info("=== END DEBUG ===")
+
+    @app_commands.command(name="복권디버그", description="복권 자동화 디버그 정보 (관리자 전용)")
+    async def debug_lottery_automation(self, interaction: discord.Interaction):
+        """Debug lottery automation status"""
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("⛔ 관리자만 사용할 수 있습니다.", ephemeral=True)
+            return
+
+        await self.debug_automation_status()
+
+        embed = discord.Embed(
+            title="🔧 복권 자동화 디버그 정보",
+            color=discord.Color.blue(),
+            timestamp=datetime.now(timezone.utc)
+        )
+
+        embed.add_field(
+            name="Task Status",
+            value=f"Running: {self.daily_lottery_draw.is_running()}\nFailed: {self.daily_lottery_draw.failed()}",
+            inline=True
+        )
+
+        if self.daily_lottery_draw.next_iteration:
+            embed.add_field(
+                name="Next Iteration",
+                value=f"<t:{int(self.daily_lottery_draw.next_iteration.timestamp())}:F>",
+                inline=True
+            )
+
+        embed.add_field(
+            name="Current Loop",
+            value=f"{self.daily_lottery_draw.current_loop}",
+            inline=True
+        )
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @app_commands.command(name="복권강제시작", description="복권 자동화 강제 시작 (관리자 전용)")
+    async def force_start_lottery_automation(self, interaction: discord.Interaction):
+        """Force start lottery automation with debugging"""
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("⛔ 관리자만 사용할 수 있습니다.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            # Cancel existing task if it's running but maybe stuck
+            if self.daily_lottery_draw.is_running():
+                self.logger.info("Cancelling existing lottery task...")
+                self.daily_lottery_draw.cancel()
+                await asyncio.sleep(1)  # Wait a moment for cleanup
+
+            # Force restart the task
+            self.logger.info("Force starting lottery automation...")
+            self.daily_lottery_draw.start()
+
+            await asyncio.sleep(2)  # Wait for startup
+
+            # Check status
+            is_running = self.daily_lottery_draw.is_running()
+
+            if is_running:
+                embed = discord.Embed(
+                    title="✅ 자동화 강제 시작 성공",
+                    description="복권 자동화가 성공적으로 시작되었습니다.",
+                    color=discord.Color.green()
+                )
+
+                # Update the interface to show the new status
+                await self.update_lottery_interface(interaction.guild.id)
+
+            else:
+                embed = discord.Embed(
+                    title="❌ 자동화 시작 실패",
+                    description="자동화 시작에 실패했습니다. 로그를 확인해주세요.",
+                    color=discord.Color.red()
+                )
+
+            await interaction.followup.send(embed=embed, ephemeral=True)
+
+        except Exception as e:
+            self.logger.error(f"Force start failed: {e}", exc_info=True)
+            await interaction.followup.send(f"강제 시작 중 오류: {e}", ephemeral=True)
 
 # Include your existing Modal and View classes here
 class LotteryEntryModal(discord.ui.Modal, title="복권 번호 선택"):
