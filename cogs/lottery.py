@@ -27,7 +27,7 @@ class LotterySystem:
 
     def __init__(self, guild_id: int):
         self.guild_id = guild_id
-        self.pot_amount = 0
+        self.pot_amount = 1000
         self.entries: Dict[int, LotteryEntry] = {}  # user_id -> entry
         self.draw_scheduled = None
         self.last_draw_time = None
