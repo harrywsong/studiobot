@@ -103,16 +103,18 @@ class SimpleBettingCog(commands.Cog):
         """관리자 권한 확인"""
         return member.guild_permissions.administrator
 
-    async def create_betting_event(self, guild_id: int, title: str, options: List[str],
-                                   creator_id: int, duration_minutes: int) -> Dict:
-        """새로운 베팅 이벤트 생성"""
+    # Replace the existing create_betting_event method with this updated version
+
+    async def create_betting_event_with_end_time(self, guild_id: int, title: str, options: List[str],
+                                                 creator_id: int, end_time: datetime) -> Dict:
+        """새로운 베팅 이벤트 생성 (특정 종료 시간으로)"""
         try:
             # 채널 생성
             guild = self.bot.get_guild(guild_id)
             category = guild.get_channel(BETTING_CATEGORY_ID)
             reference_channel = guild.get_channel(BETTING_CONTROL_CHANNEL_ID)
 
-            channel_name = f"╠📋┆베팅-{title.replace(' ', '-')[:20]}"
+            channel_name = f"▫ 📋│베팅-{title.replace(' ', '-')[:20]}"
             betting_channel = await guild.create_text_channel(
                 name=channel_name,
                 category=category,
@@ -133,16 +135,13 @@ class SimpleBettingCog(commands.Cog):
                 add_reactions=False
             )
 
-            # 종료 시간 계산
-            ends_at = datetime.now(timezone.utc) + timedelta(minutes=duration_minutes)
-
-            # 데이터베이스에 삽입
+            # 데이터베이스에 삽입 (end_time을 직접 사용)
             event_id = await self.bot.pool.fetchval("""
                 INSERT INTO betting_events_v2 
                 (guild_id, title, options, creator_id, ends_at, channel_id)
                 VALUES ($1, $2, $3, $4, $5, $6)
                 RETURNING id
-            """, guild_id, title, json.dumps(options), creator_id, ends_at, betting_channel.id)
+            """, guild_id, title, json.dumps(options), creator_id, end_time, betting_channel.id)
 
             # 베팅 메시지 생성
             await self.create_betting_message(event_id, betting_channel)
@@ -151,7 +150,7 @@ class SimpleBettingCog(commands.Cog):
                 'success': True,
                 'event_id': event_id,
                 'channel_id': betting_channel.id,
-                'ends_at': ends_at
+                'ends_at': end_time
             }
 
         except Exception as e:
