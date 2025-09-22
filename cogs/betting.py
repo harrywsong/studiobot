@@ -1016,26 +1016,6 @@ class BettingEventView(discord.ui.View):
 
 class BetAmountModal(discord.ui.Modal):
     def __init__(self, event_id: int, option_index: int, option_name: str, existing_amount: int = 0):
-        title = f"베팅하기: {option_name}"
-        if existing_amount > 0:
-            title = f"추가 베팅: {option_name}"
-
-        super().__init__(title=title)
-        self.event_id = event_id
-        self.option_index = option_index
-        self.option_name = option_name
-        self.existing_amount = existing_amount
-
-        # 기존 베팅이 있으면 플레이스홀더와 라벨 수정
-        if existing_amount > 0:
-            placeholder = f"추가로 베팅할 코인을 입력하세요 (현재: {existing_amount:,} 코인)"
-            label = "추가 베팅할 코인 수량"
-        else:
-            placeholder = "베팅할 코인을 입력하세요 (최소 10 코인)"
-            label = "베팅할 코인 수량"
-
-    # amount_input을 동적으로 생성하기 위해 __init__에서 추가
-    def __init__(self, event_id: int, option_index: int, option_name: str, existing_amount: int = 0):
         self.event_id = event_id
         self.option_index = option_index
         self.option_name = option_name
@@ -1128,6 +1108,5 @@ class BetAmountModal(discord.ui.Modal):
             await interaction.followup.send("올바른 숫자를 입력해주세요", ephemeral=True)
         except Exception as e:
             await interaction.followup.send(f"오류: {e}", ephemeral=True)
-
 async def setup(bot):
     await bot.add_cog(SimpleBettingCog(bot))
