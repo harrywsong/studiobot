@@ -312,11 +312,18 @@ class LotteryCog(commands.Cog):
             inline=True
         )
 
-        # FIXED: Check automation status properly
-        is_automated = (hasattr(self, 'daily_lottery_draw') and
-                        self.daily_lottery_draw is not None and
-                        not self.daily_lottery_draw.failed() and
-                        self.daily_lottery_draw.is_running())
+        # FIXED: More robust automation status check
+        is_automated = False
+        if hasattr(self, 'daily_lottery_draw') and self.daily_lottery_draw is not None:
+            try:
+                is_automated = (self.daily_lottery_draw.is_running() and
+                                not self.daily_lottery_draw.failed() and
+                                not self.daily_lottery_draw.done())
+                self.logger.debug(
+                    f"Automation check: running={self.daily_lottery_draw.is_running()}, failed={self.daily_lottery_draw.failed()}, done={self.daily_lottery_draw.done()}")
+            except Exception as e:
+                self.logger.error(f"Error checking automation status: {e}")
+                is_automated = False
 
         automation_status = "🟢 자동 추첨 활성화" if is_automated else "🔴 수동 추첨만"
 
@@ -418,6 +425,127 @@ class LotteryCog(commands.Cog):
         embed.set_footer(text="크래시 게임 수수료가 자동으로 팟에 추가됩니다")
 
         return embed
+
+    # Add this method to your LotteryCog class to force refresh the interface
+
+    @app_commands.command(name="복권인터페이스새로고침", description="복권 인터페이스를 강제로 새로고침합니다 (관리자 전용)")
+    async def force_refresh_interface(self, interaction: discord.Interaction):
+        """Force refresh the lottery interface (admin only)"""
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("⛔ 관리자만 사용할 수 있습니다.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            # Force check the task status
+            task_status = {
+                'running': False,
+                'failed': False,
+                'done': False
+            }
+
+            if hasattr(self, 'daily_lottery_draw') and self.daily_lottery_draw is not None:
+                try:
+                    task_status['running'] = self.daily_lottery_draw.is_running()
+                    task_status['failed'] = self.daily_lottery_draw.failed()
+                    task_status['done'] = self.daily_lottery_draw.done()
+                except Exception as e:
+                    self.logger.error(f"Task status check error: {e}")
+
+            # Log the actual status
+            self.logger.info(f"Task status debug: {task_status}")
+
+            # Force update the interface
+            await self.update_lottery_interface(interaction.guild.id)
+
+            embed = discord.Embed(
+                title="✅ 인터페이스 새로고침 완료",
+                description=f"복권 인터페이스가 새로고침되었습니다.\n\n"
+                            f"**Task 상태:**\n"
+                            f"• Running: {task_status['running']}\n"
+                            f"• Failed: {task_status['failed']}\n"
+                            f"• Done: {task_status['done']}",
+                color=discord.Color.green()
+            )
+
+        except Exception as e:
+            self.logger.error(f"Interface refresh failed: {e}", exc_info=True)
+            embed = discord.Embed(
+                title="❌ 새로고침 실패",
+                description=f"오류: {str(e)}",
+                color=discord.Color.red()
+            )
+
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+    # Also add this debugging method
+    @app_commands.command(name="복권디버그상세", description="복권 시스템 상세 디버그 (관리자 전용)")
+    async def detailed_debug(self, interaction: discord.Interaction):
+        """Detailed lottery system debug (admin only)"""
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("⛔ 관리자만 사용할 수 있습니다.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        debug_info = []
+
+        try:
+            # Check if task attribute exists
+            debug_info.append(f"Has daily_lottery_draw attr: {hasattr(self, 'daily_lottery_draw')}")
+
+            if hasattr(self, 'daily_lottery_draw'):
+                task = self.daily_lottery_draw
+                debug_info.append(f"Task object exists: {task is not None}")
+
+                if task is not None:
+                    try:
+                        debug_info.append(f"Task is_running(): {task.is_running()}")
+                        debug_info.append(f"Task failed(): {task.failed()}")
+                        debug_info.append(f"Task done(): {task.done()}")
+                        debug_info.append(f"Task cancelled(): {task.cancelled()}")
+
+                        if task.next_iteration:
+                            debug_info.append(f"Next iteration: {task.next_iteration}")
+                        else:
+                            debug_info.append("Next iteration: None")
+
+                    except Exception as e:
+                        debug_info.append(f"Task method check error: {e}")
+                else:
+                    debug_info.append("Task object is None")
+
+            # Check current time and draw times
+            now_utc = datetime.now(timezone.utc)
+            debug_info.append(f"Current UTC time: {now_utc}")
+            debug_info.append(f"Current UTC hour: {now_utc.hour}")
+
+            draw_times_utc = [5, 11, 17, 23]
+            debug_info.append(f"Draw times UTC: {draw_times_utc}")
+
+            # Find next draw
+            next_hour = None
+            for hour in draw_times_utc:
+                if hour > now_utc.hour:
+                    next_hour = hour
+                    break
+            if next_hour is None:
+                next_hour = draw_times_utc[0]
+
+            debug_info.append(f"Next draw hour: {next_hour}")
+
+        except Exception as e:
+            debug_info.append(f"Debug error: {e}")
+
+        embed = discord.Embed(
+            title="🔍 복권 시스템 상세 디버그",
+            description="\n".join(debug_info),
+            color=discord.Color.blue()
+        )
+
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
     async def update_lottery_interface(self, guild_id: int = None):
         """Update the lottery interface embed with current data"""
         if not self.lottery_interface_message:
