@@ -871,10 +871,13 @@ class LotteryCog(commands.Cog):
             total_awarded = 0
             remaining_pot = prize_pool
 
+            # Replace the prize distribution section in conduct_draw method with this:
+
             # Distribute prizes only if there are actually winners
             total_winners = sum(len(results[match_count]) for match_count in [5, 4, 3])
 
             if total_winners > 0:
+                # There are winners - reset pot to 0 after awarding prizes
                 for match_count in [5, 4, 3]:
                     if results[match_count]:
                         # Calculate total prize for this category
@@ -891,10 +894,10 @@ class LotteryCog(commands.Cog):
                                 }
                                 total_awarded += per_winner
 
-                # Calculate remaining pot (what wasn't awarded)
-                remaining_pot = prize_pool - total_awarded
+                # FIXED: Reset pot to 0 when there are winners
+                remaining_pot = 0
             else:
-                # No winners - pot rolls over to next draw
+                # No winners - pot rolls over to next draw (keep existing behavior)
                 remaining_pot = prize_pool
 
             # Award prizes
