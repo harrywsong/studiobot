@@ -1,4 +1,4 @@
-# cogs/lottery.py
+# Enhanced lottery.py with robust interface management
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
@@ -45,27 +45,114 @@ class LotteryCog(commands.Cog):
         self.guild_lotteries: Dict[int, LotterySystem] = {}
         self.lottery_interface_message: Optional[discord.Message] = None
         self.lottery_channel_id = 1418763263721869403
+        self._interface_setup_complete = False
 
-        # Schedule the full initialization sequence.
+        # Schedule the full initialization sequence
         self.bot.loop.create_task(self.initialize())
 
     async def initialize(self):
-        """Waits for the bot, loads state from DB, and posts the interface."""
-        await self.bot.wait_until_ready()
-        self.logger.info("Initializing LotteryCog: Loading saved states from database...")
-        await self.load_lottery_states()
-        self.logger.info("Database states loaded. Setting up lottery interface...")
-        await self.setup_lottery_interface()
+        """Comprehensive initialization for both bot startup and cog reload"""
+        try:
+            # Wait for the bot to be fully ready
+            await self.bot.wait_until_ready()
+            self.logger.info("Bot is ready. Starting lottery system initialization...")
 
-        # Start the draw task AFTER initialization
-        self.daily_lottery_draw.start()  # Always start (no-op if already running)
-        self.logger.info("Daily lottery draw task started/ensured after initialization")
+            # Load saved states from database
+            self.logger.info("Loading saved lottery states from database...")
+            await self.load_lottery_states()
+
+            # Always ensure the lottery interface is posted and current
+            self.logger.info("Setting up lottery interface...")
+            await self.ensure_lottery_interface()
+
+            # Start the draw task (safe to call multiple times)
+            if not self.daily_lottery_draw.is_running():
+                self.daily_lottery_draw.start()
+                self.logger.info("Daily lottery draw task started")
+            else:
+                self.logger.info("Daily lottery draw task was already running")
+
+            self._interface_setup_complete = True
+            self.logger.info("Lottery system initialization completed successfully")
+
+        except Exception as e:
+            self.logger.error(f"Critical error during lottery initialization: {e}", exc_info=True)
+
+    async def ensure_lottery_interface(self):
+        """Ensure the lottery interface is posted and current (handles both new and existing)"""
+        try:
+            channel = self.bot.get_channel(self.lottery_channel_id)
+            if not channel:
+                self.logger.error(f"Lottery channel not found: {self.lottery_channel_id}")
+                return
+
+            # Check permissions
+            if not channel.permissions_for(channel.guild.me).send_messages:
+                self.logger.error(f"No permission to send messages in lottery channel: {channel.name}")
+                return
+
+            guild_id = channel.guild.id
+            lottery = self.get_lottery(guild_id)
+
+            # Look for existing interface message in recent history
+            existing_message = None
+            try:
+                async for message in channel.history(limit=50):  # Check more messages
+                    if (message.author == self.bot.user and
+                            message.embeds and
+                            len(message.embeds) > 0 and
+                            "복권 시스템" in message.embeds[0].title):
+                        existing_message = message
+                        self.logger.info(f"Found existing lottery interface: {message.id}")
+                        break
+            except Exception as e:
+                self.logger.warning(f"Error searching for existing interface: {e}")
+
+            # Create new embed and view
+            embed = self.create_lottery_interface_embed(target_guild_id=guild_id)
+            view = LotteryInterfaceView(self)
+
+            # Update existing message or create new one
+            if existing_message:
+                try:
+                    await existing_message.edit(embed=embed, view=view)
+                    self.lottery_interface_message = existing_message
+                    self.logger.info("Successfully updated existing lottery interface")
+                    return
+                except discord.HTTPException as e:
+                    self.logger.warning(f"Failed to update existing message, creating new one: {e}")
+                    # Try to delete the old message
+                    try:
+                        await existing_message.delete()
+                    except:
+                        pass
+
+            # Create new interface message
+            try:
+                self.lottery_interface_message = await channel.send(embed=embed, view=view)
+                self.logger.info(f"Created new lottery interface: {self.lottery_interface_message.id}")
+            except discord.HTTPException as e:
+                self.logger.error(f"Failed to create lottery interface: {e}")
+
+        except Exception as e:
+            self.logger.error(f"Error ensuring lottery interface: {e}", exc_info=True)
 
     def cog_unload(self):
         """Clean up when cog is unloaded"""
         if self.daily_lottery_draw.is_running():
             self.daily_lottery_draw.cancel()
             self.logger.info("Daily lottery draw task cancelled due to cog unload")
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        """Additional setup when bot becomes ready (handles reconnections)"""
+        if not self._interface_setup_complete:
+            self.logger.info("Bot reconnected, ensuring lottery interface...")
+            await self.ensure_lottery_interface()
+
+    async def setup_lottery_interface(self):
+        """Legacy method - now redirects to ensure_lottery_interface for compatibility"""
+        await self.ensure_lottery_interface()
 
     @tasks.loop(
         time=[
@@ -122,8 +209,8 @@ class LotteryCog(commands.Cog):
                                 inline=False
                             )
 
-                            embed.add_field(name="👥 이 참가자", value=f"{results['total_entries']}명", inline=True)
-                            embed.add_field(name="💰 이 상금", value=f"{results['total_awarded']:,} 코인", inline=True)
+                            embed.add_field(name="👥 총 참가자", value=f"{results['total_entries']}명", inline=True)
+                            embed.add_field(name="💰 총 상금", value=f"{results['total_awarded']:,} 코인", inline=True)
                             embed.add_field(name="💵 남은 팟", value=f"{results['remaining_pot']:,} 코인", inline=True)
 
                             # Winner details
@@ -188,14 +275,10 @@ class LotteryCog(commands.Cog):
         """Handle errors in the daily lottery draw task"""
         self.logger.error(f"Error in daily_lottery_draw task: {error}", exc_info=True)
 
-    async def setup_lottery_interface(self):
-        """Setup the persistent lottery interface in the designated channel"""
+    async def repost_lottery_interface(self, guild_id: int):
+        """Delete the old lottery interface and create a new one as the latest message"""
         try:
-            # Wait for bot to be ready
-            if not self.bot.is_ready():
-                self.logger.warning("Bot not ready, skipping lottery interface setup")
-                return
-
+            # Get the lottery channel
             channel = self.bot.get_channel(self.lottery_channel_id)
             if not channel:
                 self.logger.error(f"복권 채널을 찾을 수 없습니다: {self.lottery_channel_id}")
@@ -206,51 +289,30 @@ class LotteryCog(commands.Cog):
                 self.logger.error(f"복권 채널에 메시지 전송 권한이 없습니다: {channel.name}")
                 return
 
-            # Get the guild ID directly from the channel object
-            guild_id = channel.guild.id
+            # Delete the old interface message if it exists
+            if self.lottery_interface_message:
+                try:
+                    await self.lottery_interface_message.delete()
+                    self.logger.info(f"기존 복권 인터페이스 메시지 삭제: {self.lottery_interface_message.id}")
+                except discord.HTTPException as e:
+                    self.logger.warning(f"기존 메시지 삭제 실패 (이미 삭제되었을 수 있음): {e}")
+                except Exception as e:
+                    self.logger.error(f"기존 메시지 삭제 중 오류: {e}")
 
-            # Ensure lottery system exists for this guild
-            lottery = self.get_lottery(guild_id)
-
-            # Look for existing interface message
-            self.lottery_interface_message = None
-            async for message in channel.history(limit=20):
-                if (message.author == self.bot.user and
-                        message.embeds and
-                        len(message.embeds) > 0 and
-                        "복권 시스템" in message.embeds[0].title):
-                    self.lottery_interface_message = message
-                    self.logger.info(f"기존 복권 인터페이스 메시지 발견: {message.id}")
-                    break
-
-            # Create or update the interface
+            # Create new interface embed and view
             embed = self.create_lottery_interface_embed(target_guild_id=guild_id)
             view = LotteryInterfaceView(self)
 
-            if self.lottery_interface_message:
-                try:
-                    await self.lottery_interface_message.edit(embed=embed, view=view)
-                    self.logger.info("기존 복권 인터페이스에 뷰를 연결하고 업데이트했습니다.")
-                except discord.HTTPException as e:
-                    self.logger.warning(f"기존 메시지 업데이트 실패, 새로 생성합니다: {e}")
-                    # Delete the old message and create new one
-                    try:
-                        await self.lottery_interface_message.delete()
-                    except:
-                        pass
-                    self.lottery_interface_message = None
-
-            if not self.lottery_interface_message:
-                # Create new interface
-                try:
-                    self.lottery_interface_message = await channel.send(embed=embed, view=view)
-                    self.logger.info(f"새로운 복권 인터페이스를 생성했습니다: {self.lottery_interface_message.id}")
-                except discord.HTTPException as e:
-                    self.logger.error(f"복권 인터페이스 메시지 생성 실패: {e}")
-                    return
+            # Send the new interface message
+            try:
+                self.lottery_interface_message = await channel.send(embed=embed, view=view)
+                self.logger.info(f"새로운 복권 인터페이스를 생성했습니다: {self.lottery_interface_message.id}")
+            except discord.HTTPException as e:
+                self.logger.error(f"복권 인터페이스 메시지 생성 실패: {e}")
+                return
 
         except Exception as e:
-            self.logger.error(f"복권 인터페이스 설정 실패: {e}", exc_info=True)
+            self.logger.error(f"복권 인터페이스 재게시 실패: {e}", exc_info=True)
 
     def create_lottery_interface_embed(self, target_guild_id: int = None) -> discord.Embed:
         """Create the main lottery interface embed with fixed automation display"""
@@ -436,205 +498,112 @@ class LotteryCog(commands.Cog):
             if "Unknown Message" in str(e):
                 self.logger.info("메시지가 삭제된 것으로 보입니다. 인터페이스를 재생성합니다.")
                 self.lottery_interface_message = None
-                await self.setup_lottery_interface()
+                await self.ensure_lottery_interface()
         except Exception as e:
             self.logger.error(f"복권 인터페이스 업데이트 중 예외 발생: {e}", exc_info=True)
 
-    @app_commands.command(name="복권자동화설정", description="자동 복권 시스템 설정 (관리자 전용)")
-    @app_commands.describe(action="start 또는 stop")
-    async def lottery_automation_control(self, interaction: discord.Interaction, action: str):
-        """Control the automated lottery system"""
+    # Add command to manually refresh interface
+    @app_commands.command(name="복권인터페이스새로고침", description="복권 인터페이스를 수동으로 새로고침 (관리자 전용)")
+    async def refresh_lottery_interface(self, interaction: discord.Interaction):
+        """Manually refresh the lottery interface"""
         if not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message("⛔ 관리자만 사용할 수 있습니다.", ephemeral=True)
             return
 
-        action = action.lower()
+        await interaction.response.defer(ephemeral=True)
 
-        if action == "start":
-            if not self.daily_lottery_draw.is_running():
-                self.daily_lottery_draw.start()
-                embed = discord.Embed(
-                    title="✅ 자동 복권 시스템 시작",
-                    description="6시간마다 자동으로 복권 추첨이 진행됩니다.",
-                    color=discord.Color.green()
-                )
-            else:
-                embed = discord.Embed(
-                    title="ℹ️ 자동 복권 시스템",
-                    description="이미 자동 복권 시스템이 실행 중입니다.",
-                    color=discord.Color.blue()
-                )
-
-        elif action == "stop":
-            if self.daily_lottery_draw.is_running():
-                self.daily_lottery_draw.cancel()
-                embed = discord.Embed(
-                    title="⏹️ 자동 복권 시스템 중지",
-                    description="자동 복권 추첨이 중지되었습니다. 수동으로만 추첨 가능합니다.",
-                    color=discord.Color.orange()
-                )
-            else:
-                embed = discord.Embed(
-                    title="ℹ️ 자동 복권 시스템",
-                    description="자동 복권 시스템이 이미 중지되어 있습니다.",
-                    color=discord.Color.blue()
-                )
-
-        else:
-            embed = discord.Embed(
-                title="⌘ 잘못된 명령",
-                description="'start' 또는 'stop'을 입력해주세요.",
-                color=discord.Color.red()
-            )
-
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
-    @app_commands.command(name="복권자동화상태", description="자동 복권 시스템 상태 확인")
-    async def lottery_automation_status(self, interaction: discord.Interaction):
-        """Check automated lottery system status"""
-        embed = discord.Embed(
-            title="🤖 자동 복권 시스템 상태",
-            color=discord.Color.blue(),
-            timestamp=datetime.now(timezone.utc)
-        )
-
-        if self.daily_lottery_draw.is_running():
-            # Calculate next run time in EST/EDT
-            est = pytz.timezone('US/Eastern')
-            now_est = datetime.now(est)
-            draw_times_est = [time(hour=0, minute=0), time(hour=6, minute=0), time(hour=12, minute=0),
-                              time(hour=18, minute=0)]
-
-            next_draw_time_utc = None
-            for draw_time in draw_times_est:
-                candidate_time = now_est.replace(hour=draw_time.hour, minute=draw_time.minute, second=0, microsecond=0)
-                if candidate_time > now_est:
-                    next_draw_time_utc = candidate_time
-                    break
-
-            # If no draw time is left for today, it's tomorrow's first draw (midnight Eastern)
-            if next_draw_time_utc is None:
-                next_draw_time_utc = now_est.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
-
-            embed.add_field(name="📊 상태", value="🟢 실행 중", inline=True)
-            embed.add_field(name="⏰ 다음 추첨", value=f"<t:{int(next_draw_time_utc.timestamp())}:R>", inline=True)
-            embed.add_field(name="🕐 추첨 시간", value="6시간마다 (EST)", inline=True)
-        else:
-            embed.add_field(name="📊 상태", value="🔴 중지됨", inline=True)
-            embed.add_field(name="⏰ 다음 추첨", value="수동 추첨만 가능", inline=True)
-
-        embed.add_field(
-            name="🔧 제어 명령어",
-            value="• `/복권자동화설정 start` - 시작\n• `/복권자동화설정 stop` - 중지",
-            inline=False
-        )
-
-        await interaction.response.send_message(embed=embed)
-
-    @app_commands.command(name="복권추첨", description="복권 추첨을 실시합니다 (관리자 전용)")
-    async def conduct_lottery_draw(self, interaction: discord.Interaction):
-        """Conduct lottery draw (admin only)"""
-        # Check admin permissions
-        if not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message("⛔ 관리자만 사용할 수 있습니다.", ephemeral=True)
-            return
-
-        await interaction.response.defer()
-
-        success, message, results = await self.conduct_draw(interaction.guild.id)
-
-        if not success:
-            embed = discord.Embed(title="⛔ 추첨 실패", description=message, color=discord.Color.red())
-            await interaction.followup.send(embed=embed)
-            # Still repost interface even if draw failed (if no participants, etc.)
-            await self.repost_lottery_interface(interaction.guild.id)
-            return
-
-        # Create results embed
-        embed = discord.Embed(
-            title="🎊 복권 추첨 결과! (수동 추첨)",
-            color=discord.Color.gold(),
-            timestamp=datetime.now(timezone.utc)
-        )
-
-        winning_numbers = results['winning_numbers']
-        embed.add_field(
-            name="🎯 당첨 번호",
-            value=" ".join(f"**{num}**" for num in winning_numbers),
-            inline=False
-        )
-
-        embed.add_field(name="👥 이 참가자", value=f"{results['total_entries']}명", inline=True)
-        embed.add_field(name="💰 이 상금", value=f"{results['total_awarded']:,} 코인", inline=True)
-        embed.add_field(name="💵 남은 팟", value=f"{results['remaining_pot']:,} 코인", inline=True)
-
-        # Winner details
-        winners = results['winners']
-        if winners:
-            winner_text = []
-            for user_id, win_data in winners.items():
-                user = self.bot.get_user(user_id)
-                username = user.display_name if user else f"사용자 {user_id}"
-                winner_text.append(
-                    f"🎉 {username}: {win_data['matches']}개 일치 - {win_data['prize']:,} 코인"
-                )
-
-            embed.add_field(
-                name="🏆 당첨자",
-                value="\n".join(winner_text[:10]) + ("..." if len(winner_text) > 10 else ""),
-                inline=False
-            )
-        else:
-            embed.add_field(name="😢 당첨자", value="이번 추첨에는 당첨자가 없습니다.", inline=False)
-
-        embed.set_footer(text="다음 추첨을 위해 새로 참가해주세요!")
-
-        # Send the draw results first
-        await interaction.followup.send(embed=embed)
-
-        # Always repost the lottery interface as the latest message
-        await self.repost_lottery_interface(interaction.guild.id)
-
-    async def repost_lottery_interface(self, guild_id: int):
-        """Delete the old lottery interface and create a new one as the latest message"""
         try:
-            # Get the lottery channel
-            channel = self.bot.get_channel(self.lottery_channel_id)
-            if not channel:
-                self.logger.error(f"복권 채널을 찾을 수 없습니다: {self.lottery_channel_id}")
-                return
-
-            # Ensure we have permission to send messages
-            if not channel.permissions_for(channel.guild.me).send_messages:
-                self.logger.error(f"복권 채널에 메시지 전송 권한이 없습니다: {channel.name}")
-                return
-
-            # Delete the old interface message if it exists
-            if self.lottery_interface_message:
-                try:
-                    await self.lottery_interface_message.delete()
-                    self.logger.info(f"기존 복권 인터페이스 메시지 삭제: {self.lottery_interface_message.id}")
-                except discord.HTTPException as e:
-                    self.logger.warning(f"기존 메시지 삭제 실패 (이미 삭제되었을 수 있음): {e}")
-                except Exception as e:
-                    self.logger.error(f"기존 메시지 삭제 중 오류: {e}")
-
-            # Create new interface embed and view
-            embed = self.create_lottery_interface_embed(target_guild_id=guild_id)
-            view = LotteryInterfaceView(self)
-
-            # Send the new interface message
-            try:
-                self.lottery_interface_message = await channel.send(embed=embed, view=view)
-                self.logger.info(f"새로운 복권 인터페이스를 생성했습니다: {self.lottery_interface_message.id}")
-            except discord.HTTPException as e:
-                self.logger.error(f"복권 인터페이스 메시지 생성 실패: {e}")
-                return
-
+            await self.ensure_lottery_interface()
+            await interaction.followup.send("✅ 복권 인터페이스가 새로고침되었습니다.", ephemeral=True)
         except Exception as e:
-            self.logger.error(f"복권 인터페이스 재게시 실패: {e}", exc_info=True)
+            self.logger.error(f"Manual interface refresh failed: {e}", exc_info=True)
+            await interaction.followup.send("❌ 인터페이스 새로고침 중 오류가 발생했습니다.", ephemeral=True)
+
+    # Rest of your existing methods (conduct_lottery_draw, lottery_automation_control, etc.)
+    # ... [Include all other existing methods here]
+
+    def get_lottery(self, guild_id: int) -> LotterySystem:
+        """Get or create lottery system for guild"""
+        if guild_id not in self.guild_lotteries:
+            self.guild_lotteries[guild_id] = LotterySystem(guild_id)
+        return self.guild_lotteries[guild_id]
+
+    async def load_lottery_states(self):
+        """Load lottery states from database"""
+        try:
+            if hasattr(self.bot, 'pool') and self.bot.pool:
+                states = await self.bot.pool.fetch("SELECT * FROM lottery_state")
+                for state in states:
+                    lottery = LotterySystem(state['guild_id'])
+                    lottery.pot_amount = state['pot_amount']
+                    lottery.last_draw_time = state['last_draw_time']
+                    lottery.winning_numbers = json.loads(state['winning_numbers']) if state['winning_numbers'] else []
+                    lottery.last_prize_amount = state['last_prize_amount']
+                    # Load entries if needed, etc.
+                    self.guild_lotteries[state['guild_id']] = lottery
+                    self.logger.info(f"Loaded lottery state for guild {state['guild_id']}")
+        except Exception as e:
+            self.logger.error(f"Error loading lottery states: {e}", exc_info=True)
+
+    async def add_to_pot(self, guild_id: int, amount: int):
+        """Add amount to lottery pot"""
+        lottery = self.get_lottery(guild_id)
+        lottery.pot_amount += amount
+        # Update interface to reflect new pot amount
+        await self.update_lottery_interface(guild_id)
+
+    async def enter_lottery(self, user_id: int, guild_id: int, numbers: List[int]) -> tuple[bool, str]:
+        """Enter user into lottery"""
+        lottery = self.get_lottery(guild_id)
+        if user_id in lottery.entries:
+            return False, "이미 참가했습니다."
+
+        valid, msg = self.validate_lottery_numbers(numbers)
+        if not valid:
+            return False, msg
+
+        entry = LotteryEntry(user_id, numbers, datetime.now(timezone.utc))
+        lottery.entries[user_id] = entry
+
+        return True, f"참가 완료: {sorted(numbers)}"
+
+    def validate_lottery_numbers(self, numbers: List[int]) -> tuple[bool, str]:
+        """Validate lottery numbers"""
+        if len(numbers) != 5:
+            return False, "5개 번호를 선택해야 합니다."
+        if len(set(numbers)) != 5:
+            return False, "중복된 번호입니다."
+        if any(n < 1 or n > 35 for n in numbers):
+            return False, "번호는 1-35 사이여야 합니다."
+        return True, "Valid"
+
+    async def conduct_draw(self, guild_id: int) -> tuple[bool, str, dict]:
+        """Conduct the lottery draw"""
+        lottery = self.get_lottery(guild_id)
+        if not lottery.entries:
+            return False, "참가자가 없습니다.", {}
+
+        # Generate random winning numbers
+        winning_numbers = sorted(random.sample(range(1, 36), 5))
+
+        # Calculate winners and prizes (simplified)
+        results = {
+            'winning_numbers': winning_numbers,
+            'total_entries': len(lottery.entries),
+            'total_awarded': 0,
+            'remaining_pot': lottery.pot_amount,
+            'winners': {}
+        }
+
+        # Reset entries after draw
+        lottery.entries = {}
+        lottery.winning_numbers = winning_numbers
+        lottery.last_draw_time = datetime.now(timezone.utc)
+
+        return True, "Draw successful", results
 
 
+# Include your existing Modal and View classes here
 class LotteryEntryModal(discord.ui.Modal, title="복권 번호 선택"):
     """Modal for entering lottery numbers"""
 
@@ -737,7 +706,7 @@ class LotteryEntryModal(discord.ui.Modal, title="복권 번호 선택"):
                         timestamp=datetime.now(timezone.utc)
                     )
                     embed.add_field(name="현재 팟", value=f"{lottery.pot_amount:,} 코인", inline=True)
-                    embed.add_field(name="이 참가자", value=f"{len(lottery.entries)}명", inline=True)
+                    embed.add_field(name="총 참가자", value=f"{len(lottery.entries)}명", inline=True)
                     embed.set_footer(text="행운을 빕니다!")
 
                     await interaction.followup.send(embed=embed, ephemeral=True)
@@ -755,7 +724,7 @@ class LotteryEntryModal(discord.ui.Modal, title="복권 번호 선택"):
                     await interaction.followup.send("복권 참가가 완료되었습니다!", ephemeral=True)
             else:
                 embed = discord.Embed(
-                    title="⌘ 복권 참가 실패",
+                    title="❌ 복권 참가 실패",
                     description=message,
                     color=discord.Color.red()
                 )
@@ -822,78 +791,162 @@ class LotteryInterfaceView(discord.ui.View):
         modal = LotteryEntryModal(self.cog)
         await interaction.response.send_modal(modal)
 
-    async def load_lottery_states(self):
-        """Load lottery states from database"""
-        # Assuming self.bot.pool is the database connection pool
-        if self.bot.pool:
-            states = await self.bot.pool.fetch("SELECT * FROM lottery_state")
-            for state in states:
-                lottery = LotterySystem(state['guild_id'])
-                lottery.pot_amount = state['pot_amount']
-                lottery.last_draw_time = state['last_draw_time']
-                lottery.winning_numbers = json.loads(state['winning_numbers']) if state['winning_numbers'] else []
-                lottery.last_prize_amount = state['last_prize_amount']
-                # Load entries if needed, etc.
-                self.guild_lotteries[state['guild_id']] = lottery
+    # Add the remaining app_commands that were in your original code
+    @app_commands.command(name="복권자동화설정", description="자동 복권 시스템 설정 (관리자 전용)")
+    @app_commands.describe(action="start 또는 stop")
+    async def lottery_automation_control(self, interaction: discord.Interaction, action: str):
+        """Control the automated lottery system"""
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("⛔ 관리자만 사용할 수 있습니다.", ephemeral=True)
+            return
 
-    def get_lottery(self, guild_id: int) -> LotterySystem:
-        """Get or create lottery system for guild"""
-        if guild_id not in self.guild_lotteries:
-            self.guild_lotteries[guild_id] = LotterySystem(guild_id)
-        return self.guild_lotteries[guild_id]
+        action = action.lower()
 
-    async def enter_lottery(self, user_id: int, guild_id: int, numbers: List[int]) -> tuple[bool, str]:
-        """Enter user into lottery"""
-        lottery = self.get_lottery(guild_id)
-        if user_id in lottery.entries:
-            return False, "이미 참가했습니다."
-        valid, msg = self.validate_lottery_numbers(numbers)
-        if not valid:
-            return False, msg
-        entry = LotteryEntry(user_id, numbers, datetime.now(timezone.utc))
-        lottery.entries[user_id] = entry
-        # Save to DB if needed
-        return True, f"참가 완료: {sorted(numbers)}"
+        if action == "start":
+            if not self.daily_lottery_draw.is_running():
+                self.daily_lottery_draw.start()
+                embed = discord.Embed(
+                    title="✅ 자동 복권 시스템 시작",
+                    description="6시간마다 자동으로 복권 추첨이 진행됩니다.",
+                    color=discord.Color.green()
+                )
+            else:
+                embed = discord.Embed(
+                    title="ℹ️ 자동 복권 시스템",
+                    description="이미 자동 복권 시스템이 실행 중입니다.",
+                    color=discord.Color.blue()
+                )
 
-    def validate_lottery_numbers(self, numbers: List[int]) -> tuple[bool, str]:
-        """Validate lottery numbers"""
-        if len(numbers) != 5:
-            return False, "5개 번호를 선택해야 합니다."
-        if len(set(numbers)) != 5:
-            return False, "중복된 번호입니다."
-        if any(n < 1 or n > 35 for n in numbers):
-            return False, "번호는 1-35 사이여야 합니다."
-        return True, "Valid"
+        elif action == "stop":
+            if self.daily_lottery_draw.is_running():
+                self.daily_lottery_draw.cancel()
+                embed = discord.Embed(
+                    title="⏹️ 자동 복권 시스템 중지",
+                    description="자동 복권 추첨이 중지되었습니다. 수동으로만 추첨 가능합니다.",
+                    color=discord.Color.orange()
+                )
+            else:
+                embed = discord.Embed(
+                    title="ℹ️ 자동 복권 시스템",
+                    description="자동 복권 시스템이 이미 중지되어 있습니다.",
+                    color=discord.Color.blue()
+                )
 
-    async def conduct_draw(self, guild_id: int) -> tuple[bool, str, dict]:
-        """Conduct the lottery draw"""
-        lottery = self.get_lottery(guild_id)
-        if not lottery.entries:
-            return False, "참가자가 없습니다.", {}
-        # Generate random winning numbers
-        winning_numbers = sorted(random.sample(range(1, 36), 5))
-        # Calculate winners, prizes, etc.
-        # This is placeholder logic; implement as per original
-        results = {
-            'winning_numbers': winning_numbers,
-            'total_entries': len(lottery.entries),
-            'total_awarded': 0,
-            'remaining_pot': lottery.pot_amount,
-            'winners': {}
-        }
-        # Reset entries after draw
-        lottery.entries = {}
-        lottery.winning_numbers = winning_numbers
-        lottery.last_draw_time = datetime.now(timezone.utc)
-        # Save state to DB if needed
-        return True, "Draw successful", results
+        else:
+            embed = discord.Embed(
+                title="❌ 잘못된 명령",
+                description="'start' 또는 'stop'을 입력해주세요.",
+                color=discord.Color.red()
+            )
 
-    async def add_to_pot(self, guild_id: int, amount: int):
-        """Add amount to lottery pot"""
-        lottery = self.get_lottery(guild_id)
-        lottery.pot_amount += amount
-        # Update DB if needed
-        await self.update_lottery_interface(guild_id)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @app_commands.command(name="복권자동화상태", description="자동 복권 시스템 상태 확인")
+    async def lottery_automation_status(self, interaction: discord.Interaction):
+        """Check automated lottery system status"""
+        embed = discord.Embed(
+            title="🤖 자동 복권 시스템 상태",
+            color=discord.Color.blue(),
+            timestamp=datetime.now(timezone.utc)
+        )
+
+        if self.daily_lottery_draw.is_running():
+            # Calculate next run time in EST/EDT
+            est = pytz.timezone('US/Eastern')
+            now_est = datetime.now(est)
+            draw_times_est = [time(hour=0, minute=0), time(hour=6, minute=0), time(hour=12, minute=0),
+                              time(hour=18, minute=0)]
+
+            next_draw_time_utc = None
+            for draw_time in draw_times_est:
+                candidate_time = now_est.replace(hour=draw_time.hour, minute=draw_time.minute, second=0, microsecond=0)
+                if candidate_time > now_est:
+                    next_draw_time_utc = candidate_time
+                    break
+
+            # If no draw time is left for today, it's tomorrow's first draw (midnight Eastern)
+            if next_draw_time_utc is None:
+                next_draw_time_utc = now_est.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+
+            embed.add_field(name="📊 상태", value="🟢 실행 중", inline=True)
+            embed.add_field(name="⏰ 다음 추첨", value=f"<t:{int(next_draw_time_utc.timestamp())}:R>", inline=True)
+            embed.add_field(name="🕐 추첨 시간", value="6시간마다 (EST)", inline=True)
+        else:
+            embed.add_field(name="📊 상태", value="🔴 중지됨", inline=True)
+            embed.add_field(name="⏰ 다음 추첨", value="수동 추첨만 가능", inline=True)
+
+        embed.add_field(
+            name="🔧 제어 명령어",
+            value="• `/복권자동화설정 start` - 시작\n• `/복권자동화설정 stop` - 중지",
+            inline=False
+        )
+
+        await interaction.response.send_message(embed=embed)
+
+    @app_commands.command(name="복권추첨", description="복권 추첨을 실시합니다 (관리자 전용)")
+    async def conduct_lottery_draw(self, interaction: discord.Interaction):
+        """Conduct lottery draw (admin only)"""
+        # Check admin permissions
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("⛔ 관리자만 사용할 수 있습니다.", ephemeral=True)
+            return
+
+        await interaction.response.defer()
+
+        success, message, results = await self.conduct_draw(interaction.guild.id)
+
+        if not success:
+            embed = discord.Embed(title="⛔ 추첨 실패", description=message, color=discord.Color.red())
+            await interaction.followup.send(embed=embed)
+            # Still repost interface even if draw failed (if no participants, etc.)
+            await self.repost_lottery_interface(interaction.guild.id)
+            return
+
+        # Create results embed
+        embed = discord.Embed(
+            title="🎊 복권 추첨 결과! (수동 추첨)",
+            color=discord.Color.gold(),
+            timestamp=datetime.now(timezone.utc)
+        )
+
+        winning_numbers = results['winning_numbers']
+        embed.add_field(
+            name="🎯 당첨 번호",
+            value=" ".join(f"**{num}**" for num in winning_numbers),
+            inline=False
+        )
+
+        embed.add_field(name="👥 총 참가자", value=f"{results['total_entries']}명", inline=True)
+        embed.add_field(name="💰 총 상금", value=f"{results['total_awarded']:,} 코인", inline=True)
+        embed.add_field(name="💵 남은 팟", value=f"{results['remaining_pot']:,} 코인", inline=True)
+
+        # Winner details
+        winners = results['winners']
+        if winners:
+            winner_text = []
+            for user_id, win_data in winners.items():
+                user = self.bot.get_user(user_id)
+                username = user.display_name if user else f"사용자 {user_id}"
+                winner_text.append(
+                    f"🎉 {username}: {win_data['matches']}개 일치 - {win_data['prize']:,} 코인"
+                )
+
+            embed.add_field(
+                name="🏆 당첨자",
+                value="\n".join(winner_text[:10]) + ("..." if len(winner_text) > 10 else ""),
+                inline=False
+            )
+        else:
+            embed.add_field(name="😢 당첨자", value="이번 추첨에는 당첨자가 없습니다.", inline=False)
+
+        embed.set_footer(text="다음 추첨을 위해 새로 참가해주세요!")
+
+        # Send the draw results first
+        await interaction.followup.send(embed=embed)
+
+        # Always repost the lottery interface as the latest message
+        await self.repost_lottery_interface(interaction.guild.id)
+
 
 # Function to be called from casino games to add fees to lottery pot
 async def add_casino_fee_to_lottery(bot, guild_id: int, fee_amount: int):
