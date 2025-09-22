@@ -353,31 +353,38 @@ class LotteryCog(commands.Cog):
             try:
                 # Calculate next draw time in EST/EDT
                 est = pytz.timezone('US/Eastern')
-                now_est = datetime.now(est)
+                now_utc = datetime.now(timezone.utc)
+                now_est = now_utc.astimezone(est)
 
                 # Draw times in Eastern (12 AM, 6 AM, 12 PM, 6 PM)
-                draw_times_est = [time(hour=0, minute=0), time(hour=6, minute=0), time(hour=12, minute=0),
-                                  time(hour=18, minute=0)]
+                # Convert to UTC hours for comparison
+                draw_times_utc = [5, 11, 17, 23]  # UTC equivalents
 
-                next_draw_time_est = None
-                for draw_time in draw_times_est:
-                    candidate_time = now_est.replace(hour=draw_time.hour, minute=draw_time.minute, second=0,
-                                                     microsecond=0)
-                    if candidate_time > now_est:
-                        next_draw_time_est = candidate_time
+                current_utc_hour = now_utc.hour
+                next_draw_hour_utc = None
+
+                # Find next draw time
+                for hour in draw_times_utc:
+                    if hour > current_utc_hour:
+                        next_draw_hour_utc = hour
                         break
 
-                # If no draw time left today, use tomorrow's first draw (midnight)
-                if next_draw_time_est is None:
-                    next_draw_time_est = now_est.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+                # If no draw time left today, use tomorrow's first draw
+                if next_draw_hour_utc is None:
+                    next_draw_hour_utc = draw_times_utc[0]  # 5 UTC (midnight EST)
+                    next_draw_time_utc = now_utc.replace(hour=next_draw_hour_utc, minute=0, second=0,
+                                                         microsecond=0) + timedelta(days=1)
+                else:
+                    next_draw_time_utc = now_utc.replace(hour=next_draw_hour_utc, minute=0, second=0, microsecond=0)
 
                 embed.add_field(
                     name="⏰ 다음 자동 추첨",
-                    value=f"<t:{int(next_draw_time_est.timestamp())}:R>",
+                    value=f"<t:{int(next_draw_time_utc.timestamp())}:R>\n({next_draw_time_utc.strftime('%H:%M UTC')})",
                     inline=True
                 )
+
             except Exception as e:
-                self.logger.warning(f"Failed to calculate next draw time: {e}")
+                self.logger.error(f"Next draw time calculation failed: {e}", exc_info=True)
                 embed.add_field(
                     name="⏰ 다음 자동 추첨",
                     value="6시간마다 자동 추첨",
