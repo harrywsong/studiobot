@@ -1081,7 +1081,7 @@ class ScrimCog(commands.Cog):
         """Waits for the bot to be ready before starting tasks."""
         await self.bot.wait_until_ready()
         await self.load_scrims_data()
-        await self.migrate_timezone_data()  # Add this line
+        # await self.migrate_timezone_data()  # Add this line
         await self.load_map_pools()
         self.setup_persistent_views()
         await self.setup_scrim_panels()
@@ -1114,24 +1114,21 @@ class ScrimCog(commands.Cog):
             if os.path.exists(self.scrims_file):
                 with open(self.scrims_file, 'r', encoding='utf-8') as f:
                     data = json.load(f)
-                    eastern = pytz.timezone('America/New_York')
 
                     for scrim_id, scrim_data in data.items():
-                        # Load stored times - they should be stored as UTC ISO strings
+                        # Parse datetime strings and keep them as UTC
                         start_time_str = scrim_data['start_time']
                         created_at_str = scrim_data['created_at']
 
-                        # Parse the datetime strings
-                        start_time = datetime.fromisoformat(start_time_str)
-                        created_at = datetime.fromisoformat(created_at_str)
+                        start_time = datetime.fromisoformat(start_time_str.replace('Z', '+00:00'))
+                        created_at = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
 
-                        # If no timezone info, assume they were stored as UTC
+                        # Ensure they're UTC timezone aware
                         if start_time.tzinfo is None:
-                            start_time = pytz.utc.localize(start_time)
+                            start_time = start_time.replace(tzinfo=pytz.UTC)
                         if created_at.tzinfo is None:
-                            created_at = pytz.utc.localize(created_at)
+                            created_at = created_at.replace(tzinfo=pytz.UTC)
 
-                        # Store as timezone-aware UTC times
                         scrim_data['start_time'] = start_time
                         scrim_data['created_at'] = created_at
 
@@ -1139,7 +1136,6 @@ class ScrimCog(commands.Cog):
                 self.logger.info("Successfully loaded scrims data.")
         except Exception as e:
             self.logger.error(f"Error loading scrims data: {e}", exc_info=True)
-
     async def save_scrims_data(self):
         """Saves scrims data to file asynchronously."""
         try:
@@ -1493,8 +1489,12 @@ class ScrimCog(commands.Cog):
                     continue
 
                 start_time = scrim_data['start_time']
-                if start_time.tzinfo is None:
-                    start_time = eastern.localize(start_time)
+                # Convert UTC stored time to Eastern for comparison
+                if start_time.tzinfo == pytz.utc:
+                    start_time = start_time.astimezone(eastern)
+                elif start_time.tzinfo is None:
+                    # If somehow no timezone, assume it's UTC
+                    start_time = pytz.utc.localize(start_time).astimezone(eastern)
 
                 time_until_start = start_time - now
                 is_full = len(scrim_data['participants']) >= scrim_data['max_players']
