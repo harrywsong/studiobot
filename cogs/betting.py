@@ -347,7 +347,7 @@ class SimpleBettingCog(commands.Cog):
 
     async def place_bet(self, user_id: int, guild_id: int, event_id: int,
                         option_index: int, amount: int) -> Dict:
-        """베팅 하기"""
+        """베팅 하기 (같은 옵션에 추가 베팅 허용)"""
         try:
             # 이벤트가 활성화되어 있는지 확인
             event = await self.bot.pool.fetchrow("""
@@ -373,12 +373,16 @@ class SimpleBettingCog(commands.Cog):
             # 기존 베팅 확인
             existing_bet = await self.get_user_bet(user_id, event_id)
             if existing_bet:
-                options = json.loads(event['options'])
-                option_name = options[existing_bet['option_index']]
-                return {
-                    'success': False,
-                    'reason': f'이미 **{option_name}**에 **{existing_bet["amount"]:,}** 코인을 베팅하셨습니다.\n한 이벤트당 하나의 옵션에만 베팅할 수 있습니다.'
-                }
+                # 다른 옵션에 베팅하려는 경우 거부
+                if existing_bet['option_index'] != option_index:
+                    options = json.loads(event['options'])
+                    existing_option_name = options[existing_bet['option_index']]
+                    new_option_name = options[option_index]
+                    return {
+                        'success': False,
+                        'reason': f'이미 **{existing_option_name}**에 **{existing_bet["amount"]:,}** 코인을 베팅하셨습니다.\n'
+                                  f'**{new_option_name}**에는 베팅할 수 없습니다. 같은 옵션에만 추가 베팅이 가능합니다.'
+                    }
 
             # 코인 확인
             coins_cog = self.bot.get_cog('CoinsCog')
@@ -399,21 +403,45 @@ class SimpleBettingCog(commands.Cog):
             if not await coins_cog.remove_coins(user_id, guild_id, amount, "betting", f"베팅 - 이벤트 {event_id}"):
                 return {'success': False, 'reason': '코인 차감에 실패했습니다'}
 
-            # 베팅 기록
-            await self.bot.pool.execute("""
-                INSERT INTO betting_bets_v2 (event_id, user_id, guild_id, option_index, amount)
-                VALUES ($1, $2, $3, $4, $5)
-            """, event_id, user_id, guild_id, option_index, amount)
+            # 기존 베팅이 있으면 업데이트, 없으면 새로 생성
+            if existing_bet:
+                # 기존 베팅에 추가
+                new_total_amount = existing_bet['amount'] + amount
+                await self.bot.pool.execute("""
+                    UPDATE betting_bets_v2 
+                    SET amount = $1, placed_at = NOW()
+                    WHERE user_id = $2 AND event_id = $3
+                """, new_total_amount, user_id, event_id)
 
-            # 베팅 디스플레이 업데이트
+                # 반환값에 총 베팅 금액과 추가된 금액 모두 포함
+                options = json.loads(event['options'])
+                return {
+                    'success': True,
+                    'option_name': options[option_index],
+                    'added_amount': amount,
+                    'total_bet_amount': new_total_amount,
+                    'remaining_coins': await coins_cog.get_user_coins(user_id, guild_id),
+                    'is_additional_bet': True
+                }
+            else:
+                # 새 베팅 기록
+                await self.bot.pool.execute("""
+                    INSERT INTO betting_bets_v2 (event_id, user_id, guild_id, option_index, amount)
+                    VALUES ($1, $2, $3, $4, $5)
+                """, event_id, user_id, guild_id, option_index, amount)
+
+                options = json.loads(event['options'])
+                return {
+                    'success': True,
+                    'option_name': options[option_index],
+                    'added_amount': amount,
+                    'total_bet_amount': amount,
+                    'remaining_coins': await coins_cog.get_user_coins(user_id, guild_id),
+                    'is_additional_bet': False
+                }
+
+            # 베팅 디스플레이 업데이트는 두 경우 모두에서 실행
             await self.update_betting_display(event_id)
-
-            options = json.loads(event['options'])
-            return {
-                'success': True,
-                'option_name': options[option_index],
-                'remaining_coins': await coins_cog.get_user_coins(user_id, guild_id)
-            }
 
         except Exception as e:
             self.logger.error(f"베팅 실패: {e}")
@@ -940,7 +968,7 @@ class BettingEventView(discord.ui.View):
         await self.handle_bet_option(interaction, 7)
 
     async def handle_bet_option(self, interaction: discord.Interaction, option_index: int):
-        """베팅 옵션 버튼 클릭 처리"""
+        """베팅 옵션 버튼 클릭 처리 (추가 베팅 허용)"""
         try:
             betting_cog = interaction.client.get_cog('SimpleBettingCog')
             if not betting_cog:
@@ -954,18 +982,31 @@ class BettingEventView(discord.ui.View):
 
             # 기존 베팅 확인
             existing_bet = await betting_cog.get_user_bet(interaction.user.id, self.event_id)
-            if existing_bet:
-                option_name = self.options[existing_bet['option_index']]
-                await interaction.response.send_message(
-                    f"❌ 이미 **{option_name}**에 **{existing_bet['amount']:,}** 코인을 베팅하셨습니다.\n"
-                    f"한 이벤트당 하나의 옵션에만 베팅할 수 있습니다.",
-                    ephemeral=True
-                )
-                return
 
-            # 베팅 모달 표시
-            modal = BetAmountModal(self.event_id, option_index, self.options[option_index])
-            await interaction.response.send_modal(modal)
+            if existing_bet:
+                if existing_bet['option_index'] != option_index:
+                    # 다른 옵션에 베팅하려는 경우
+                    existing_option_name = self.options[existing_bet['option_index']]
+                    new_option_name = self.options[option_index]
+                    await interaction.response.send_message(
+                        f"❌ 이미 **{existing_option_name}**에 **{existing_bet['amount']:,}** 코인을 베팅하셨습니다.\n"
+                        f"**{new_option_name}**에는 베팅할 수 없습니다. 같은 옵션에만 추가 베팅이 가능합니다.",
+                        ephemeral=True
+                    )
+                    return
+                else:
+                    # 같은 옵션에 추가 베팅하는 경우
+                    modal = BetAmountModal(
+                        self.event_id,
+                        option_index,
+                        self.options[option_index],
+                        existing_amount=existing_bet['amount']
+                    )
+                    await interaction.response.send_modal(modal)
+            else:
+                # 첫 베팅인 경우
+                modal = BetAmountModal(self.event_id, option_index, self.options[option_index])
+                await interaction.response.send_modal(modal)
 
         except Exception as e:
             betting_cog.logger.error(f"베팅 옵션 처리 오류: {e}")
@@ -973,18 +1014,53 @@ class BettingEventView(discord.ui.View):
 
 
 class BetAmountModal(discord.ui.Modal):
-    def __init__(self, event_id: int, option_index: int, option_name: str):
-        super().__init__(title=f"베팅하기: {option_name}")
+    def __init__(self, event_id: int, option_index: int, option_name: str, existing_amount: int = 0):
+        title = f"베팅하기: {option_name}"
+        if existing_amount > 0:
+            title = f"추가 베팅: {option_name}"
+
+        super().__init__(title=title)
         self.event_id = event_id
         self.option_index = option_index
         self.option_name = option_name
+        self.existing_amount = existing_amount
 
-    amount_input = discord.ui.TextInput(
-        label="베팅할 코인 수량",
-        placeholder="베팅할 코인을 입력하세요 (최소 10 코인)",
-        required=True,
-        max_length=10
-    )
+        # 기존 베팅이 있으면 플레이스홀더와 라벨 수정
+        if existing_amount > 0:
+            placeholder = f"추가로 베팅할 코인을 입력하세요 (현재: {existing_amount:,} 코인)"
+            label = "추가 베팅할 코인 수량"
+        else:
+            placeholder = "베팅할 코인을 입력하세요 (최소 10 코인)"
+            label = "베팅할 코인 수량"
+
+    # amount_input을 동적으로 생성하기 위해 __init__에서 추가
+    def __init__(self, event_id: int, option_index: int, option_name: str, existing_amount: int = 0):
+        self.event_id = event_id
+        self.option_index = option_index
+        self.option_name = option_name
+        self.existing_amount = existing_amount
+
+        title = f"베팅하기: {option_name}"
+        if existing_amount > 0:
+            title = f"추가 베팅: {option_name}"
+
+        super().__init__(title=title)
+
+        # 동적으로 input 필드 생성
+        if existing_amount > 0:
+            placeholder = f"추가로 베팅할 코인을 입력하세요 (현재: {existing_amount:,} 코인)"
+            label = "추가 베팅할 코인 수량"
+        else:
+            placeholder = "베팅할 코인을 입력하세요 (최소 10 코인)"
+            label = "베팅할 코인 수량"
+
+        self.amount_input = discord.ui.TextInput(
+            label=label,
+            placeholder=placeholder,
+            required=True,
+            max_length=10
+        )
+        self.add_item(self.amount_input)
 
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
@@ -998,6 +1074,14 @@ class BetAmountModal(discord.ui.Modal):
 
             if amount > 1000000:  # 최대 베팅 제한
                 await interaction.followup.send("최대 베팅 금액은 1,000,000 코인입니다", ephemeral=True)
+                return
+
+            # 총 베팅 금액이 너무 클 경우 제한 (선택사항)
+            total_would_be = self.existing_amount + amount
+            if total_would_be > 2000000:  # 총 베팅 한도
+                await interaction.followup.send(
+                    f"한 옵션당 총 베팅 한도는 2,000,000 코인입니다. (현재: {self.existing_amount:,}, 추가하려는 금액: {amount:,})",
+                    ephemeral=True)
                 return
 
             betting_cog = interaction.client.get_cog('SimpleBettingCog')
@@ -1014,14 +1098,26 @@ class BetAmountModal(discord.ui.Modal):
                     title="✅ 베팅 성공!",
                     color=discord.Color.green()
                 )
-                embed.add_field(
-                    name="베팅 정보",
-                    value=f"**옵션**: {result['option_name']}\n"
-                          f"**금액**: {amount:,} 코인\n"
-                          f"**잔여 코인**: {result['remaining_coins']:,} 코인",
-                    inline=False
-                )
-                embed.set_footer(text="베팅이 완료되었습니다. 결과를 기다려주세요!")
+
+                if result.get('is_additional_bet', False):
+                    embed.add_field(
+                        name="추가 베팅 정보",
+                        value=f"**옵션**: {result['option_name']}\n"
+                              f"**추가된 금액**: {result['added_amount']:,} 코인\n"
+                              f"**총 베팅 금액**: {result['total_bet_amount']:,} 코인\n"
+                              f"**잔여 코인**: {result['remaining_coins']:,} 코인",
+                        inline=False
+                    )
+                    embed.set_footer(text="기존 베팅에 추가되었습니다. 결과를 기다려주세요!")
+                else:
+                    embed.add_field(
+                        name="베팅 정보",
+                        value=f"**옵션**: {result['option_name']}\n"
+                              f"**금액**: {result['added_amount']:,} 코인\n"
+                              f"**잔여 코인**: {result['remaining_coins']:,} 코인",
+                        inline=False
+                    )
+                    embed.set_footer(text="베팅이 완료되었습니다. 결과를 기다려주세요!")
 
                 await interaction.followup.send(embed=embed, ephemeral=True)
             else:
@@ -1031,7 +1127,6 @@ class BetAmountModal(discord.ui.Modal):
             await interaction.followup.send("올바른 숫자를 입력해주세요", ephemeral=True)
         except Exception as e:
             await interaction.followup.send(f"오류: {e}", ephemeral=True)
-
 
 async def setup(bot):
     await bot.add_cog(SimpleBettingCog(bot))
