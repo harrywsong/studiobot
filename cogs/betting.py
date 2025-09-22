@@ -31,6 +31,10 @@ class SimpleBettingCog(commands.Cog):
         await self.setup_database()
         self.cleanup_task.start()
         await self.setup_control_panel()
+
+        # Re-register existing betting views after restart
+        await self.re_register_betting_views()
+
         self.logger.info("베팅 시스템 준비 완료!")
 
     async def setup_database(self):
@@ -104,6 +108,65 @@ class SimpleBettingCog(commands.Cog):
         return member.guild_permissions.administrator
 
     # Replace the existing create_betting_event method with this updated version
+
+    async def re_register_betting_views(self):
+        """Re-register all betting views after bot restart"""
+        try:
+            # Get all active betting events
+            events = await self.bot.pool.fetch("""
+                SELECT id, message_id, channel_id, options, status 
+                FROM betting_events_v2 
+                WHERE status IN ('active', 'closed') AND message_id IS NOT NULL
+            """)
+
+            for event in events:
+                try:
+                    # Get the channel and message
+                    channel = self.bot.get_channel(event['channel_id'])
+                    if not channel:
+                        continue
+
+                    # Try to fetch the message
+                    try:
+                        message = await channel.fetch_message(event['message_id'])
+                    except discord.NotFound:
+                        # Message doesn't exist anymore, skip
+                        continue
+
+                    # Parse options
+                    options = json.loads(event['options'])
+
+                    # Create new view
+                    view = BettingEventView(event['id'], options)
+
+                    # Update button labels to match options
+                    for i, child in enumerate(view.children):
+                        if hasattr(child, 'custom_id') and child.custom_id.startswith('bet_'):
+                            option_index = int(child.custom_id.split('_')[1])
+                            if option_index < len(options):
+                                option_name = options[option_index][:15]
+                                child.label = f"{option_index + 1}. {option_name}"
+                                child.disabled = False
+                            else:
+                                child.disabled = True
+                                child.style = discord.ButtonStyle.gray
+
+                    # If event is closed, disable all buttons
+                    if event['status'] == 'closed':
+                        for child in view.children:
+                            if hasattr(child, 'disabled'):
+                                child.disabled = True
+
+                    # Re-register the view with the bot
+                    self.bot.add_view(view, message_id=message.id)
+
+                    self.logger.info(f"Re-registered view for event {event['id']}")
+
+                except Exception as e:
+                    self.logger.error(f"Failed to re-register view for event {event['id']}: {e}")
+
+        except Exception as e:
+            self.logger.error(f"Failed to re-register betting views: {e}")
 
     async def create_betting_event_with_end_time(self, guild_id: int, title: str, options: List[str],
                                                  creator_id: int, end_time: datetime) -> Dict:
