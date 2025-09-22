@@ -586,14 +586,14 @@ class CustomTimeModal(discord.ui.Modal, title="사용자 지정 시간 입력"):
                 hour=time_obj.hour, minute=time_obj.minute, second=0, microsecond=0
             )
 
-            # If the calculated time is in the past (in that timezone), assume it's for the next day
-            if potential_dt <= now_in_target_tz:
+            # FIXED: More lenient check - only add a day if the time is more than 1 hour in the past
+            # This prevents issues with small time differences and timezone conversions
+            if potential_dt <= now_in_target_tz - timedelta(hours=1):
                 potential_dt += timedelta(days=1)
 
             return potential_dt
         except (ValueError, pytz.UnknownTimeZoneError):
             return None  # Return None if parsing fails
-
 class PlayerCountSelectView(discord.ui.View):
     """플레이어 수 선택 뷰"""
 
