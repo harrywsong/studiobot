@@ -265,7 +265,7 @@ class LotteryCog(commands.Cog):
             self.logger.error(f"복권 인터페이스 설정 실패: {e}", exc_info=True)
 
     def create_lottery_interface_embed(self, target_guild_id: int = None) -> discord.Embed:
-        """Create the main lottery interface embed"""
+        """Create the main lottery interface embed with fixed automation display"""
         # If no target guild specified, try to determine from channel context or use first available
         if target_guild_id is None:
             if self.lottery_interface_message:
@@ -312,12 +312,17 @@ class LotteryCog(commands.Cog):
             inline=True
         )
 
-        # Add automation status
-        automation_status = "🟢 자동 추첨 활성화" if hasattr(self,
-                                                     'daily_lottery_draw') and self.daily_lottery_draw.is_running() else "🔴 수동 추첨만"
+        # FIXED: Check automation status properly
+        is_automated = (hasattr(self, 'daily_lottery_draw') and
+                        self.daily_lottery_draw is not None and
+                        not self.daily_lottery_draw.failed() and
+                        self.daily_lottery_draw.is_running())
+
+        automation_status = "🟢 자동 추첨 활성화" if is_automated else "🔴 수동 추첨만"
+
         embed.add_field(
             name="🤖 추첨 시스템",
-            value=f"{automation_status}\n6시간마다 자동 추첨",
+            value=f"{automation_status}\n{'6시간마다 자동 추첨' if is_automated else '관리자 수동 추첨'}",
             inline=True
         )
 
@@ -348,8 +353,8 @@ class LotteryCog(commands.Cog):
                 inline=True
             )
 
-        # Show next automated draw time if automation is active
-        if hasattr(self, 'daily_lottery_draw') and self.daily_lottery_draw.is_running():
+        # FIXED: Show next automated draw time only if automation is truly active
+        if is_automated:
             try:
                 # Calculate next draw time in EST/EDT
                 est = pytz.timezone('US/Eastern')
@@ -390,6 +395,13 @@ class LotteryCog(commands.Cog):
                     value="6시간마다 자동 추첨",
                     inline=True
                 )
+        else:
+            # Show manual draw information when automation is off
+            embed.add_field(
+                name="⏰ 추첨 방식",
+                value="수동 추첨만 가능\n관리자가 직접 실행",
+                inline=True
+            )
 
         embed.add_field(
             name="🏆 상금 구조",
@@ -406,7 +418,6 @@ class LotteryCog(commands.Cog):
         embed.set_footer(text="크래시 게임 수수료가 자동으로 팟에 추가됩니다")
 
         return embed
-
     async def update_lottery_interface(self, guild_id: int = None):
         """Update the lottery interface embed with current data"""
         if not self.lottery_interface_message:
