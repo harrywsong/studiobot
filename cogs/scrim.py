@@ -5,7 +5,7 @@ from discord.ext import commands, tasks
 from discord import app_commands
 import json
 import os
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date
 import pytz
 import random
 import asyncio
@@ -252,6 +252,225 @@ class GameModeSelectView(discord.ui.View):
                 pass
 
 
+class ScrimEndModal(discord.ui.Modal, title="내전 종료 정보 입력"):
+    def __init__(self, bot, guild_id: int):
+        super().__init__(timeout=300)
+        self.bot = bot
+        self.guild_id = guild_id
+        self.logger = get_logger("내부 매치")
+
+        # Date input (defaults to today)
+        today = datetime.now(pytz.timezone('America/New_York')).strftime('%Y-%m-%d')
+        self.date_input = discord.ui.TextInput(
+            label="날짜 (YYYY-MM-DD)",
+            placeholder="예: 2025-01-15",
+            default=today,
+            required=True,
+            style=discord.TextStyle.short
+        )
+        self.add_item(self.date_input)
+
+        # Games played
+        self.games_input = discord.ui.TextInput(
+            label="플레이한 게임 수",
+            placeholder="예: 3",
+            required=True,
+            style=discord.TextStyle.short
+        )
+        self.add_item(self.games_input)
+
+        # Winner info
+        self.winner_input = discord.ui.TextInput(
+            label="승리한 게임들 (쉼표로 구분)",
+            placeholder="예: 팀A, 팀B, 팀A (게임 순서대로)",
+            required=True,
+            style=discord.TextStyle.short
+        )
+        self.add_item(self.winner_input)
+
+        # Team composition
+        self.teams_input = discord.ui.TextInput(
+            label="팀 구성 (한 줄에 한 팀, 멘션 사용)",
+            placeholder="팀A: @user1 @user2 @user3\n팀B: @user4 @user5 @user6",
+            required=True,
+            style=discord.TextStyle.paragraph
+        )
+        self.add_item(self.teams_input)
+
+        # Coin settings
+        self.coin_settings_input = discord.ui.TextInput(
+            label="코인 설정 (참가비,승리보너스)",
+            placeholder="예: 10,5 (기본값)",
+            default="10,5",
+            required=False,
+            style=discord.TextStyle.short
+        )
+        self.add_item(self.coin_settings_input)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            await interaction.response.defer(ephemeral=True)
+
+            # Parse and validate inputs
+            try:
+                scrim_date = datetime.strptime(self.date_input.value, '%Y-%m-%d').date()
+            except ValueError:
+                await interaction.followup.send("❌ 잘못된 날짜 형식입니다. YYYY-MM-DD 형식으로 입력해주세요.", ephemeral=True)
+                return
+
+            try:
+                games_played = int(self.games_input.value)
+                if games_played <= 0:
+                    raise ValueError
+            except ValueError:
+                await interaction.followup.send("❌ 유효한 게임 수를 입력해주세요.", ephemeral=True)
+                return
+
+            winners = [w.strip() for w in self.winner_input.value.split(',')]
+            if len(winners) != games_played:
+                await interaction.followup.send(f"❌ 승리자 수({len(winners)})가 게임 수({games_played})와 일치하지 않습니다.",
+                                                ephemeral=True)
+                return
+
+            # Parse team composition
+            teams = {}
+            for line in self.teams_input.value.split('\n'):
+                if ':' in line:
+                    team_name, members = line.split(':', 1)
+                    team_name = team_name.strip()
+                    # Extract mentions from the members string
+                    import re
+                    mentions = re.findall(r'<@!?(\d+)>', members)
+                    teams[team_name] = mentions
+
+            if len(teams) < 2:
+                await interaction.followup.send("❌ 최소 2개의 팀이 필요합니다.", ephemeral=True)
+                return
+
+            # Parse coin settings
+            try:
+                coin_values = self.coin_settings_input.value.split(',')
+                participation_coins = int(coin_values[0].strip()) if coin_values[0].strip() else 10
+                win_bonus = int(coin_values[1].strip()) if len(coin_values) > 1 and coin_values[1].strip() else 5
+            except (ValueError, IndexError):
+                participation_coins = 10
+                win_bonus = 5
+
+            await self.process_scrim_end(interaction, scrim_date, games_played, winners, teams, participation_coins,
+                                         win_bonus)
+
+        except Exception as e:
+            self.logger.error(f"Scrim end modal error: {traceback.format_exc()}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message("❌ 처리 중 오류가 발생했습니다.", ephemeral=True)
+            else:
+                await interaction.followup.send("❌ 처리 중 오류가 발생했습니다.", ephemeral=True)
+
+    async def process_scrim_end(self, interaction, scrim_date, games_played, winners, teams, participation_coins,
+                                win_bonus):
+        """Process the scrim end and distribute coins"""
+        try:
+            scrim_cog = self.bot.get_cog('ScrimCog')
+            if not scrim_cog:
+                await interaction.followup.send("❌ 내전 시스템을 찾을 수 없습니다.", ephemeral=True)
+                return
+
+            # Create scrim record
+            record_id = await scrim_cog.create_scrim_record(
+                guild_id=self.guild_id,
+                date=scrim_date,
+                games_played=games_played,
+                winners=winners,
+                teams=teams,
+                participation_coins=participation_coins,
+                win_bonus=win_bonus,
+                recorded_by=interaction.user.id
+            )
+
+            if record_id:
+                # Distribute coins if casino games are enabled
+                if config.is_feature_enabled(self.guild_id, 'casino_games'):
+                    await self.distribute_coins(teams, winners, participation_coins, win_bonus, interaction)
+
+                # Refresh the scrim panel
+                await scrim_cog.refresh_scrim_panel_bottom(interaction.channel)
+
+                # Send confirmation
+                embed = discord.Embed(
+                    title="✅ 내전이 성공적으로 종료되었습니다!",
+                    description=f"**날짜:** {scrim_date}\n**게임 수:** {games_played}\n**기록 ID:** {record_id}",
+                    color=discord.Color.green()
+                )
+
+                # Add team info
+                for team_name, member_ids in teams.items():
+                    member_mentions = [f"<@{uid}>" for uid in member_ids]
+                    embed.add_field(
+                        name=f"🔵 {team_name}",
+                        value=" ".join(member_mentions) if member_mentions else "없음",
+                        inline=False
+                    )
+
+                # Add game results
+                game_results = "\n".join([f"게임 {i + 1}: {winner}" for i, winner in enumerate(winners)])
+                embed.add_field(name="🏆 게임 결과", value=game_results, inline=False)
+
+                embed.add_field(
+                    name="💰 코인 분배",
+                    value=f"참가비: {participation_coins} 코인\n승리 보너스: {win_bonus} 코인",
+                    inline=False
+                )
+
+                await interaction.followup.send(embed=embed)
+            else:
+                await interaction.followup.send("❌ 내전 기록 저장 중 오류가 발생했습니다.", ephemeral=True)
+
+        except Exception as e:
+            self.logger.error(f"Process scrim end error: {traceback.format_exc()}")
+            await interaction.followup.send("❌ 내전 종료 처리 중 오류가 발생했습니다.", ephemeral=True)
+
+    async def distribute_coins(self, teams, winners, participation_coins, win_bonus, interaction):
+        """Distribute coins to participants"""
+        try:
+            coins_cog = self.bot.get_cog('CoinsCog')
+            if not coins_cog:
+                return
+
+            # Count wins per team
+            team_wins = {}
+            for winner in winners:
+                team_wins[winner] = team_wins.get(winner, 0) + 1
+
+            # Distribute coins to all participants
+            for team_name, member_ids in teams.items():
+                for member_id in member_ids:
+                    try:
+                        user_id = int(member_id)
+                        # Give participation coins to everyone
+                        await coins_cog.add_coins(
+                            user_id,
+                            self.guild_id,
+                            participation_coins,
+                            "scrim_participation",
+                            f"내전 참가 ({team_name})"
+                        )
+
+                        # Give win bonus for each game won
+                        wins = team_wins.get(team_name, 0)
+                        if wins > 0:
+                            bonus_amount = win_bonus * wins
+                            await coins_cog.add_coins(
+                                user_id,
+                                self.guild_id,
+                                bonus_amount,
+                                "scrim_win_bonus",
+                                f"내전 승리 보너스 ({wins}승, {team_name})"
+                            )
+                    except (ValueError, TypeError):
+                        continue
+
+        except Exception as e:
+            self.logger.error(f"Error distributing coins: {traceback.format_exc()}")
 class TierSelectView(discord.ui.View):
     """티어 범위 선택 뷰"""
 
@@ -875,12 +1094,6 @@ class ScrimView(discord.ui.View):
         # Defer getting scrim_data to the interaction time to ensure it's fresh
         self.update_button_states()
 
-    def update_button_states(self):
-        """현재 내전 상태에 따라 버튼 상태 업데이트"""
-        # This method is less reliable for persistent views as scrim_data isn't stored.
-        # Logic will be handled within each button press instead.
-        pass
-
     async def _get_scrim_cog_and_data(self, interaction: discord.Interaction) -> tuple[
         Optional['ScrimCog'], Optional[Dict]]:
         """Helper to get fresh cog and scrim data, and handle errors."""
@@ -899,8 +1112,8 @@ class ScrimView(discord.ui.View):
 
         return scrim_cog, scrim_data
 
-    def _check_if_locked(self, scrim_data: Dict) -> bool:
-        """Check if the scrim is within the 30-minute lock window."""
+    def _check_if_within_warning_period(self, scrim_data: Dict) -> bool:
+        """Check if the scrim is within the 30-minute warning window."""
         eastern = pytz.timezone('America/New_York')
         now = datetime.now(eastern)
 
@@ -915,15 +1128,38 @@ class ScrimView(discord.ui.View):
 
         return start_time - now <= timedelta(minutes=30)
 
+    async def _notify_admin_channel(self, guild_id: int, user_id: int, scrim_data: Dict, action: str):
+        """Send notification to admin channel when someone leaves within warning period."""
+        try:
+            guild = self.bot.get_guild(guild_id)
+            if not guild:
+                return
+
+            admin_channel = guild.get_channel(1059248496730976307)
+            if not admin_channel:
+                return
+
+            user = guild.get_member(user_id)
+            user_mention = f"<@{user_id}>" if user else f"User ID: {user_id}"
+
+            embed = discord.Embed(
+                title="⚠️ 내전 이탈 알림",
+                description=f"{user_mention}이(가) 시작 30분 이내에 내전에서 {action}했습니다.",
+                color=discord.Color.orange()
+            )
+            embed.add_field(name="내전 정보", value=f"**게임:** {scrim_data['game']}\n**ID:** {scrim_data['id']}")
+            embed.add_field(name="시작 시간", value=f"<t:{int(scrim_data['start_time'].timestamp())}:F>")
+
+            await admin_channel.send(embed=embed)
+
+        except Exception as e:
+            self.logger.error(f"Error sending admin notification: {e}")
+
     @discord.ui.button(label="참가", style=discord.ButtonStyle.success, custom_id="join_scrim", emoji="✅")
     async def join_scrim(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
         scrim_cog, scrim_data = await self._get_scrim_cog_and_data(interaction)
         if not scrim_cog or not scrim_data: return
-
-        if self._check_if_locked(scrim_data):
-            await interaction.followup.send("❌ 내전 시작 30분 전에는 참가할 수 없습니다.", ephemeral=True)
-            return
 
         success, message = await scrim_cog.join_scrim(interaction.user.id, self.scrim_id)
         await interaction.followup.send(message, ephemeral=True)
@@ -936,9 +1172,9 @@ class ScrimView(discord.ui.View):
         scrim_cog, scrim_data = await self._get_scrim_cog_and_data(interaction)
         if not scrim_cog or not scrim_data: return
 
-        if self._check_if_locked(scrim_data):
-            await interaction.followup.send("❌ 내전 시작 30분 전에는 나갈 수 없습니다.", ephemeral=True)
-            return
+        # Check if within warning period and notify admins
+        if self._check_if_within_warning_period(scrim_data):
+            await self._notify_admin_channel(scrim_data['guild_id'], interaction.user.id, scrim_data, "나감")
 
         success, message = await scrim_cog.leave_scrim(interaction.user.id, self.scrim_id)
         await interaction.followup.send(message, ephemeral=True)
@@ -951,10 +1187,6 @@ class ScrimView(discord.ui.View):
         scrim_cog, scrim_data = await self._get_scrim_cog_and_data(interaction)
         if not scrim_cog or not scrim_data: return
 
-        if self._check_if_locked(scrim_data):
-            await interaction.followup.send("❌ 내전 시작 30분 전에는 대기열에 참가할 수 없습니다.", ephemeral=True)
-            return
-
         success, message = await scrim_cog.join_queue(interaction.user.id, self.scrim_id)
         await interaction.followup.send(message, ephemeral=True)
         if success:
@@ -966,9 +1198,9 @@ class ScrimView(discord.ui.View):
         scrim_cog, scrim_data = await self._get_scrim_cog_and_data(interaction)
         if not scrim_cog or not scrim_data: return
 
-        if self._check_if_locked(scrim_data):
-            await interaction.followup.send("❌ 내전 시작 30분 전에는 대기열에서 나갈 수 없습니다.", ephemeral=True)
-            return
+        # Check if within warning period and notify admins
+        if self._check_if_within_warning_period(scrim_data):
+            await self._notify_admin_channel(scrim_data['guild_id'], interaction.user.id, scrim_data, "대기열에서 나감")
 
         success, message = await scrim_cog.leave_queue(interaction.user.id, self.scrim_id)
         await interaction.followup.send(message, ephemeral=True)
@@ -1076,6 +1308,8 @@ class ScrimCog(commands.Cog):
             "브리즈", "프랙처", "펄", "로터스", "선셋", "어비스"
         ]
         self.bot.loop.create_task(self.after_bot_ready())
+        self.scrim_records_file = "data/scrim_records.json"
+        self.scrim_records = {}
 
     async def after_bot_ready(self):
         """Waits for the bot to be ready before starting tasks."""
@@ -1087,6 +1321,8 @@ class ScrimCog(commands.Cog):
         await self.setup_scrim_panels()
         self.scrim_notifications.start()
         self.cleanup_old_scrims.start()
+        await self.load_scrim_records()
+
 
     def setup_persistent_views(self):
         """Setup persistent views on bot startup"""
@@ -1109,6 +1345,92 @@ class ScrimCog(commands.Cog):
         if staff_role_id and discord.utils.get(member.roles, id=staff_role_id): return True
         return False
 
+    async def load_scrim_records(self):
+        """Load scrim records from file"""
+        try:
+            if os.path.exists(self.scrim_records_file):
+                with open(self.scrim_records_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    # Convert date strings back to date objects
+                    for record_id, record in data.items():
+                        if isinstance(record['date'], str):
+                            record['date'] = datetime.strptime(record['date'], '%Y-%m-%d').date()
+                        if isinstance(record['recorded_at'], str):
+                            record['recorded_at'] = datetime.fromisoformat(record['recorded_at'])
+                    self.scrim_records = data
+                self.logger.info("Successfully loaded scrim records.")
+        except Exception as e:
+            self.logger.error(f"Error loading scrim records: {e}", exc_info=True)
+            self.scrim_records = {}
+
+    async def save_scrim_records(self):
+        """Save scrim records to file"""
+        try:
+            os.makedirs(os.path.dirname(self.scrim_records_file), exist_ok=True)
+            data_to_save = {}
+
+            for record_id, record in self.scrim_records.items():
+                data_copy = record.copy()
+                # Convert date objects to strings for JSON serialization
+                if isinstance(data_copy['date'], date):
+                    data_copy['date'] = data_copy['date'].strftime('%Y-%m-%d')
+                if isinstance(data_copy['recorded_at'], datetime):
+                    data_copy['recorded_at'] = data_copy['recorded_at'].isoformat()
+                data_to_save[record_id] = data_copy
+
+            def write_file():
+                with open(self.scrim_records_file, 'w', encoding='utf-8') as f:
+                    json.dump(data_to_save, f, ensure_ascii=False, indent=2)
+
+            await asyncio.to_thread(write_file)
+        except Exception as e:
+            self.logger.error(f"Error saving scrim records: {e}", exc_info=True)
+
+    async def refresh_scrim_panel_bottom(self, channel: discord.TextChannel):
+        """Delete old scrim panel and create new one at bottom"""
+        try:
+            # Delete old panels
+            async for message in channel.history(limit=50):
+                if (message.author == self.bot.user and message.embeds and
+                        message.embeds[0].title and "내전 생성 패널" in message.embeds[0].title):
+                    await message.delete()
+
+            # Create new panel at bottom
+            await self.setup_scrim_panel(channel)
+            self.logger.info(f"Refreshed scrim panel at bottom of #{channel.name}")
+
+        except Exception as e:
+            self.logger.error(f"Error refreshing scrim panel: {e}", exc_info=True)
+    async def create_scrim_record(self, guild_id: int, date: date, games_played: int,
+                                  winners: list, teams: dict, participation_coins: int,
+                                  win_bonus: int, recorded_by: int) -> str:
+        """Create a new scrim record"""
+        try:
+            record_id = f"SR{random.randint(100000, 999999)}"
+            while record_id in self.scrim_records:
+                record_id = f"SR{random.randint(100000, 999999)}"
+
+            record = {
+                'id': record_id,
+                'guild_id': guild_id,
+                'date': date,
+                'games_played': games_played,
+                'winners': winners,
+                'teams': teams,
+                'participation_coins': participation_coins,
+                'win_bonus': win_bonus,
+                'recorded_by': recorded_by,
+                'recorded_at': datetime.now(pytz.timezone('America/New_York'))
+            }
+
+            self.scrim_records[record_id] = record
+            await self.save_scrim_records()
+            self.logger.info(f"Created scrim record {record_id} for guild {guild_id}")
+            return record_id
+
+        except Exception as e:
+            self.logger.error(f"Error creating scrim record: {e}", exc_info=True)
+            return None
     async def load_scrims_data(self):
         try:
             if os.path.exists(self.scrims_file):
@@ -1312,13 +1634,10 @@ class ScrimCog(commands.Cog):
         if start_time.tzinfo == pytz.utc:
             start_time = start_time.astimezone(eastern)
         elif start_time.tzinfo is None:
-            # If no timezone info, assume UTC and convert
             start_time = pytz.utc.localize(start_time).astimezone(eastern)
         elif start_time.tzinfo != eastern:
-            # Convert any other timezone to Eastern
             start_time = start_time.astimezone(eastern)
 
-        # Rest of the embed creation logic...
         status_colors = {'활성': discord.Color.green(), '취소됨': discord.Color.red(), '완료됨': discord.Color.blue()}
         status_emojis = {'활성': '🟢', '취소됨': '🔴', '완료됨': '🔵'}
         game_emojis = {'발로란트': '🎯', '리그 오브 레전드': '⚔️', '팀파이트 택틱스': '♟️', '배틀그라운드': '🔫', '기타 게임': '🎮'}
@@ -1347,6 +1666,16 @@ class ScrimCog(commands.Cog):
         p_count = len(scrim_data['participants'])
         max_p = scrim_data['max_players']
 
+        # Check if within warning period for embed message
+        eastern = pytz.timezone('America/New_York')
+        now = datetime.now(eastern)
+        time_until_start = start_time - now
+        warning_text = ""
+
+        if (scrim_data['status'] == '활성' and
+                timedelta(seconds=1) <= time_until_start <= timedelta(minutes=30)):
+            warning_text = "\n⚠️ **주의:** 시작 30분 이내 이탈 시 관리자에게 알림됩니다."
+
         embed.description = (
             f"**모드:** {scrim_data['gamemode']}\n"
             f"**티어:** {scrim_data['tier_range']}\n"
@@ -1355,31 +1684,127 @@ class ScrimCog(commands.Cog):
             f"**플레이어:** {p_count}/{max_p}"
             f"{' ✅' if p_count >= max_p else ''}"
             f" • **대기열:** {len(scrim_data['queue'])}"
+            f"{warning_text}"
         )
 
-        # Rest of the method remains the same...
         guild = self.bot.get_guild(scrim_data['guild_id'])
         if guild:
             organizer = guild.get_member(scrim_data['organizer_id'])
-            embed.add_field(name="👑 주최자",
-                            value=organizer.display_name if organizer else f"ID: {scrim_data['organizer_id']}",
-                            inline=True)
+            embed.add_field(
+                name="👑 주최자",
+                value=f"<@{scrim_data['organizer_id']}>" if organizer else f"ID: {scrim_data['organizer_id']}",
+                inline=True
+            )
 
+            # Updated to use mentions for participants
             if scrim_data['participants']:
-                p_names = [f"`{i + 1}.` {guild.get_member(uid).display_name if guild.get_member(uid) else f'ID: {uid}'}"
-                           for i, uid in enumerate(scrim_data['participants'])]
-                embed.add_field(name="📋 참가자", value="\n".join(p_names), inline=False)
+                participant_mentions = []
+                for i, uid in enumerate(scrim_data['participants']):
+                    participant_mentions.append(f"`{i + 1}.` <@{uid}>")
+                embed.add_field(
+                    name="📋 참가자",
+                    value="\n".join(participant_mentions),
+                    inline=False
+                )
 
+            # Updated to use mentions for queue
             if scrim_data['queue']:
-                q_names = [f"`{i + 1}.` {guild.get_member(uid).display_name if guild.get_member(uid) else f'ID: {uid}'}"
-                           for i, uid in enumerate(scrim_data['queue'])]
-                embed.add_field(name="⏳ 대기열", value="\n".join(q_names), inline=False)
+                queue_mentions = []
+                for i, uid in enumerate(scrim_data['queue']):
+                    queue_mentions.append(f"`{i + 1}.` <@{uid}>")
+                embed.add_field(
+                    name="⏳ 대기열",
+                    value="\n".join(queue_mentions),
+                    inline=False
+                )
 
         if scrim_data['status'] == '취소됨':
             embed.add_field(name="⚠️ 공지", value="이 내전은 취소되었습니다.", inline=False)
 
         embed.set_footer(text=f"내전 ID: {scrim_data['id']} • 개선된 내전 시스템 v2.1")
         return embed
+
+    @app_commands.command(name="내전종료", description="내전을 종료하고 결과를 기록합니다.")
+    @app_commands.default_permissions(manage_messages=True)
+    async def end_scrim(self, interaction: discord.Interaction):
+        if not config.is_feature_enabled(interaction.guild.id, 'scrim_system'):
+            await interaction.response.send_message("⚠️ 이 서버에서 내전 시스템이 비활성화되어 있습니다.", ephemeral=True)
+            return
+
+        modal = ScrimEndModal(self.bot, interaction.guild.id)
+        await interaction.response.send_modal(modal)
+
+    @app_commands.command(name="내전기록", description="내전 기록을 조회합니다.")
+    @app_commands.describe(
+        days="최근 며칠간의 기록을 볼지 설정 (기본값: 7일)",
+        record_id="특정 기록 ID로 조회"
+    )
+    async def scrim_history(self, interaction: discord.Interaction,
+                            days: app_commands.Range[int, 1, 30] = 7,
+                            record_id: str = None):
+        await interaction.response.defer(ephemeral=True)
+
+        guild_records = []
+
+        if record_id:
+            # Search for specific record
+            record = self.scrim_records.get(record_id)
+            if record and record['guild_id'] == interaction.guild.id:
+                guild_records.append(record)
+            else:
+                await interaction.followup.send(f"❌ 기록 ID `{record_id}`를 찾을 수 없습니다.", ephemeral=True)
+                return
+        else:
+            # Get recent records
+            cutoff_date = datetime.now().date() - timedelta(days=days)
+            for record in self.scrim_records.values():
+                if (record['guild_id'] == interaction.guild.id and
+                        record['date'] >= cutoff_date):
+                    guild_records.append(record)
+
+        if not guild_records:
+            period_text = f"최근 {days}일간" if not record_id else "해당 ID의"
+            await interaction.followup.send(f"📝 {period_text} 내전 기록이 없습니다.", ephemeral=True)
+            return
+
+        # Sort by date (newest first)
+        guild_records.sort(key=lambda x: x['date'], reverse=True)
+
+        embed = discord.Embed(
+            title="📊 내전 기록",
+            description=f"총 {len(guild_records)}개의 기록이 있습니다.",
+            color=discord.Color.blue()
+        )
+
+        for record in guild_records[:5]:  # Show max 5 records
+            # Calculate team stats
+            all_players = set()
+            for team_members in record['teams'].values():
+                all_players.update(team_members)
+
+            # Count wins per team
+            team_wins = {}
+            for winner in record['winners']:
+                team_wins[winner] = team_wins.get(winner, 0) + 1
+
+            field_value = (
+                f"**날짜:** {record['date']}\n"
+                f"**게임 수:** {record['games_played']}\n"
+                f"**참가자:** {len(all_players)}명\n"
+                f"**팀 승수:** {', '.join([f'{team}: {wins}승' for team, wins in team_wins.items()])}\n"
+                f"**기록자:** <@{record['recorded_by']}>"
+            )
+
+            embed.add_field(
+                name=f"🎮 기록 {record['id']}",
+                value=field_value,
+                inline=False
+            )
+
+        if len(guild_records) > 5:
+            embed.set_footer(text=f"더 많은 기록이 있습니다. 총 {len(guild_records)}개 중 5개만 표시")
+
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
     async def join_scrim(self, user_id: int, scrim_id: str) -> tuple[bool, str]:
         scrim_data = self.scrims_data.get(scrim_id)
@@ -1578,59 +2003,6 @@ class ScrimCog(commands.Cog):
         except Exception as e:
             self.logger.error(f"Error in cleanup task: {e}", exc_info=True)
 
-    async def migrate_timezone_data(self):
-        """One-time migration to fix timezone data in existing scrims."""
-        try:
-            eastern = pytz.timezone('America/New_York')
-            migration_needed = False
-
-            for scrim_id, scrim_data in self.scrims_data.items():
-                start_time = scrim_data['start_time']
-
-                # Check if this looks like it needs migration
-                if isinstance(start_time, str):
-                    # If it's still a string, parse and assume it's Eastern time
-                    dt = datetime.fromisoformat(start_time)
-                    if dt.tzinfo is None:
-                        # Assume this was stored as Eastern time, convert to UTC
-                        eastern_time = eastern.localize(dt)
-                        scrim_data['start_time'] = eastern_time.astimezone(pytz.utc)
-                        migration_needed = True
-                elif start_time.tzinfo is None:
-                    # Naive datetime, assume Eastern and convert to UTC
-                    eastern_time = eastern.localize(start_time)
-                    scrim_data['start_time'] = eastern_time.astimezone(pytz.utc)
-                    migration_needed = True
-                elif start_time.tzinfo != pytz.utc:
-                    # Already has timezone but not UTC, convert to UTC
-                    scrim_data['start_time'] = start_time.astimezone(pytz.utc)
-                    migration_needed = True
-
-                # Do the same for created_at
-                created_at = scrim_data['created_at']
-                if isinstance(created_at, str):
-                    dt = datetime.fromisoformat(created_at)
-                    if dt.tzinfo is None:
-                        eastern_time = eastern.localize(dt)
-                        scrim_data['created_at'] = eastern_time.astimezone(pytz.utc)
-                        migration_needed = True
-                elif created_at.tzinfo is None:
-                    eastern_time = eastern.localize(created_at)
-                    scrim_data['created_at'] = eastern_time.astimezone(pytz.utc)
-                    migration_needed = True
-                elif created_at.tzinfo != pytz.utc:
-                    scrim_data['created_at'] = created_at.astimezone(pytz.utc)
-                    migration_needed = True
-
-            if migration_needed:
-                await self.save_scrims_data()
-                self.logger.info("Completed timezone data migration.")
-            else:
-                self.logger.info("No timezone migration needed.")
-
-        except Exception as e:
-            self.logger.error(f"Error during timezone migration: {e}", exc_info=True)
-
     @app_commands.command(name="맵선택", description="활성 맵 풀에서 무작위 맵을 선택합니다.")
     @app_commands.describe(count="선택할 맵의 수 (기본값: 1)")
     async def random_map(self, interaction: discord.Interaction, count: app_commands.Range[int, 1, 10] = 1):
@@ -1667,30 +2039,6 @@ class ScrimCog(commands.Cog):
         else:
             embed.description = "설정된 맵이 없습니다."
         await interaction.response.send_message(embed=embed, ephemeral=True)
-
-    @app_commands.command(name="내전기록", description="이 서버의 활성 내전을 확인합니다.")
-    async def list_scrims(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-        guild_id = interaction.guild.id
-        active_scrims = [sd for sd in self.scrims_data.values() if sd['guild_id'] == guild_id and sd['status'] == '활성']
-
-        if not active_scrims:
-            await interaction.followup.send("현재 활성 내전이 없습니다.", ephemeral=True)
-            return
-
-        embed = discord.Embed(title="🎮 활성 내전 목록", color=discord.Color.blue())
-        sorted_scrims = sorted(active_scrims, key=lambda x: x['start_time'])
-
-        for scrim_data in sorted_scrims:
-            start_timestamp = int(scrim_data['start_time'].timestamp())
-            embed.add_field(
-                name=f"{scrim_data['game']} ({scrim_data['gamemode']})",
-                value=f"시작: <t:{start_timestamp}:R>\n"
-                      f"플레이어: {len(scrim_data['participants'])}/{scrim_data['max_players']}\n"
-                      f"ID: `{scrim_data['id']}`",
-                inline=True
-            )
-        await interaction.followup.send(embed=embed, ephemeral=True)
 
     @app_commands.command(name="내전설정", description="내전 시스템 설정을 구성합니다. (관리자 전용)")
     @app_commands.describe(feature_enabled="내전 시스템 활성화/비활성화", scrim_channel="내전 생성 패널이 표시될 채널")

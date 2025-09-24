@@ -34,26 +34,7 @@ class PersistentColorView(discord.ui.View):
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
 
-        # Check cooldown (24 hours)
-        user_id = interaction.user.id
-        if user_id in self.cog.color_cooldowns:
-            last_change = datetime.fromtimestamp(self.cog.color_cooldowns[user_id])
-            cooldown_end = last_change + timedelta(hours=24)
-
-            if datetime.now() < cooldown_end:
-                time_left = cooldown_end - datetime.now()
-                hours = int(time_left.total_seconds() // 3600)
-                minutes = int((time_left.total_seconds() % 3600) // 60)
-
-                embed = discord.Embed(
-                    title="⏰ 쿨다운 중",
-                    description=f"**{hours}시간 {minutes}분** 후에 다시 색상을 변경할 수 있습니다.",
-                    color=0xFFAA00
-                )
-                await interaction.response.send_message(embed=embed, ephemeral=True)
-                return
-
-        # Show color modal
+        # Show color modal (removed cooldown check)
         modal = self.cog.ColorModal(self.cog)
         await interaction.response.send_modal(modal)
 
@@ -63,7 +44,7 @@ class BoosterPerks(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
-        self.color_cooldowns = {}
+        self.color_cooldowns = {}  # Keep for backward compatibility but not used
         self.booster_message_id = None  # Track the booster message
         self.booster_channel_id = 1366767855462518825  # Your specified channel
         self.betting_limits = {
@@ -135,7 +116,7 @@ class BoosterPerks(commands.Cog):
             value=(
                 "• 아래 버튼을 클릭하여 원하는 색상을 선택하세요\n"
                 "• 헥스 코드 형식으로 입력 (예: #FF5733)\n"
-                "• 24시간마다 한 번씩 변경 가능\n"
+                "• 언제든지 변경 가능\n"
                 "• 스태프 역할과 충돌하지 않는 색상만 허용"
             ),
             inline=False
@@ -156,7 +137,7 @@ class BoosterPerks(commands.Cog):
                 "1️⃣ 아래 **🎨 색상 변경하기** 버튼 클릭\n"
                 "2️⃣ 팝업 창에 원하는 헥스 색상 코드 입력\n"
                 "3️⃣ 제출하면 자동으로 색상 역할이 생성됩니다\n"
-                "4️⃣ 24시간 후 다시 변경 가능합니다"
+                "4️⃣ 언제든지 다시 변경 가능합니다"
             ),
             inline=False
         )
@@ -295,7 +276,7 @@ class BoosterPerks(commands.Cog):
             reason=f"부스터 {member}를 위한 사용자 지정 색상"
         )
 
-        # 역할을 올바른 위치에 배치
+        # 역할을 올바른 위치에 배치 - 지정된 역할 바로 아래
         target_position = self._calculate_color_role_position(guild)
 
         try:
@@ -313,8 +294,7 @@ class BoosterPerks(commands.Cog):
     def _calculate_color_role_position(self, guild: discord.Guild) -> int:
         """역할 계층에서 색상 역할의 이상적인 위치 계산."""
 
-        # 1차 전략: 특정 대상 역할 (ID: 1366087688263827477) 사용
-        # 모든 색상 역할은 이 역할 바로 아래에 위치해야 함
+        # 특정 대상 역할 (ID: 1366087688263827477) 바로 아래에 배치
         target_role_id = 1366087688263827477
         target_role = guild.get_role(target_role_id)
 
@@ -407,16 +387,13 @@ class BoosterPerks(commands.Cog):
 
                 color_role = await self.cog.create_color_role(interaction.user, hex_color)
 
-                # 쿨다운 설정
-                self.cog.color_cooldowns[interaction.user.id] = datetime.now().timestamp()
-                self.cog.save_data()
-
+                # No longer setting cooldown
                 embed = discord.Embed(
                     title="✅ 색상 변경 완료!",
                     description=f"색상이 `{hex_color.upper()}`로 설정되었습니다.",
                     color=int(hex_color.lstrip('#'), 16)
                 )
-                embed.set_footer(text="24시간 후에 다시 색상을 변경할 수 있습니다.")
+                embed.set_footer(text="언제든지 다시 색상을 변경할 수 있습니다.")
 
                 await interaction.followup.send(embed=embed, ephemeral=True)
 
@@ -455,7 +432,7 @@ class BoosterPerks(commands.Cog):
             value=(
                 "• 아래 버튼을 클릭하여 원하는 색상을 선택하세요\n"
                 "• 헥스 코드 형식으로 입력 (예: #FF5733)\n"
-                "• 24시간마다 한 번씩 변경 가능\n"
+                "• 언제든지 변경 가능\n"
                 "• 스태프 역할과 충돌하지 않는 색상만 허용"
             ),
             inline=False
@@ -476,7 +453,7 @@ class BoosterPerks(commands.Cog):
                 "1️⃣ 아래 **🎨 색상 변경하기** 버튼 클릭\n"
                 "2️⃣ 팝업 창에 원하는 헥스 색상 코드 입력\n"
                 "3️⃣ 제출하면 자동으로 색상 역할이 생성됩니다\n"
-                "4️⃣ 24시간 후 다시 변경 가능합니다"
+                "4️⃣ 언제든지 다시 변경 가능합니다"
             ),
             inline=False
         )
@@ -511,7 +488,6 @@ class BoosterPerks(commands.Cog):
         except Exception as e:
             await ctx.send(f"❌ 오류가 발생했습니다: {str(e)}")
 
-    # ... (rest of the existing methods remain the same)
     @app_commands.command(name="color", description="이름 색상 변경 (서버 부스터 전용)")
     async def color_command(self, interaction: discord.Interaction):
         """이름 색상 변경 - 서버 부스터 전용."""
@@ -526,26 +502,7 @@ class BoosterPerks(commands.Cog):
             await interaction.response.send_message(embed=embed, ephemeral=True)
             return
 
-        # 쿨다운 확인 (24시간)
-        user_id = interaction.user.id
-        if user_id in self.color_cooldowns:
-            last_change = datetime.fromtimestamp(self.color_cooldowns[user_id])
-            cooldown_end = last_change + timedelta(hours=24)
-
-            if datetime.now() < cooldown_end:
-                time_left = cooldown_end - datetime.now()
-                hours = int(time_left.total_seconds() // 3600)
-                minutes = int((time_left.total_seconds() % 3600) // 60)
-
-                embed = discord.Embed(
-                    title="⏰ 쿨다운 중",
-                    description=f"**{hours}시간 {minutes}분** 후에 다시 색상을 변경할 수 있습니다.",
-                    color=0xFFAA00
-                )
-                await interaction.response.send_message(embed=embed, ephemeral=True)
-                return
-
-        # 색상 선택 모달 표시
+        # 색상 선택 모달 표시 (removed cooldown check)
         modal = self.ColorModal(self)
         await interaction.response.send_modal(modal)
 
