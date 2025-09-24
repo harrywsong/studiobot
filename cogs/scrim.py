@@ -365,7 +365,8 @@ class ScrimEndModal(discord.ui.Modal, title="내전 종료 정보 입력"):
                 color=discord.Color.blue()
             )
 
-            await interaction.followup.send(embed=embed, view=player_selection_view, ephemeral=True)
+            message = await interaction.followup.send(embed=embed, view=player_selection_view, ephemeral=True)
+            player_selection_view.message = message  # Set the message reference
 
         except Exception as e:
             self.logger.error(f"Scrim end modal error: {traceback.format_exc()}")
@@ -508,8 +509,13 @@ class PlayerSelectionView(discord.ui.View):
                 inline=False
             )
 
-        await interaction.edit_original_response(embed=embed, view=self)
-
+        # Handle both regular Message and WebhookMessage
+        if hasattr(self.message, 'edit'):
+            # Regular discord.Message
+            await self.message.edit(embed=embed, view=self)
+        else:
+            # WebhookMessage - use the interaction to edit
+            await interaction.edit_original_response(embed=embed, view=self)
     async def finish_selection(self, interaction: discord.Interaction):
         """선택 완료 및 내전 종료 처리"""
         try:
