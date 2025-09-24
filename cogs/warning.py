@@ -156,6 +156,12 @@ class WarningModal(discord.ui.Modal, title='경고 추가 - Add Warning'):
             # Try to send to the same channel
             try:
                 await interaction.followup.send(embed=admin_embed)
+
+                # Get the cog and repost the warning system embed
+                cog = interaction.client.get_cog('WarningSystem')
+                if cog:
+                    await cog.repost_warning_system(interaction.guild)
+
             except:
                 # If that fails, try to send to a log channel or the original channel
                 logger.warning(f"Failed to send admin tracking embed in guild {interaction.guild.id}")
@@ -339,7 +345,82 @@ class WarningSystem(commands.Cog):
             logger.error(f"Failed to get user warnings: {e}")
             return []
 
-    @commands.command(name='경고설정')
+    async def repost_warning_system(self, guild: discord.Guild):
+        """Delete the old warning system embed and repost it to keep it at the bottom"""
+        try:
+            warning_channel = guild.get_channel(self.warning_channel_id)
+            if not warning_channel:
+                logger.warning(f"Warning channel {self.warning_channel_id} not found in guild {guild.id}")
+                return
+
+            # Delete the old embed if it exists
+            if self.warning_embed_message_id:
+                try:
+                    old_message = await warning_channel.fetch_message(self.warning_embed_message_id)
+                    await old_message.delete()
+                    logger.info(f"Deleted old warning system embed {self.warning_embed_message_id}")
+                except discord.NotFound:
+                    logger.info("Old warning system embed not found, probably already deleted")
+                except discord.Forbidden:
+                    logger.warning("Missing permissions to delete old warning system embed")
+                except Exception as e:
+                    logger.error(f"Error deleting old warning system embed: {e}")
+
+            # Create and send the new embed
+            embed = self.create_warning_system_embed()
+            view = WarningView()
+
+            new_message = await warning_channel.send(embed=embed, view=view)
+            self.warning_embed_message_id = new_message.id
+            logger.info(f"Reposted warning system embed with ID {new_message.id}")
+
+        except Exception as e:
+            logger.error(f"Failed to repost warning system embed: {e}")
+
+    def create_warning_system_embed(self) -> discord.Embed:
+        """Create the warning system instruction embed"""
+        embed = discord.Embed(
+            title="🚨 경고 시스템 (Warning System)",
+            description="이 시스템을 통해 서버 멤버들에게 경고를 발행하고 관리할 수 있습니다.",
+            color=discord.Color.red(),
+            timestamp=datetime.datetime.now()
+        )
+
+        embed.add_field(
+            name="📋 사용 방법",
+            value=(
+                "1️⃣ 아래 **경고 추가** 버튼을 클릭하세요\n"
+                "2️⃣ 경고를 받을 사용자를 입력하세요\n"
+                "3️⃣ 경고 사유를 입력하세요\n"
+                "4️⃣ 필요시 추가 정보를 입력하세요\n"
+                "5️⃣ 제출하면 자동으로 기록됩니다"
+            ),
+            inline=False
+        )
+
+        embed.add_field(
+            name="⚠️ 권한 요구사항",
+            value="이 시스템을 사용하려면 **멤버 관리** 권한이 필요합니다.",
+            inline=False
+        )
+
+        embed.add_field(
+            name="📊 추적 정보",
+            value=(
+                "• 경고 받은 사용자의 모든 정보\n"
+                "• 경고 발행자 정보\n"
+                "• 경고 날짜 및 시간\n"
+                "• 경고 사유 및 추가 정보\n"
+                "• 총 경고 횟수\n"
+                "• 고유 경고 ID"
+            ),
+            inline=False
+        )
+
+        embed.set_footer(text="경고 시스템 | 관리자 전용")
+        return embed
+
+    @commands.command(name='setup_warnings')
     @commands.has_permissions(administrator=True)
     async def setup_warnings(self, ctx):
         """Setup the warning system in the specified channel"""
@@ -396,7 +477,7 @@ class WarningSystem(commands.Cog):
         await target_channel.send(embed=embed, view=view)
         await ctx.send(f"✅ 경고 시스템이 {target_channel.mention}에 설정되었습니다!")
 
-    @app_commands.command(name="경고", description="특정 사용자의 경고 내역을 조회합니다")
+    @app_commands.command(name="warnings", description="특정 사용자의 경고 내역을 조회합니다")
     @app_commands.describe(user="경고 내역을 조회할 사용자")
     async def check_warnings(self, interaction: discord.Interaction, user: discord.Member):
         """Check warnings for a specific user"""
