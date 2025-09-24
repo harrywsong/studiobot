@@ -279,7 +279,7 @@ class ScrimEndModal(discord.ui.Modal, title="내전 종료 정보 입력"):
         )
         self.add_item(self.games_input)
 
-        # Winner info
+        # Winner info - now just team names
         self.winner_input = discord.ui.TextInput(
             label="승리한 게임들 (쉼표로 구분)",
             placeholder="예: 팀A, 팀B, 팀A (게임 순서대로)",
@@ -288,12 +288,12 @@ class ScrimEndModal(discord.ui.Modal, title="내전 종료 정보 입력"):
         )
         self.add_item(self.winner_input)
 
-        # Team composition
+        # Team names only
         self.teams_input = discord.ui.TextInput(
-            label="팀 구성 (한 줄에 한 팀, 멘션 사용)",
-            placeholder="팀A: @user1 @user2 @user3\n팀B: @user4 @user5 @user6",
+            label="팀 이름들 (쉼표로 구분)",
+            placeholder="예: 팀A, 팀B, 팀C",
             required=True,
-            style=discord.TextStyle.paragraph
+            style=discord.TextStyle.short
         )
         self.add_item(self.teams_input)
 
@@ -315,7 +315,7 @@ class ScrimEndModal(discord.ui.Modal, title="내전 종료 정보 입력"):
             try:
                 scrim_date = datetime.strptime(self.date_input.value, '%Y-%m-%d').date()
             except ValueError:
-                await interaction.followup.send("❌ 잘못된 날짜 형식입니다. YYYY-MM-DD 형식으로 입력해주세요.", ephemeral=True)
+                await interaction.followup.send("⌚ 잘못된 날짜 형식입니다. YYYY-MM-DD 형식으로 입력해주세요.", ephemeral=True)
                 return
 
             try:
@@ -323,28 +323,25 @@ class ScrimEndModal(discord.ui.Modal, title="내전 종료 정보 입력"):
                 if games_played <= 0:
                     raise ValueError
             except ValueError:
-                await interaction.followup.send("❌ 유효한 게임 수를 입력해주세요.", ephemeral=True)
+                await interaction.followup.send("⌚ 유효한 게임 수를 입력해주세요.", ephemeral=True)
                 return
 
             winners = [w.strip() for w in self.winner_input.value.split(',')]
             if len(winners) != games_played:
-                await interaction.followup.send(f"❌ 승리자 수({len(winners)})가 게임 수({games_played})와 일치하지 않습니다.",
+                await interaction.followup.send(f"⌚ 승리자 수({len(winners)})가 게임 수({games_played})와 일치하지 않습니다.",
                                                 ephemeral=True)
                 return
 
-            # Parse team composition
-            teams = {}
-            for line in self.teams_input.value.split('\n'):
-                if ':' in line:
-                    team_name, members = line.split(':', 1)
-                    team_name = team_name.strip()
-                    # Extract mentions from the members string
-                    import re
-                    mentions = re.findall(r'<@!?(\d+)>', members)
-                    teams[team_name] = mentions
+            # Parse team names
+            team_names = [name.strip() for name in self.teams_input.value.split(',') if name.strip()]
+            if len(team_names) < 2:
+                await interaction.followup.send("⌚ 최소 2개의 팀이 필요합니다.", ephemeral=True)
+                return
 
-            if len(teams) < 2:
-                await interaction.followup.send("❌ 최소 2개의 팀이 필요합니다.", ephemeral=True)
+            # Validate that all winners are valid team names
+            invalid_winners = [w for w in winners if w not in team_names]
+            if invalid_winners:
+                await interaction.followup.send(f"⌚ 다음 승리자들이 팀 목록에 없습니다: {', '.join(invalid_winners)}", ephemeral=True)
                 return
 
             # Parse coin settings
@@ -356,19 +353,183 @@ class ScrimEndModal(discord.ui.Modal, title="내전 종료 정보 입력"):
                 participation_coins = 10
                 win_bonus = 5
 
-            await self.process_scrim_end(interaction, scrim_date, games_played, winners, teams, participation_coins,
-                                         win_bonus)
+            # Now show player selection view
+            player_selection_view = PlayerSelectionView(
+                self.bot, self.guild_id, scrim_date, games_played, winners,
+                team_names, participation_coins, win_bonus
+            )
+
+            embed = discord.Embed(
+                title="👥 팀별 플레이어 선택",
+                description=f"각 팀의 플레이어들을 선택해주세요.\n\n**팀들:** {', '.join(team_names)}",
+                color=discord.Color.blue()
+            )
+
+            await interaction.followup.send(embed=embed, view=player_selection_view, ephemeral=True)
 
         except Exception as e:
             self.logger.error(f"Scrim end modal error: {traceback.format_exc()}")
             if not interaction.response.is_done():
-                await interaction.response.send_message("❌ 처리 중 오류가 발생했습니다.", ephemeral=True)
+                await interaction.response.send_message("⌚ 처리 중 오류가 발생했습니다.", ephemeral=True)
             else:
-                await interaction.followup.send("❌ 처리 중 오류가 발생했습니다.", ephemeral=True)
+                await interaction.followup.send("⌚ 처리 중 오류가 발생했습니다.", ephemeral=True)
 
-    async def process_scrim_end(self, interaction, scrim_date, games_played, winners, teams, participation_coins,
-                                win_bonus):
-        """Process the scrim end and distribute coins"""
+
+class PlayerSelectionView(discord.ui.View):
+    """팀별 플레이어 선택을 위한 뷰"""
+
+    def __init__(self, bot, guild_id: int, scrim_date: date, games_played: int,
+                 winners: list, team_names: list, participation_coins: int, win_bonus: int):
+        super().__init__(timeout=300)
+        self.bot = bot
+        self.guild_id = guild_id
+        self.scrim_date = scrim_date
+        self.games_played = games_played
+        self.winners = winners
+        self.team_names = team_names
+        self.participation_coins = participation_coins
+        self.win_bonus = win_bonus
+        self.teams_data = {}  # Will store {team_name: [user_ids]}
+        self.current_team_index = 0
+        self.logger = get_logger("내부 매치")
+
+        # Add user select for current team
+        self.update_user_select()
+
+        # Add control buttons
+        self.add_navigation_buttons()
+
+    def update_user_select(self):
+        """현재 팀을 위한 사용자 선택 업데이트"""
+        # Remove existing user select if any
+        for item in self.children[:]:
+            if isinstance(item, discord.ui.UserSelect):
+                self.remove_item(item)
+
+        if self.current_team_index < len(self.team_names):
+            current_team = self.team_names[self.current_team_index]
+            user_select = discord.ui.UserSelect(
+                placeholder=f"{current_team} 팀 플레이어들 선택...",
+                min_values=1,
+                max_values=10,  # Adjust as needed
+                custom_id=f"team_players_{self.current_team_index}"
+            )
+            user_select.callback = self.players_selected
+            self.children.insert(0, user_select)  # Insert at beginning
+
+    def add_navigation_buttons(self):
+        """네비게이션 버튼들 추가"""
+        if self.current_team_index > 0:
+            back_button = discord.ui.Button(
+                label="이전 팀",
+                style=discord.ButtonStyle.secondary,
+                emoji="⬅️"
+            )
+            back_button.callback = self.previous_team
+            self.add_item(back_button)
+
+        if self.current_team_index < len(self.team_names) - 1:
+            next_button = discord.ui.Button(
+                label="다음 팀",
+                style=discord.ButtonStyle.primary,
+                emoji="➡️"
+            )
+            next_button.callback = self.next_team
+            self.add_item(next_button)
+
+        if self.current_team_index == len(self.team_names) - 1 and len(self.teams_data) == len(self.team_names):
+            finish_button = discord.ui.Button(
+                label="완료",
+                style=discord.ButtonStyle.success,
+                emoji="✅"
+            )
+            finish_button.callback = self.finish_selection
+            self.add_item(finish_button)
+
+    async def players_selected(self, interaction: discord.Interaction):
+        """플레이어 선택 처리"""
+        try:
+            await interaction.response.defer(ephemeral=True)
+
+            current_team = self.team_names[self.current_team_index]
+            selected_users = interaction.data['values']
+            self.teams_data[current_team] = selected_users
+
+            await interaction.followup.send(
+                f"✅ {current_team} 팀에 {len(selected_users)}명의 플레이어가 선택되었습니다.",
+                ephemeral=True
+            )
+
+        except Exception as e:
+            self.logger.error(f"Player selection error: {e}")
+            await interaction.followup.send("❌ 플레이어 선택 중 오류가 발생했습니다.", ephemeral=True)
+
+    async def previous_team(self, interaction: discord.Interaction):
+        """이전 팀으로 이동"""
+        await interaction.response.defer(ephemeral=True)
+        self.current_team_index = max(0, self.current_team_index - 1)
+        await self.update_view(interaction)
+
+    async def next_team(self, interaction: discord.Interaction):
+        """다음 팀으로 이동"""
+        await interaction.response.defer(ephemeral=True)
+
+        current_team = self.team_names[self.current_team_index]
+        if current_team not in self.teams_data:
+            await interaction.followup.send(f"❌ {current_team} 팀의 플레이어를 먼저 선택해주세요.", ephemeral=True)
+            return
+
+        self.current_team_index = min(len(self.team_names) - 1, self.current_team_index + 1)
+        await self.update_view(interaction)
+
+    async def update_view(self, interaction: discord.Interaction):
+        """뷰 업데이트"""
+        self.clear_items()
+        self.update_user_select()
+        self.add_navigation_buttons()
+
+        current_team = self.team_names[self.current_team_index]
+        progress = f"({self.current_team_index + 1}/{len(self.team_names)})"
+
+        embed = discord.Embed(
+            title=f"👥 {current_team} 팀 플레이어 선택 {progress}",
+            description=f"**현재 팀:** {current_team}\n\n위의 선택 메뉴를 사용해 이 팀의 플레이어들을 선택하세요.",
+            color=discord.Color.blue()
+        )
+
+        # Show selected teams so far
+        if self.teams_data:
+            selected_info = []
+            for team_name, user_ids in self.teams_data.items():
+                selected_info.append(f"**{team_name}:** {len(user_ids)}명 선택됨")
+            embed.add_field(
+                name="✅ 선택 완료된 팀들",
+                value="\n".join(selected_info),
+                inline=False
+            )
+
+        await interaction.edit_original_response(embed=embed, view=self)
+
+    async def finish_selection(self, interaction: discord.Interaction):
+        """선택 완료 및 내전 종료 처리"""
+        try:
+            await interaction.response.defer(ephemeral=True)
+
+            # Validate all teams have players
+            for team_name in self.team_names:
+                if team_name not in self.teams_data or not self.teams_data[team_name]:
+                    await interaction.followup.send(f"❌ {team_name} 팀의 플레이어가 선택되지 않았습니다.", ephemeral=True)
+                    return
+
+            # Process the scrim end
+            await self.process_scrim_end(interaction)
+
+        except Exception as e:
+            self.logger.error(f"Finish selection error: {e}")
+            await interaction.followup.send("❌ 완료 처리 중 오류가 발생했습니다.", ephemeral=True)
+
+    async def process_scrim_end(self, interaction: discord.Interaction):
+        """내전 종료 처리"""
         try:
             scrim_cog = self.bot.get_cog('ScrimCog')
             if not scrim_cog:
@@ -378,19 +539,19 @@ class ScrimEndModal(discord.ui.Modal, title="내전 종료 정보 입력"):
             # Create scrim record
             record_id = await scrim_cog.create_scrim_record(
                 guild_id=self.guild_id,
-                date=scrim_date,
-                games_played=games_played,
-                winners=winners,
-                teams=teams,
-                participation_coins=participation_coins,
-                win_bonus=win_bonus,
+                date=self.scrim_date,
+                games_played=self.games_played,
+                winners=self.winners,
+                teams=self.teams_data,
+                participation_coins=self.participation_coins,
+                win_bonus=self.win_bonus,
                 recorded_by=interaction.user.id
             )
 
             if record_id:
                 # Distribute coins if casino games are enabled
                 if config.is_feature_enabled(self.guild_id, 'casino_games'):
-                    await self.distribute_coins(teams, winners, participation_coins, win_bonus, interaction)
+                    await self.distribute_coins(interaction)
 
                 # Refresh the scrim panel
                 await scrim_cog.refresh_scrim_panel_bottom(interaction.channel)
@@ -398,13 +559,13 @@ class ScrimEndModal(discord.ui.Modal, title="내전 종료 정보 입력"):
                 # Send confirmation
                 embed = discord.Embed(
                     title="✅ 내전이 성공적으로 종료되었습니다!",
-                    description=f"**날짜:** {scrim_date}\n**게임 수:** {games_played}\n**기록 ID:** {record_id}",
+                    description=f"**날짜:** {self.scrim_date}\n**게임 수:** {self.games_played}\n**기록 ID:** {record_id}",
                     color=discord.Color.green()
                 )
 
                 # Add team info
-                for team_name, member_ids in teams.items():
-                    member_mentions = [f"<@{uid}>" for uid in member_ids]
+                for team_name, user_ids in self.teams_data.items():
+                    member_mentions = [f"<@{uid}>" for uid in user_ids]
                     embed.add_field(
                         name=f"🔵 {team_name}",
                         value=" ".join(member_mentions) if member_mentions else "없음",
@@ -412,12 +573,12 @@ class ScrimEndModal(discord.ui.Modal, title="내전 종료 정보 입력"):
                     )
 
                 # Add game results
-                game_results = "\n".join([f"게임 {i + 1}: {winner}" for i, winner in enumerate(winners)])
+                game_results = "\n".join([f"게임 {i + 1}: {winner}" for i, winner in enumerate(self.winners)])
                 embed.add_field(name="🏆 게임 결과", value=game_results, inline=False)
 
                 embed.add_field(
                     name="💰 코인 분배",
-                    value=f"참가비: {participation_coins} 코인\n승리 보너스: {win_bonus} 코인",
+                    value=f"참가비: {self.participation_coins} 코인\n승리 보너스: {self.win_bonus} 코인",
                     inline=False
                 )
 
@@ -429,8 +590,8 @@ class ScrimEndModal(discord.ui.Modal, title="내전 종료 정보 입력"):
             self.logger.error(f"Process scrim end error: {traceback.format_exc()}")
             await interaction.followup.send("❌ 내전 종료 처리 중 오류가 발생했습니다.", ephemeral=True)
 
-    async def distribute_coins(self, teams, winners, participation_coins, win_bonus, interaction):
-        """Distribute coins to participants"""
+    async def distribute_coins(self, interaction):
+        """코인 분배"""
         try:
             coins_cog = self.bot.get_cog('CoinsCog')
             if not coins_cog:
@@ -438,19 +599,19 @@ class ScrimEndModal(discord.ui.Modal, title="내전 종료 정보 입력"):
 
             # Count wins per team
             team_wins = {}
-            for winner in winners:
+            for winner in self.winners:
                 team_wins[winner] = team_wins.get(winner, 0) + 1
 
             # Distribute coins to all participants
-            for team_name, member_ids in teams.items():
-                for member_id in member_ids:
+            for team_name, user_ids in self.teams_data.items():
+                for user_id in user_ids:
                     try:
-                        user_id = int(member_id)
+                        user_id = int(user_id)
                         # Give participation coins to everyone
                         await coins_cog.add_coins(
                             user_id,
                             self.guild_id,
-                            participation_coins,
+                            self.participation_coins,
                             "scrim_participation",
                             f"내전 참가 ({team_name})"
                         )
@@ -458,7 +619,7 @@ class ScrimEndModal(discord.ui.Modal, title="내전 종료 정보 입력"):
                         # Give win bonus for each game won
                         wins = team_wins.get(team_name, 0)
                         if wins > 0:
-                            bonus_amount = win_bonus * wins
+                            bonus_amount = self.win_bonus * wins
                             await coins_cog.add_coins(
                                 user_id,
                                 self.guild_id,
