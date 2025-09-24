@@ -279,15 +279,6 @@ class ScrimEndModal(discord.ui.Modal, title="내전 종료 정보 입력"):
         )
         self.add_item(self.games_input)
 
-        # Winner info - now just team names
-        self.winner_input = discord.ui.TextInput(
-            label="승리한 게임들 (쉼표로 구분)",
-            placeholder="예: 팀A, 팀B, 팀A (게임 순서대로)",
-            required=True,
-            style=discord.TextStyle.short
-        )
-        self.add_item(self.winner_input)
-
         # Team names only
         self.teams_input = discord.ui.TextInput(
             label="팀 이름들 (쉼표로 구분)",
@@ -297,11 +288,20 @@ class ScrimEndModal(discord.ui.Modal, title="내전 종료 정보 입력"):
         )
         self.add_item(self.teams_input)
 
+        # Winner info - now just team names
+        self.winner_input = discord.ui.TextInput(
+            label="승리한 게임들 (쉼표로 구분)",
+            placeholder="예: 팀A, 팀B, 팀A (게임 순서대로)",
+            required=True,
+            style=discord.TextStyle.short
+        )
+        self.add_item(self.winner_input)
+
         # Coin settings
         self.coin_settings_input = discord.ui.TextInput(
             label="코인 설정 (참가비,승리보너스)",
-            placeholder="예: 10,5 (기본값)",
-            default="10,5",
+            placeholder="예: 100,100 (기본값)",
+            default="100,100",
             required=False,
             style=discord.TextStyle.short
         )
