@@ -155,16 +155,22 @@ class WarningModal(discord.ui.Modal, title='경고 추가 - Add Warning'):
                 inline=True
             )
 
-            # Try to send to the same channel
+            # Try to send the admin tracking embed
             try:
                 await interaction.followup.send(embed=admin_embed)
-
-                # Get the cog and repost the warning system embed
-                await cog.repost_warning_system(interaction.guild)
-
             except Exception as e:
-                # If that fails, try to send to a log channel or the original channel
                 logger.warning(f"Failed to send admin tracking embed in guild {interaction.guild.id}: {e}")
+                # The warning system will still repost the main embed below, so this is non-critical.
+
+            # Repost the warning system embed regardless of whether the admin embed send succeeded.
+            try:
+                cog = interaction.client.get_cog('WarningSystem')
+                if cog:
+                    await cog.repost_warning_system(interaction.guild)
+                else:
+                    logger.error("WarningSystem cog not found during repost attempt.")
+            except Exception as e:
+                logger.error(f"Error reposting warning system embed after modal submission: {e}")
 
         except Exception as e:
             logger.error(f"Error in warning modal submit: {e}")
