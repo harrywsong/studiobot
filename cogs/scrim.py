@@ -912,10 +912,10 @@ class PlayerCountSelectView(discord.ui.View):
                 # Disable the view on the original ephemeral message
                 if self.message:
                     await self.message.edit(content="✅ 내전이 성공적으로 생성되었습니다!", embed=None, view=None)
-                await interaction.followup.send("✅ 내전이 생성되었습니다! 채널에 곧 게시됩니다.", ephemeral=True)
+                await interaction.followup.send("✅ 내전이 생성되었습니다! 곧 게시됩니다.", ephemeral=True)
 
-                # Heavy lifting in a background task
-                asyncio.create_task(self.post_scrim_and_notify_safe(scrim_cog, scrim_id))
+                # Post the scrim message immediately (not in background)
+                await self.post_scrim_with_role_mention(scrim_cog, scrim_id, interaction.channel)
             else:
                 await interaction.followup.send("❌ 내전 생성 중 오류가 발생했습니다. 로그를 확인해주세요.", ephemeral=True)
 
@@ -926,37 +926,45 @@ class PlayerCountSelectView(discord.ui.View):
             except:
                 pass
 
-    async def post_scrim_and_notify_safe(self, scrim_cog, scrim_id):
-        """Safe background task that won't affect interaction timing"""
+    async def post_scrim_with_role_mention(self, scrim_cog, scrim_id: str, channel: discord.TextChannel):
+        """Post scrim message with role mention in same message"""
         try:
-            await asyncio.sleep(0.1)  # Small delay to ensure interaction completes
-
-            # Get scrim data
             scrim_data = scrim_cog.scrims_data.get(scrim_id)
-            if not scrim_data: return
+            if not scrim_data:
+                self.logger.error(f"Scrim data not found for ID {scrim_id}")
+                return
 
-            guild = self.bot.get_guild(scrim_data['guild_id'])
-            if not guild: return
+            embed = scrim_cog.create_scrim_embed(scrim_data)
+            view = ScrimView(self.bot, scrim_id)
 
-            channel = guild.get_channel(scrim_data['channel_id'])
-            if not channel: return
-
-            # Post the main scrim message
-            await scrim_cog.post_scrim_message(channel, scrim_id)
-
-            # Send role notification if role_id is set
+            # Prepare role mention content
+            role_mention_content = ""
             if self.role_id:
-                role = guild.get_role(self.role_id)
-                if role:
-                    try:
-                        mention_msg = await channel.send(f"{role.mention} 새로운 내전이 생성되었습니다!")
-                        await asyncio.sleep(5)
-                        await mention_msg.delete()
-                    except Exception as e:
-                        self.logger.warning(f"Failed to send or delete role mention for scrim {scrim_id}: {e}")
+                guild = self.bot.get_guild(self.guild_id)
+                if guild:
+                    role = guild.get_role(self.role_id)
+                    if role:
+                        role_mention_content = f"{role.mention} 새로운 내전이 생성되었습니다!"
+                    else:
+                        self.logger.warning(f"Role {self.role_id} not found in guild {self.guild_id}")
+                else:
+                    self.logger.warning(f"Guild {self.guild_id} not found")
+
+            # Send the message with role mention outside embed
+            message = await channel.send(
+                content=role_mention_content if role_mention_content else None,
+                embed=embed,
+                view=view
+            )
+
+            # Update scrim data with message ID
+            scrim_data['message_id'] = message.id
+            await scrim_cog.save_scrims_data()
+
+            self.logger.info(f"Posted scrim message for {scrim_id} in #{channel.name}")
 
         except Exception as e:
-            self.logger.error(f"Background notification error: {traceback.format_exc()}")
+            self.logger.error(f"Error posting scrim message {scrim_id}: {traceback.format_exc()}")
 
     async def back_to_time_selection(self, interaction: discord.Interaction):
         """시간 선택으로 돌아가기"""
@@ -1092,7 +1100,10 @@ class ScrimView(discord.ui.View):
         self.scrim_id = scrim_id
         self.logger = get_logger("내부 매치")
         # Defer getting scrim_data to the interaction time to ensure it's fresh
-        self.update_button_states()
+
+    def update_button_states(self):
+        """Update button states - placeholder method"""
+        pass
 
     async def _get_scrim_cog_and_data(self, interaction: discord.Interaction) -> tuple[
         Optional['ScrimCog'], Optional[Dict]]:
@@ -1606,7 +1617,7 @@ class ScrimCog(commands.Cog):
             self.logger.error(f"Error in ScrimCog.create_scrim: {e}", exc_info=True)
             return None
 
-    async def post_scrim_message(self, channel: discord.TextChannel, scrim_id: str):
+    async def post_scrim_message(self, channel: discord.TextChannel, scrim_id: str, role_mention: str = None):
         """Posts the interactive scrim message to the channel."""
         try:
             scrim_data = self.scrims_data.get(scrim_id)
@@ -1614,7 +1625,11 @@ class ScrimCog(commands.Cog):
 
             embed = self.create_scrim_embed(scrim_data)
             view = ScrimView(self.bot, scrim_id)
-            message = await channel.send(embed=embed, view=view)
+
+            # Include role mention in the message content if provided
+            content = role_mention if role_mention else None
+
+            message = await channel.send(content=content, embed=embed, view=view)
 
             scrim_data['message_id'] = message.id
             await self.save_scrims_data()
