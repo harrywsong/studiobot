@@ -3,11 +3,12 @@
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
-import sqlite3
+import asyncpg
 import datetime
 import asyncio
 from typing import Optional
 import logging
+from utils.config import DATABASE_URL
 
 # Set up logger
 logger = logging.getLogger(__name__)
@@ -243,81 +244,88 @@ class WarningView(discord.ui.View):
 class WarningSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.db_path = "warnings.db"
+        self.database_url = DATABASE_URL
         self.warning_channel_id = 1368795110439129108  # Your target channel ID
         self.warning_embed_message_id = None  # Store the message ID
-        self.setup_database()
+        self.db_pool = None
 
         # Start the warning expiration check task
         self.warning_expiration_check.start()
 
-    def setup_database(self):
-        """Initialize the warnings database"""
+    async def get_db_pool(self):
+        """Get or create database connection pool"""
+        if self.db_pool is None:
+            self.db_pool = await asyncpg.create_pool(self.database_url)
+        return self.db_pool
+
+    async def setup_database(self):
+        """Initialize the warnings tables in PostgreSQL"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
+            pool = await self.get_db_pool()
+            async with pool.acquire() as conn:
+                # Create warnings table
+                await conn.execute('''
+                    CREATE TABLE IF NOT EXISTS warnings (
+                        id SERIAL PRIMARY KEY,
+                        guild_id BIGINT NOT NULL,
+                        user_id BIGINT NOT NULL,
+                        username TEXT NOT NULL,
+                        display_name TEXT NOT NULL,
+                        moderator_id BIGINT NOT NULL,
+                        moderator_username TEXT NOT NULL,
+                        reason TEXT NOT NULL,
+                        additional_info TEXT,
+                        created_at TIMESTAMP DEFAULT NOW(),
+                        expires_at TIMESTAMP,
+                        is_active BOOLEAN DEFAULT TRUE,
+                        can_expire BOOLEAN DEFAULT TRUE
+                    )
+                ''')
 
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS warnings (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    guild_id INTEGER NOT NULL,
-                    user_id INTEGER NOT NULL,
-                    username TEXT NOT NULL,
-                    display_name TEXT NOT NULL,
-                    moderator_id INTEGER NOT NULL,
-                    moderator_username TEXT NOT NULL,
-                    reason TEXT NOT NULL,
-                    additional_info TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    expires_at TIMESTAMP,
-                    is_active BOOLEAN DEFAULT TRUE,
-                    can_expire BOOLEAN DEFAULT TRUE
-                )
-            ''')
+                # Create warning embeds table
+                await conn.execute('''
+                    CREATE TABLE IF NOT EXISTS warning_embeds (
+                        guild_id BIGINT PRIMARY KEY,
+                        channel_id BIGINT NOT NULL,
+                        message_id BIGINT NOT NULL,
+                        created_at TIMESTAMP DEFAULT NOW()
+                    )
+                ''')
 
-            # Create table to store warning embed message IDs per guild
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS warning_embeds (
-                    guild_id INTEGER PRIMARY KEY,
-                    channel_id INTEGER NOT NULL,
-                    message_id INTEGER NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
+                # Create user warning states table
+                await conn.execute('''
+                    CREATE TABLE IF NOT EXISTS user_warning_states (
+                        guild_id BIGINT NOT NULL,
+                        user_id BIGINT NOT NULL,
+                        active_warnings INTEGER DEFAULT 0,
+                        timer_started_at TIMESTAMP,
+                        timer_expires_at TIMESTAMP,
+                        can_lose_warnings BOOLEAN DEFAULT TRUE,
+                        PRIMARY KEY (guild_id, user_id)
+                    )
+                ''')
 
-            # Create table to track user warning states and timers
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS user_warning_states (
-                    guild_id INTEGER NOT NULL,
-                    user_id INTEGER NOT NULL,
-                    active_warnings INTEGER DEFAULT 0,
-                    timer_started_at TIMESTAMP,
-                    timer_expires_at TIMESTAMP,
-                    can_lose_warnings BOOLEAN DEFAULT TRUE,
-                    PRIMARY KEY (guild_id, user_id)
-                )
-            ''')
+                # Create indexes for better performance
+                await conn.execute('''
+                    CREATE INDEX IF NOT EXISTS idx_warnings_guild_user 
+                    ON warnings(guild_id, user_id)
+                ''')
 
-            # Add new columns to existing warnings table if they don't exist
-            try:
-                cursor.execute('ALTER TABLE warnings ADD COLUMN expires_at TIMESTAMP')
-            except sqlite3.OperationalError:
-                pass  # Column already exists
+                await conn.execute('''
+                    CREATE INDEX IF NOT EXISTS idx_user_warning_states_timer 
+                    ON user_warning_states(timer_expires_at) 
+                    WHERE timer_expires_at IS NOT NULL AND can_lose_warnings = TRUE
+                ''')
 
-            try:
-                cursor.execute('ALTER TABLE warnings ADD COLUMN can_expire BOOLEAN DEFAULT TRUE')
-            except sqlite3.OperationalError:
-                pass  # Column already exists
-
-            conn.commit()
-            conn.close()
-            logger.info("Warning database initialized successfully")
+            logger.info("Warning database tables initialized successfully")
         except Exception as e:
             logger.error(f"Failed to setup warning database: {e}")
 
     async def cog_load(self):
-        """Called when the cog is loaded - check and setup warning embeds"""
+        """Called when the cog is loaded - setup database and check embeds"""
         try:
+            await self.setup_database()
+
             # Add the persistent view when cog loads
             self.bot.add_view(WarningView())
 
@@ -339,40 +347,41 @@ class WarningSystem(commands.Cog):
     async def warning_expiration_check(self):
         """Check for expired warnings and update user roles accordingly"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            now = datetime.datetime.now()
+            pool = await self.get_db_pool()
+            async with pool.acquire() as conn:
+                now = datetime.datetime.now()
 
-            # Get all user warning states that have expired timers
-            cursor.execute('''
-                SELECT guild_id, user_id, active_warnings, timer_expires_at, can_lose_warnings
-                FROM user_warning_states 
-                WHERE timer_expires_at <= ? AND timer_expires_at IS NOT NULL AND can_lose_warnings = TRUE
-            ''', (now,))
+                # Get all user warning states that have expired timers
+                expired_states = await conn.fetch('''
+                    SELECT guild_id, user_id, active_warnings, timer_expires_at, can_lose_warnings
+                    FROM user_warning_states 
+                    WHERE timer_expires_at <= $1 AND timer_expires_at IS NOT NULL AND can_lose_warnings = TRUE
+                ''', now)
 
-            expired_states = cursor.fetchall()
+                for record in expired_states:
+                    try:
+                        guild_id = record['guild_id']
+                        user_id = record['user_id']
+                        active_warnings = record['active_warnings']
 
-            for guild_id, user_id, active_warnings, timer_expires_at, can_lose_warnings in expired_states:
-                try:
-                    guild = self.bot.get_guild(guild_id)
-                    if not guild:
+                        guild = self.bot.get_guild(guild_id)
+                        if not guild:
+                            continue
+
+                        member = guild.get_member(user_id)
+                        if not member:
+                            # User left the server, clean up their warning state
+                            await conn.execute('''
+                                DELETE FROM user_warning_states 
+                                WHERE guild_id = $1 AND user_id = $2
+                            ''', guild_id, user_id)
+                            continue
+
+                        await self.handle_warning_expiration(guild, member, active_warnings, conn)
+
+                    except Exception as e:
+                        logger.error(f"Error processing expired warning for user {user_id} in guild {guild_id}: {e}")
                         continue
-
-                    member = guild.get_member(user_id)
-                    if not member:
-                        # User left the server, clean up their warning state
-                        cursor.execute('DELETE FROM user_warning_states WHERE guild_id = ? AND user_id = ?',
-                                       (guild_id, user_id))
-                        continue
-
-                    await self.handle_warning_expiration(guild, member, active_warnings, cursor)
-
-                except Exception as e:
-                    logger.error(f"Error processing expired warning for user {user_id} in guild {guild_id}: {e}")
-                    continue
-
-            conn.commit()
-            conn.close()
 
         except Exception as e:
             logger.error(f"Error in warning expiration check: {e}")
@@ -382,7 +391,7 @@ class WarningSystem(commands.Cog):
         await self.bot.wait_until_ready()
 
     async def handle_warning_expiration(self, guild: discord.Guild, member: discord.Member,
-                                        active_warnings: int, cursor):
+                                        active_warnings: int, conn):
         """Handle what happens when a user's warning timer expires"""
         try:
             warning_1x_role = guild.get_role(WARNING_1X_ROLE_ID)
@@ -396,11 +405,11 @@ class WarningSystem(commands.Cog):
 
                 # Start new 14-day timer for the remaining 1 warning
                 new_timer_expires = datetime.datetime.now() + datetime.timedelta(days=14)
-                cursor.execute('''
+                await conn.execute('''
                     UPDATE user_warning_states 
-                    SET active_warnings = 1, timer_started_at = ?, timer_expires_at = ?
-                    WHERE guild_id = ? AND user_id = ?
-                ''', (datetime.datetime.now(), new_timer_expires, guild.id, member.id))
+                    SET active_warnings = 1, timer_started_at = $1, timer_expires_at = $2
+                    WHERE guild_id = $3 AND user_id = $4
+                ''', datetime.datetime.now(), new_timer_expires, guild.id, member.id)
 
                 logger.info(f"User {member.id} in guild {guild.id} downgraded from 2x to 1x warning")
 
@@ -410,8 +419,10 @@ class WarningSystem(commands.Cog):
                     await member.remove_roles(warning_1x_role, reason="Warning timer expired - all warnings cleared")
 
                 # Clear the user's warning state
-                cursor.execute('DELETE FROM user_warning_states WHERE guild_id = ? AND user_id = ?',
-                               (guild.id, member.id))
+                await conn.execute('''
+                    DELETE FROM user_warning_states 
+                    WHERE guild_id = $1 AND user_id = $2
+                ''', guild.id, member.id)
 
                 logger.info(f"User {member.id} in guild {guild.id} had all warnings cleared")
 
@@ -422,71 +433,63 @@ class WarningSystem(commands.Cog):
                           reason: str, additional_info: Optional[str] = None) -> tuple[int, int]:
         """Add a warning to the database, handle role management, and return the warning ID and new warning count"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            now = datetime.datetime.now()
+            pool = await self.get_db_pool()
+            async with pool.acquire() as conn:
+                now = datetime.datetime.now()
 
-            # Get current warning state
-            cursor.execute('''
-                SELECT active_warnings, can_lose_warnings FROM user_warning_states 
-                WHERE guild_id = ? AND user_id = ?
-            ''', (guild_id, target_user.id))
+                # Get current warning state
+                state_result = await conn.fetchrow('''
+                    SELECT active_warnings, can_lose_warnings FROM user_warning_states 
+                    WHERE guild_id = $1 AND user_id = $2
+                ''', guild_id, target_user.id)
 
-            state_result = cursor.fetchone()
-            current_warnings = state_result[0] if state_result else 0
-            can_lose_warnings = state_result[1] if state_result else True
+                current_warnings = state_result['active_warnings'] if state_result else 0
+                can_lose_warnings = state_result['can_lose_warnings'] if state_result else True
 
-            new_warning_count = current_warnings + 1
+                new_warning_count = current_warnings + 1
 
-            # Determine if this warning can expire (it can't if user reaches 3 warnings)
-            can_expire = new_warning_count < 3
-            expires_at = now + datetime.timedelta(days=14) if can_expire else None
+                # Determine if this warning can expire (it can't if user reaches 3 warnings)
+                can_expire = new_warning_count < 3
+                expires_at = now + datetime.timedelta(days=14) if can_expire else None
 
-            # Add warning to database
-            cursor.execute('''
-                INSERT INTO warnings 
-                (guild_id, user_id, username, display_name, moderator_id, moderator_username, 
-                 reason, additional_info, expires_at, can_expire)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                guild_id,
-                target_user.id,
-                target_user.name,
-                target_user.display_name,
-                moderator.id,
-                moderator.name,
-                reason,
-                additional_info,
-                expires_at,
-                can_expire
-            ))
+                # Add warning to database
+                warning_id = await conn.fetchval('''
+                    INSERT INTO warnings 
+                    (guild_id, user_id, username, display_name, moderator_id, moderator_username, 
+                     reason, additional_info, expires_at, can_expire)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                    RETURNING id
+                ''', guild_id, target_user.id, target_user.name, target_user.display_name,
+                                                 moderator.id, moderator.name, reason, additional_info, expires_at,
+                                                 can_expire)
 
-            warning_id = cursor.lastrowid
+                # Handle role management based on warning count
+                guild = self.bot.get_guild(guild_id)
+                if guild:
+                    await self.manage_warning_roles(guild, target_user, current_warnings, new_warning_count)
 
-            # Handle role management based on warning count
-            guild = self.bot.get_guild(guild_id)
-            if guild:
-                await self.manage_warning_roles(guild, target_user, current_warnings, new_warning_count)
+                # Update or create user warning state
+                if new_warning_count >= 3:
+                    # User reached 3 warnings - send ban notification and stop timer
+                    timer_expires = None
+                    can_lose = False
+                    await self.send_ban_notification(guild, target_user, new_warning_count)
+                else:
+                    # Reset 14-day timer
+                    timer_expires = now + datetime.timedelta(days=14)
+                    can_lose = True
 
-            # Update or create user warning state
-            if new_warning_count >= 3:
-                # User reached 3 warnings - send ban notification and stop timer
-                timer_expires = None
-                can_lose = False
-                await self.send_ban_notification(guild, target_user, new_warning_count)
-            else:
-                # Reset 14-day timer
-                timer_expires = now + datetime.timedelta(days=14)
-                can_lose = True
-
-            cursor.execute('''
-                INSERT OR REPLACE INTO user_warning_states 
-                (guild_id, user_id, active_warnings, timer_started_at, timer_expires_at, can_lose_warnings)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (guild_id, target_user.id, new_warning_count, now, timer_expires, can_lose))
-
-            conn.commit()
-            conn.close()
+                await conn.execute('''
+                    INSERT INTO user_warning_states 
+                    (guild_id, user_id, active_warnings, timer_started_at, timer_expires_at, can_lose_warnings)
+                    VALUES ($1, $2, $3, $4, $5, $6)
+                    ON CONFLICT (guild_id, user_id) 
+                    DO UPDATE SET 
+                        active_warnings = $3,
+                        timer_started_at = $4,
+                        timer_expires_at = $5,
+                        can_lose_warnings = $6
+                ''', guild_id, target_user.id, new_warning_count, now, timer_expires, can_lose)
 
             logger.info(
                 f"Warning {warning_id} added for user {target_user.id} in guild {guild_id}. New count: {new_warning_count}")
@@ -569,19 +572,14 @@ class WarningSystem(commands.Cog):
     async def get_user_warning_count(self, guild_id: int, user_id: int) -> int:
         """Get the current active warning count for a user"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
+            pool = await self.get_db_pool()
+            async with pool.acquire() as conn:
+                result = await conn.fetchval('''
+                    SELECT active_warnings FROM user_warning_states 
+                    WHERE guild_id = $1 AND user_id = $2
+                ''', guild_id, user_id)
 
-            cursor.execute('''
-                SELECT active_warnings FROM user_warning_states 
-                WHERE guild_id = ? AND user_id = ?
-            ''', (guild_id, user_id))
-
-            result = cursor.fetchone()
-            count = result[0] if result else 0
-            conn.close()
-
-            return count
+                return result if result is not None else 0
 
         except Exception as e:
             logger.error(f"Failed to get warning count: {e}")
@@ -590,19 +588,15 @@ class WarningSystem(commands.Cog):
     async def get_user_warnings(self, guild_id: int, user_id: int) -> list:
         """Get all warnings for a specific user"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
+            pool = await self.get_db_pool()
+            async with pool.acquire() as conn:
+                warnings = await conn.fetch('''
+                    SELECT * FROM warnings 
+                    WHERE guild_id = $1 AND user_id = $2 AND is_active = TRUE
+                    ORDER BY created_at DESC
+                ''', guild_id, user_id)
 
-            cursor.execute('''
-                SELECT * FROM warnings 
-                WHERE guild_id = ? AND user_id = ? AND is_active = TRUE
-                ORDER BY created_at DESC
-            ''', (guild_id, user_id))
-
-            warnings = cursor.fetchall()
-            conn.close()
-
-            return warnings
+                return [dict(warning) for warning in warnings]
 
         except Exception as e:
             logger.error(f"Failed to get user warnings: {e}")
@@ -611,47 +605,48 @@ class WarningSystem(commands.Cog):
     async def check_and_setup_warning_embeds(self):
         """Check if warning embeds exist and create them if they don't"""
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
+            pool = await self.get_db_pool()
 
             for guild in self.bot.guilds:
                 try:
-                    # Check if this guild has a warning embed recorded
-                    cursor.execute('SELECT channel_id, message_id FROM warning_embeds WHERE guild_id = ?', (guild.id,))
-                    result = cursor.fetchone()
+                    async with pool.acquire() as conn:
+                        # Check if this guild has a warning embed recorded
+                        result = await conn.fetchrow('''
+                            SELECT channel_id, message_id FROM warning_embeds 
+                            WHERE guild_id = $1
+                        ''', guild.id)
 
-                    warning_channel = guild.get_channel(self.warning_channel_id)
-                    if not warning_channel:
-                        logger.info(
-                            f"Warning channel {self.warning_channel_id} not found in guild {guild.name} ({guild.id})")
-                        continue
+                        warning_channel = guild.get_channel(self.warning_channel_id)
+                        if not warning_channel:
+                            logger.info(
+                                f"Warning channel {self.warning_channel_id} not found in guild {guild.name} ({guild.id})")
+                            continue
 
-                    embed_exists = False
+                        embed_exists = False
 
-                    if result:
-                        channel_id, message_id = result
-                        try:
-                            # Check if the message still exists
-                            message = await warning_channel.fetch_message(message_id)
-                            if message and message.embeds and len(message.components) > 0:
-                                embed_exists = True
-                                logger.info(f"Warning embed already exists in guild {guild.name} ({guild.id})")
-                        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-                            # Message doesn't exist anymore, remove from database
-                            cursor.execute('DELETE FROM warning_embeds WHERE guild_id = ?', (guild.id,))
-                            logger.info(f"Removed stale warning embed record for guild {guild.name} ({guild.id})")
+                        if result:
+                            channel_id, message_id = result['channel_id'], result['message_id']
+                            try:
+                                # Check if the message still exists
+                                message = await warning_channel.fetch_message(message_id)
+                                if message and message.embeds and len(message.components) > 0:
+                                    embed_exists = True
+                                    logger.info(f"Warning embed already exists in guild {guild.name} ({guild.id})")
+                            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                                # Message doesn't exist anymore, remove from database
+                                await conn.execute('''
+                                    DELETE FROM warning_embeds WHERE guild_id = $1
+                                ''', guild.id)
+                                logger.info(f"Removed stale warning embed record for guild {guild.name} ({guild.id})")
 
-                    if not embed_exists:
-                        # Create new warning embed
-                        await self.create_warning_embed(guild, warning_channel)
-                        logger.info(f"Created warning embed for guild {guild.name} ({guild.id})")
+                        if not embed_exists:
+                            # Create new warning embed
+                            await self.create_warning_embed(guild, warning_channel)
+                            logger.info(f"Created warning embed for guild {guild.name} ({guild.id})")
 
                 except Exception as e:
                     logger.error(f"Error processing guild {guild.name} ({guild.id}): {e}")
                     continue
-
-            conn.commit()
-            conn.close()
 
         except Exception as e:
             logger.error(f"Error checking and setting up warning embeds: {e}")
@@ -665,14 +660,17 @@ class WarningSystem(commands.Cog):
             message = await channel.send(embed=embed, view=view)
 
             # Save the message ID to database
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            cursor.execute('''
-                INSERT OR REPLACE INTO warning_embeds (guild_id, channel_id, message_id)
-                VALUES (?, ?, ?)
-            ''', (guild.id, channel.id, message.id))
-            conn.commit()
-            conn.close()
+            pool = await self.get_db_pool()
+            async with pool.acquire() as conn:
+                await conn.execute('''
+                    INSERT INTO warning_embeds (guild_id, channel_id, message_id)
+                    VALUES ($1, $2, $3)
+                    ON CONFLICT (guild_id) 
+                    DO UPDATE SET 
+                        channel_id = $2,
+                        message_id = $3,
+                        created_at = NOW()
+                ''', guild.id, channel.id, message.id)
 
             self.warning_embed_message_id = message.id
             logger.info(f"Warning embed created with ID {message.id} in guild {guild.name}")
@@ -688,40 +686,42 @@ class WarningSystem(commands.Cog):
                 logger.warning(f"Warning channel {self.warning_channel_id} not found in guild {guild.id}")
                 return
 
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
+            pool = await self.get_db_pool()
+            async with pool.acquire() as conn:
+                # Get the current embed message ID
+                result = await conn.fetchval('''
+                    SELECT message_id FROM warning_embeds WHERE guild_id = $1
+                ''', guild.id)
 
-            # Get the current embed message ID
-            cursor.execute('SELECT message_id FROM warning_embeds WHERE guild_id = ?', (guild.id,))
-            result = cursor.fetchone()
+                if result:
+                    message_id = result
+                    try:
+                        old_message = await warning_channel.fetch_message(message_id)
+                        await old_message.delete()
+                        logger.info(f"Deleted old warning system embed {message_id}")
+                    except discord.NotFound:
+                        logger.info("Old warning system embed not found, probably already deleted")
+                    except discord.Forbidden:
+                        logger.warning("Missing permissions to delete old warning system embed")
+                    except Exception as e:
+                        logger.error(f"Error deleting old warning system embed: {e}")
 
-            if result:
-                message_id = result[0]
-                try:
-                    old_message = await warning_channel.fetch_message(message_id)
-                    await old_message.delete()
-                    logger.info(f"Deleted old warning system embed {message_id}")
-                except discord.NotFound:
-                    logger.info("Old warning system embed not found, probably already deleted")
-                except discord.Forbidden:
-                    logger.warning("Missing permissions to delete old warning system embed")
-                except Exception as e:
-                    logger.error(f"Error deleting old warning system embed: {e}")
+                # Create and send the new embed
+                embed = self.create_warning_system_embed()
+                view = WarningView()
 
-            # Create and send the new embed
-            embed = self.create_warning_system_embed()
-            view = WarningView()
+                new_message = await warning_channel.send(embed=embed, view=view)
 
-            new_message = await warning_channel.send(embed=embed, view=view)
-
-            # Update the database with new message ID
-            cursor.execute('''
-                INSERT OR REPLACE INTO warning_embeds (guild_id, channel_id, message_id)
-                VALUES (?, ?, ?)
-            ''', (guild.id, warning_channel.id, new_message.id))
-
-            conn.commit()
-            conn.close()
+                # Update the database with new message ID
+                await conn.execute('''
+                    INSERT INTO warning_embeds (guild_id, channel_id, message_id)
+                    VALUES ($1, $2, $3)
+                    ON CONFLICT (guild_id) 
+                    DO UPDATE SET 
+                        channel_id = $2,
+                        message_id = $3,
+                        created_at = NOW()
+                ''', guild.id, warning_channel.id, new_message.id)
 
             self.warning_embed_message_id = new_message.id
             logger.info(f"Reposted warning system embed with ID {new_message.id}")
@@ -843,53 +843,50 @@ class WarningSystem(commands.Cog):
 
             # Get warning state info
             try:
-                conn = sqlite3.connect(self.db_path)
-                cursor = conn.cursor()
-                cursor.execute('''
-                            SELECT timer_expires_at, can_lose_warnings FROM user_warning_states 
-                            WHERE guild_id = ? AND user_id = ?
-                        ''', (interaction.guild.id, user.id))
+                pool = await self.get_db_pool()
+                async with pool.acquire() as conn:
+                    state_result = await conn.fetchrow('''
+                        SELECT timer_expires_at, can_lose_warnings FROM user_warning_states 
+                        WHERE guild_id = $1 AND user_id = $2
+                    ''', interaction.guild.id, user.id)
 
-                state_result = cursor.fetchone()
-                if state_result:
-                    timer_expires_at, can_lose_warnings = state_result
-                    if timer_expires_at and can_lose_warnings:
-                        expire_time = datetime.datetime.fromisoformat(timer_expires_at)
-                        embed.add_field(
-                            name="⏰ 타이머 정보",
-                            value=f"다음 만료 시간: {expire_time.strftime('%Y-%m-%d %H:%M:%S')}",
-                            inline=False
-                        )
-                    elif not can_lose_warnings:
-                        embed.add_field(
-                            name="🔒 상태",
-                            value="3회 경고 달성 - 타이머 정지됨",
-                            inline=False
-                        )
-
-                conn.close()
+                    if state_result:
+                        timer_expires_at, can_lose_warnings = state_result['timer_expires_at'], state_result[
+                            'can_lose_warnings']
+                        if timer_expires_at and can_lose_warnings:
+                            embed.add_field(
+                                name="⏰ 타이머 정보",
+                                value=f"다음 만료 시간: {timer_expires_at.strftime('%Y-%m-%d %H:%M:%S')}",
+                                inline=False
+                            )
+                        elif not can_lose_warnings:
+                            embed.add_field(
+                                name="🔒 상태",
+                                value="3회 경고 달성 - 타이머 정지됨",
+                                inline=False
+                            )
             except Exception as e:
                 logger.error(f"Error getting warning state: {e}")
 
             # Show last 5 warnings
             for i, warning in enumerate(warnings[:5]):
-                warning_id = warning[0]
-                reason = warning[7]
-                additional_info = warning[8]
-                created_at = warning[9]
-                expires_at = warning[10]
-                can_expire = warning[11]
+                warning_id = warning['id']
+                reason = warning['reason']
+                additional_info = warning['additional_info']
+                created_at = warning['created_at']
+                expires_at = warning['expires_at']
+                can_expire = warning['can_expire']
 
                 expire_info = ""
                 if can_expire and expires_at:
-                    expire_info = f"\n**만료일:** {expires_at}"
+                    expire_info = f"\n**만료일:** {expires_at.strftime('%Y-%m-%d %H:%M:%S')}"
                 elif not can_expire:
                     expire_info = f"\n**상태:** 영구 경고"
 
                 embed.add_field(
                     name=f"경고 #{warning_id}",
                     value=(
-                        f"**날짜:** {created_at}\n"
+                        f"**날짜:** {created_at.strftime('%Y-%m-%d %H:%M:%S')}\n"
                         f"**사유:** {reason}\n"
                         f"**추가정보:** {additional_info or 'N/A'}"
                         f"{expire_info}"
@@ -915,9 +912,6 @@ class WarningSystem(commands.Cog):
             return
 
         try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-
             # Get current warning count
             current_count = await self.get_user_warning_count(interaction.guild.id, user.id)
 
@@ -941,22 +935,24 @@ class WarningSystem(commands.Cog):
             if roles_to_remove:
                 await user.remove_roles(*roles_to_remove, reason=f"All warnings removed by {interaction.user.name}")
 
-            # Clear user warning state
-            cursor.execute('DELETE FROM user_warning_states WHERE guild_id = ? AND user_id = ?',
-                           (interaction.guild.id, user.id))
+            # Update database
+            pool = await self.get_db_pool()
+            async with pool.acquire() as conn:
+                # Clear user warning state
+                await conn.execute('''
+                    DELETE FROM user_warning_states 
+                    WHERE guild_id = $1 AND user_id = $2
+                ''', interaction.guild.id, user.id)
 
-            # Deactivate all warnings for this user (keep for records)
-            cursor.execute('''
-                        UPDATE warnings SET is_active = FALSE 
-                        WHERE guild_id = ? AND user_id = ? AND is_active = TRUE
-                    ''', (interaction.guild.id, user.id))
-
-            conn.commit()
-            conn.close()
+                # Deactivate all warnings for this user (keep for records)
+                await conn.execute('''
+                    UPDATE warnings SET is_active = FALSE 
+                    WHERE guild_id = $1 AND user_id = $2 AND is_active = TRUE
+                ''', interaction.guild.id, user.id)
 
             embed = discord.Embed(
                 title="✅ 경고 제거 완료",
-                description=f"{user.display_name}님의 모든 경고({current_count}개)가 제거되었습니다.",
+                description=f"{user.display_name}님의 모든 경고 ({current_count}개)가 제거되었습니다.",
                 color=discord.Color.green(),
                 timestamp=datetime.datetime.now()
             )
@@ -982,9 +978,11 @@ class WarningSystem(commands.Cog):
                 ephemeral=True
             )
 
-    def cog_unload(self):
+    async def cog_unload(self):
         """Clean up when cog is unloaded"""
         self.warning_expiration_check.cancel()
+        if self.db_pool:
+            await self.db_pool.close()
 
 
 async def setup(bot):
