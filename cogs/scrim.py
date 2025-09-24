@@ -403,9 +403,13 @@ class PlayerSelectionView(discord.ui.View):
     def update_user_select(self):
         """현재 팀을 위한 사용자 선택 업데이트"""
         # Remove existing user select if any
-        for item in self.children[:]:
+        items_to_remove = []
+        for item in self.children:
             if isinstance(item, discord.ui.UserSelect):
-                self.remove_item(item)
+                items_to_remove.append(item)
+
+        for item in items_to_remove:
+            self.remove_item(item)
 
         if self.current_team_index < len(self.team_names):
             current_team = self.team_names[self.current_team_index]
@@ -416,10 +420,19 @@ class PlayerSelectionView(discord.ui.View):
                 custom_id=f"team_players_{self.current_team_index}"
             )
             user_select.callback = self.players_selected
-            self.children.insert(0, user_select)  # Insert at beginning
+            self.add_item(user_select)  # Use add_item instead of children.insert
 
     def add_navigation_buttons(self):
         """네비게이션 버튼들 추가"""
+        # Remove existing buttons (but keep user select)
+        buttons_to_remove = []
+        for item in self.children:
+            if isinstance(item, discord.ui.Button):
+                buttons_to_remove.append(item)
+
+        for button in buttons_to_remove:
+            self.remove_item(button)
+
         if self.current_team_index > 0:
             back_button = discord.ui.Button(
                 label="이전 팀",
