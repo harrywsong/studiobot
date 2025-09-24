@@ -158,13 +158,11 @@ class WarningModal(discord.ui.Modal, title='경고 추가 - Add Warning'):
                 await interaction.followup.send(embed=admin_embed)
 
                 # Get the cog and repost the warning system embed
-                cog = interaction.client.get_cog('WarningSystem')
-                if cog:
-                    await cog.repost_warning_system(interaction.guild)
+                await cog.repost_warning_system(interaction.guild)
 
-            except:
+            except Exception as e:
                 # If that fails, try to send to a log channel or the original channel
-                logger.warning(f"Failed to send admin tracking embed in guild {interaction.guild.id}")
+                logger.warning(f"Failed to send admin tracking embed in guild {interaction.guild.id}: {e}")
 
         except Exception as e:
             logger.error(f"Error in warning modal submit: {e}")
@@ -242,8 +240,8 @@ class WarningSystem(commands.Cog):
         self.warning_embed_message_id = None  # Store the message ID
         self.setup_database()
 
-        # Add the persistent view
-        self.bot.add_view(WarningView())
+        # Add the persistent view after bot is ready
+        # Don't add it here as it might cause issues during startup
 
     def setup_database(self):
         """Initialize the warnings database"""
@@ -285,8 +283,23 @@ class WarningSystem(commands.Cog):
 
     async def cog_load(self):
         """Called when the cog is loaded - check and setup warning embeds"""
-        await self.bot.wait_until_ready()  # Wait for bot to be ready
-        await self.check_and_setup_warning_embeds()
+        try:
+            # Add the persistent view when cog loads
+            self.bot.add_view(WarningView())
+
+            # Schedule the embed check to run after bot is ready
+            self.bot.loop.create_task(self.delayed_setup())
+        except Exception as e:
+            logger.error(f"Error in cog_load: {e}")
+
+    async def delayed_setup(self):
+        """Delayed setup to ensure bot is fully ready"""
+        try:
+            await self.bot.wait_until_ready()  # Wait for bot to be ready
+            await asyncio.sleep(2)  # Additional delay to ensure everything is loaded
+            await self.check_and_setup_warning_embeds()
+        except Exception as e:
+            logger.error(f"Error in delayed_setup: {e}")
 
     async def check_and_setup_warning_embeds(self):
         """Check if warning embeds exist and create them if they don't"""
@@ -295,35 +308,40 @@ class WarningSystem(commands.Cog):
             cursor = conn.cursor()
 
             for guild in self.bot.guilds:
-                # Check if this guild has a warning embed recorded
-                cursor.execute('SELECT channel_id, message_id FROM warning_embeds WHERE guild_id = ?', (guild.id,))
-                result = cursor.fetchone()
+                try:
+                    # Check if this guild has a warning embed recorded
+                    cursor.execute('SELECT channel_id, message_id FROM warning_embeds WHERE guild_id = ?', (guild.id,))
+                    result = cursor.fetchone()
 
-                warning_channel = guild.get_channel(self.warning_channel_id)
-                if not warning_channel:
-                    logger.info(
-                        f"Warning channel {self.warning_channel_id} not found in guild {guild.name} ({guild.id})")
+                    warning_channel = guild.get_channel(self.warning_channel_id)
+                    if not warning_channel:
+                        logger.info(
+                            f"Warning channel {self.warning_channel_id} not found in guild {guild.name} ({guild.id})")
+                        continue
+
+                    embed_exists = False
+
+                    if result:
+                        channel_id, message_id = result
+                        try:
+                            # Check if the message still exists
+                            message = await warning_channel.fetch_message(message_id)
+                            if message and message.embeds and len(message.components) > 0:
+                                embed_exists = True
+                                logger.info(f"Warning embed already exists in guild {guild.name} ({guild.id})")
+                        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                            # Message doesn't exist anymore, remove from database
+                            cursor.execute('DELETE FROM warning_embeds WHERE guild_id = ?', (guild.id,))
+                            logger.info(f"Removed stale warning embed record for guild {guild.name} ({guild.id})")
+
+                    if not embed_exists:
+                        # Create new warning embed
+                        await self.create_warning_embed(guild, warning_channel)
+                        logger.info(f"Created warning embed for guild {guild.name} ({guild.id})")
+
+                except Exception as e:
+                    logger.error(f"Error processing guild {guild.name} ({guild.id}): {e}")
                     continue
-
-                embed_exists = False
-
-                if result:
-                    channel_id, message_id = result
-                    try:
-                        # Check if the message still exists
-                        message = await warning_channel.fetch_message(message_id)
-                        if message and message.embeds and len(message.components) > 0:
-                            embed_exists = True
-                            logger.info(f"Warning embed already exists in guild {guild.name} ({guild.id})")
-                    except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-                        # Message doesn't exist anymore, remove from database
-                        cursor.execute('DELETE FROM warning_embeds WHERE guild_id = ?', (guild.id,))
-                        logger.info(f"Removed stale warning embed record for guild {guild.name} ({guild.id})")
-
-                if not embed_exists:
-                    # Create new warning embed
-                    await self.create_warning_embed(guild, warning_channel)
-                    logger.info(f"Created warning embed for guild {guild.name} ({guild.id})")
 
             conn.commit()
             conn.close()
