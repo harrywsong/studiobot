@@ -376,6 +376,7 @@ class ScrimEndModal(discord.ui.Modal, title="내전 종료 정보 입력"):
                 await interaction.followup.send("⌚ 처리 중 오류가 발생했습니다.", ephemeral=True)
 
 
+# Fixed PlayerSelectionView with confirmation system
 class PlayerSelectionView(discord.ui.View):
     """팀별 플레이어 선택을 위한 뷰"""
 
@@ -392,6 +393,7 @@ class PlayerSelectionView(discord.ui.View):
         self.win_bonus = win_bonus
         self.teams_data = {}  # Will store {team_name: [user_ids]}
         self.current_team_index = 0
+        self.current_selection = []  # Store current selection temporarily
         self.logger = get_logger("내부 매치")
 
         # Add user select for current team
@@ -420,7 +422,7 @@ class PlayerSelectionView(discord.ui.View):
                 custom_id=f"team_players_{self.current_team_index}"
             )
             user_select.callback = self.players_selected
-            self.add_item(user_select)  # Use add_item instead of children.insert
+            self.add_item(user_select)
 
     def add_navigation_buttons(self):
         """네비게이션 버튼들 추가"""
@@ -432,6 +434,24 @@ class PlayerSelectionView(discord.ui.View):
 
         for button in buttons_to_remove:
             self.remove_item(button)
+
+        # Add confirm button if selection is made
+        if self.current_selection:
+            confirm_button = discord.ui.Button(
+                label="팀에 추가",
+                style=discord.ButtonStyle.success,
+                emoji="✅"
+            )
+            confirm_button.callback = self.confirm_team_selection
+            self.add_item(confirm_button)
+
+            clear_button = discord.ui.Button(
+                label="선택 취소",
+                style=discord.ButtonStyle.danger,
+                emoji="❌"
+            )
+            clear_button.callback = self.clear_selection
+            self.add_item(clear_button)
 
         if self.current_team_index > 0:
             back_button = discord.ui.Button(
@@ -461,16 +481,21 @@ class PlayerSelectionView(discord.ui.View):
             self.add_item(finish_button)
 
     async def players_selected(self, interaction: discord.Interaction):
-        """플레이어 선택 처리"""
+        """플레이어 선택 처리 - 임시 저장만"""
         try:
             await interaction.response.defer(ephemeral=True)
 
-            current_team = self.team_names[self.current_team_index]
             selected_users = interaction.data['values']
-            self.teams_data[current_team] = selected_users
+            self.current_selection = selected_users
+
+            current_team = self.team_names[self.current_team_index]
+
+            # Update the view to show confirmation buttons
+            self.update_view_components()
+            await self.update_display(interaction)
 
             await interaction.followup.send(
-                f"✅ {current_team} 팀에 {len(selected_users)}명의 플레이어가 선택되었습니다.",
+                f"🔄 {current_team} 팀에 {len(selected_users)}명의 플레이어가 임시 선택되었습니다. '팀에 추가' 버튼을 눌러 확정하세요.",
                 ephemeral=True
             )
 
@@ -478,10 +503,56 @@ class PlayerSelectionView(discord.ui.View):
             self.logger.error(f"Player selection error: {e}")
             await interaction.followup.send("❌ 플레이어 선택 중 오류가 발생했습니다.", ephemeral=True)
 
+    async def confirm_team_selection(self, interaction: discord.Interaction):
+        """팀 선택 확정"""
+        try:
+            await interaction.response.defer(ephemeral=True)
+
+            current_team = self.team_names[self.current_team_index]
+            self.teams_data[current_team] = self.current_selection.copy()
+
+            # Clear current selection and update view
+            self.current_selection = []
+            self.update_view_components()
+
+            await self.update_display(interaction)
+
+            await interaction.followup.send(
+                f"✅ {current_team} 팀에 {len(self.teams_data[current_team])}명의 플레이어가 확정되었습니다.",
+                ephemeral=True
+            )
+
+        except Exception as e:
+            self.logger.error(f"Confirm team selection error: {e}")
+            await interaction.followup.send("❌ 팀 확정 중 오류가 발생했습니다.", ephemeral=True)
+
+    async def clear_selection(self, interaction: discord.Interaction):
+        """선택 취소"""
+        try:
+            await interaction.response.defer(ephemeral=True)
+
+            self.current_selection = []
+            self.update_view_components()
+
+            await self.update_display(interaction)
+
+            await interaction.followup.send("🔄 선택이 취소되었습니다.", ephemeral=True)
+
+        except Exception as e:
+            self.logger.error(f"Clear selection error: {e}")
+            await interaction.followup.send("❌ 선택 취소 중 오류가 발생했습니다.", ephemeral=True)
+
+    def update_view_components(self):
+        """뷰 컴포넌트들 업데이트"""
+        self.clear_items()
+        self.update_user_select()
+        self.add_navigation_buttons()
+
     async def previous_team(self, interaction: discord.Interaction):
         """이전 팀으로 이동"""
         await interaction.response.defer(ephemeral=True)
         self.current_team_index = max(0, self.current_team_index - 1)
+        self.current_selection = []  # Clear selection when changing teams
         await self.update_view(interaction)
 
     async def next_team(self, interaction: discord.Interaction):
@@ -490,45 +561,58 @@ class PlayerSelectionView(discord.ui.View):
 
         current_team = self.team_names[self.current_team_index]
         if current_team not in self.teams_data:
-            await interaction.followup.send(f"❌ {current_team} 팀의 플레이어를 먼저 선택해주세요.", ephemeral=True)
+            await interaction.followup.send(f"❌ {current_team} 팀의 플레이어를 먼저 확정해주세요.", ephemeral=True)
             return
 
         self.current_team_index = min(len(self.team_names) - 1, self.current_team_index + 1)
+        self.current_selection = []  # Clear selection when changing teams
         await self.update_view(interaction)
 
     async def update_view(self, interaction: discord.Interaction):
         """뷰 업데이트"""
-        self.clear_items()
-        self.update_user_select()
-        self.add_navigation_buttons()
+        self.update_view_components()
+        await self.update_display(interaction)
 
+    async def update_display(self, interaction: discord.Interaction):
+        """디스플레이 업데이트"""
         current_team = self.team_names[self.current_team_index]
         progress = f"({self.current_team_index + 1}/{len(self.team_names)})"
 
         embed = discord.Embed(
             title=f"👥 {current_team} 팀 플레이어 선택 {progress}",
-            description=f"**현재 팀:** {current_team}\n\n위의 선택 메뉴를 사용해 이 팀의 플레이어들을 선택하세요.",
+            description=f"**현재 팀:** {current_team}",
             color=discord.Color.blue()
         )
 
-        # Show selected teams so far
-        if self.teams_data:
-            selected_info = []
-            for team_name, user_ids in self.teams_data.items():
-                selected_info.append(f"**{team_name}:** {len(user_ids)}명 선택됨")
+        # Show current temporary selection
+        if self.current_selection:
+            temp_mentions = [f"<@{uid}>" for uid in self.current_selection]
             embed.add_field(
-                name="✅ 선택 완료된 팀들",
-                value="\n".join(selected_info),
+                name="🔄 임시 선택됨",
+                value=" ".join(temp_mentions),
+                inline=False
+            )
+            embed.description += f"\n\n⚠️ 임시로 {len(self.current_selection)}명이 선택되었습니다. '팀에 추가' 버튼을 눌러 확정하세요."
+        else:
+            embed.description += f"\n\n위의 선택 메뉴를 사용해 이 팀의 플레이어들을 선택하세요."
+
+        # Show confirmed teams
+        if self.teams_data:
+            confirmed_info = []
+            for team_name, user_ids in self.teams_data.items():
+                confirmed_info.append(f"**{team_name}:** {len(user_ids)}명 확정됨")
+            embed.add_field(
+                name="✅ 확정된 팀들",
+                value="\n".join(confirmed_info),
                 inline=False
             )
 
         # Handle both regular Message and WebhookMessage
         if hasattr(self.message, 'edit'):
-            # Regular discord.Message
             await self.message.edit(embed=embed, view=self)
         else:
-            # WebhookMessage - use the interaction to edit
             await interaction.edit_original_response(embed=embed, view=self)
+
     async def finish_selection(self, interaction: discord.Interaction):
         """선택 완료 및 내전 종료 처리"""
         try:
@@ -537,7 +621,7 @@ class PlayerSelectionView(discord.ui.View):
             # Validate all teams have players
             for team_name in self.team_names:
                 if team_name not in self.teams_data or not self.teams_data[team_name]:
-                    await interaction.followup.send(f"❌ {team_name} 팀의 플레이어가 선택되지 않았습니다.", ephemeral=True)
+                    await interaction.followup.send(f"❌ {team_name} 팀의 플레이어가 확정되지 않았습니다.", ephemeral=True)
                     return
 
             # Process the scrim end
@@ -548,7 +632,7 @@ class PlayerSelectionView(discord.ui.View):
             await interaction.followup.send("❌ 완료 처리 중 오류가 발생했습니다.", ephemeral=True)
 
     async def process_scrim_end(self, interaction: discord.Interaction):
-        """내전 종료 처리"""
+        """내전 종료 처리 - 수정된 버전"""
         try:
             scrim_cog = self.bot.get_cog('ScrimCog')
             if not scrim_cog:
@@ -572,42 +656,79 @@ class PlayerSelectionView(discord.ui.View):
                 if config.is_feature_enabled(self.guild_id, 'casino_games'):
                     await self.distribute_coins(interaction)
 
-                # Refresh the scrim panel
+                # 1. Clear the entire chat
+                await self.clear_chat(interaction.channel)
+
+                # 2. Post the success embed
+                await self.post_success_embed(interaction, record_id)
+
+                # 3. Refresh the scrim panel at bottom
                 await scrim_cog.refresh_scrim_panel_bottom(interaction.channel)
 
-                # Send confirmation
-                embed = discord.Embed(
-                    title="✅ 내전이 성공적으로 종료되었습니다!",
-                    description=f"**날짜:** {self.scrim_date}\n**게임 수:** {self.games_played}\n**기록 ID:** {record_id}",
-                    color=discord.Color.green()
-                )
-
-                # Add team info
-                for team_name, user_ids in self.teams_data.items():
-                    member_mentions = [f"<@{uid}>" for uid in user_ids]
-                    embed.add_field(
-                        name=f"🔵 {team_name}",
-                        value=" ".join(member_mentions) if member_mentions else "없음",
-                        inline=False
-                    )
-
-                # Add game results
-                game_results = "\n".join([f"게임 {i + 1}: {winner}" for i, winner in enumerate(self.winners)])
-                embed.add_field(name="🏆 게임 결과", value=game_results, inline=False)
-
-                embed.add_field(
-                    name="💰 코인 분배",
-                    value=f"참가비: {self.participation_coins} 코인\n승리 보너스: {self.win_bonus} 코인",
-                    inline=False
-                )
-
-                await interaction.followup.send(embed=embed)
             else:
                 await interaction.followup.send("❌ 내전 기록 저장 중 오류가 발생했습니다.", ephemeral=True)
 
         except Exception as e:
             self.logger.error(f"Process scrim end error: {traceback.format_exc()}")
             await interaction.followup.send("❌ 내전 종료 처리 중 오류가 발생했습니다.", ephemeral=True)
+
+    async def clear_chat(self, channel):
+        """채팅 전체 삭제"""
+        try:
+            # Delete recent messages (Discord API limits bulk delete to messages newer than 14 days)
+            deleted = 0
+            async for message in channel.history(limit=100):
+                try:
+                    await message.delete()
+                    deleted += 1
+                    # Small delay to avoid rate limits
+                    if deleted % 10 == 0:
+                        await asyncio.sleep(0.5)
+                except discord.NotFound:
+                    continue  # Message already deleted
+                except discord.Forbidden:
+                    break  # No permission to delete
+                except discord.HTTPException:
+                    continue  # Rate limited or other HTTP error
+
+            self.logger.info(f"Cleared {deleted} messages from #{channel.name}")
+
+        except Exception as e:
+            self.logger.error(f"Error clearing chat: {e}")
+
+    async def post_success_embed(self, interaction, record_id):
+        """성공 임베드 게시"""
+        try:
+            embed = discord.Embed(
+                title="✅ 내전이 성공적으로 종료되었습니다!",
+                description=f"**날짜:** {self.scrim_date}\n**게임 수:** {self.games_played}\n**기록 ID:** {record_id}",
+                color=discord.Color.green()
+            )
+
+            # Add team info
+            for team_name, user_ids in self.teams_data.items():
+                member_mentions = [f"<@{uid}>" for uid in user_ids]
+                embed.add_field(
+                    name=f"🔵 {team_name}",
+                    value=" ".join(member_mentions) if member_mentions else "없음",
+                    inline=False
+                )
+
+            # Add game results
+            game_results = "\n".join([f"게임 {i + 1}: {winner}" for i, winner in enumerate(self.winners)])
+            embed.add_field(name="🏆 게임 결과", value=game_results, inline=False)
+
+            embed.add_field(
+                name="💰 코인 분배",
+                value=f"참가비: {self.participation_coins} 코인\n승리 보너스: {self.win_bonus} 코인",
+                inline=False
+            )
+
+            # Post to the channel (not as ephemeral followup)
+            await interaction.channel.send(embed=embed)
+
+        except Exception as e:
+            self.logger.error(f"Error posting success embed: {e}")
 
     async def distribute_coins(self, interaction):
         """코인 분배"""
