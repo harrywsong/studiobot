@@ -1586,9 +1586,10 @@ class ScrimCog(commands.Cog):
                         message.embeds[0].title and "내전 생성 패널" in message.embeds[0].title):
                     await message.delete()
 
-            # Create new panel at bottom
-            await self.setup_scrim_panel(channel)
-            self.logger.info(f"Refreshed scrim panel at bottom of #{channel.name}")
+            # Create new panel at bottom (don't call setup_scrim_panel as it searches for existing)
+            embed = self.create_scrim_panel_embed()
+            await channel.send(embed=embed, view=ScrimCreateView(self.bot))
+            self.logger.info(f"Created new scrim panel at bottom of #{channel.name}")
 
         except Exception as e:
             self.logger.error(f"Error refreshing scrim panel: {e}", exc_info=True)
