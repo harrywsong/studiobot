@@ -238,6 +238,8 @@ class WarningSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.db_path = "warnings.db"
+        self.warning_channel_id = 1368795110439129108  # Your target channel ID
+        self.warning_embed_message_id = None  # Store the message ID
         self.setup_database()
 
         # Add the persistent view
@@ -265,11 +267,93 @@ class WarningSystem(commands.Cog):
                 )
             ''')
 
+            # Create table to store warning embed message IDs per guild
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS warning_embeds (
+                    guild_id INTEGER PRIMARY KEY,
+                    channel_id INTEGER NOT NULL,
+                    message_id INTEGER NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+
             conn.commit()
             conn.close()
             logger.info("Warning database initialized successfully")
         except Exception as e:
             logger.error(f"Failed to setup warning database: {e}")
+
+    async def cog_load(self):
+        """Called when the cog is loaded - check and setup warning embeds"""
+        await self.bot.wait_until_ready()  # Wait for bot to be ready
+        await self.check_and_setup_warning_embeds()
+
+    async def check_and_setup_warning_embeds(self):
+        """Check if warning embeds exist and create them if they don't"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+
+            for guild in self.bot.guilds:
+                # Check if this guild has a warning embed recorded
+                cursor.execute('SELECT channel_id, message_id FROM warning_embeds WHERE guild_id = ?', (guild.id,))
+                result = cursor.fetchone()
+
+                warning_channel = guild.get_channel(self.warning_channel_id)
+                if not warning_channel:
+                    logger.info(
+                        f"Warning channel {self.warning_channel_id} not found in guild {guild.name} ({guild.id})")
+                    continue
+
+                embed_exists = False
+
+                if result:
+                    channel_id, message_id = result
+                    try:
+                        # Check if the message still exists
+                        message = await warning_channel.fetch_message(message_id)
+                        if message and message.embeds and len(message.components) > 0:
+                            embed_exists = True
+                            logger.info(f"Warning embed already exists in guild {guild.name} ({guild.id})")
+                    except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                        # Message doesn't exist anymore, remove from database
+                        cursor.execute('DELETE FROM warning_embeds WHERE guild_id = ?', (guild.id,))
+                        logger.info(f"Removed stale warning embed record for guild {guild.name} ({guild.id})")
+
+                if not embed_exists:
+                    # Create new warning embed
+                    await self.create_warning_embed(guild, warning_channel)
+                    logger.info(f"Created warning embed for guild {guild.name} ({guild.id})")
+
+            conn.commit()
+            conn.close()
+
+        except Exception as e:
+            logger.error(f"Error checking and setting up warning embeds: {e}")
+
+    async def create_warning_embed(self, guild: discord.Guild, channel: discord.TextChannel):
+        """Create and send the warning system embed to the specified channel"""
+        try:
+            embed = self.create_warning_system_embed()
+            view = WarningView()
+
+            message = await channel.send(embed=embed, view=view)
+
+            # Save the message ID to database
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT OR REPLACE INTO warning_embeds (guild_id, channel_id, message_id)
+                VALUES (?, ?, ?)
+            ''', (guild.id, channel.id, message.id))
+            conn.commit()
+            conn.close()
+
+            self.warning_embed_message_id = message.id
+            logger.info(f"Warning embed created with ID {message.id} in guild {guild.name}")
+
+        except Exception as e:
+            logger.error(f"Failed to create warning embed in guild {guild.name}: {e}")
 
     async def add_warning(self, guild_id: int, target_user: discord.Member, moderator: discord.Member,
                           reason: str, additional_info: Optional[str] = None) -> int:
@@ -353,12 +437,19 @@ class WarningSystem(commands.Cog):
                 logger.warning(f"Warning channel {self.warning_channel_id} not found in guild {guild.id}")
                 return
 
-            # Delete the old embed if it exists
-            if self.warning_embed_message_id:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+
+            # Get the current embed message ID
+            cursor.execute('SELECT message_id FROM warning_embeds WHERE guild_id = ?', (guild.id,))
+            result = cursor.fetchone()
+
+            if result:
+                message_id = result[0]
                 try:
-                    old_message = await warning_channel.fetch_message(self.warning_embed_message_id)
+                    old_message = await warning_channel.fetch_message(message_id)
                     await old_message.delete()
-                    logger.info(f"Deleted old warning system embed {self.warning_embed_message_id}")
+                    logger.info(f"Deleted old warning system embed {message_id}")
                 except discord.NotFound:
                     logger.info("Old warning system embed not found, probably already deleted")
                 except discord.Forbidden:
@@ -371,6 +462,16 @@ class WarningSystem(commands.Cog):
             view = WarningView()
 
             new_message = await warning_channel.send(embed=embed, view=view)
+
+            # Update the database with new message ID
+            cursor.execute('''
+                INSERT OR REPLACE INTO warning_embeds (guild_id, channel_id, message_id)
+                VALUES (?, ?, ?)
+            ''', (guild.id, warning_channel.id, new_message.id))
+
+            conn.commit()
+            conn.close()
+
             self.warning_embed_message_id = new_message.id
             logger.info(f"Reposted warning system embed with ID {new_message.id}")
 
@@ -420,64 +521,27 @@ class WarningSystem(commands.Cog):
         embed.set_footer(text="경고 시스템 | 관리자 전용")
         return embed
 
-    @commands.command(name='setup_warnings')
+    @commands.command(name='경고설정')
     @commands.has_permissions(administrator=True)
     async def setup_warnings(self, ctx):
-        """Setup the warning system in the specified channel"""
-        target_channel_id = 1368795110439129108
-        target_channel = ctx.guild.get_channel(target_channel_id)
+        """Setup the warning system in the specified channel (manual command)"""
+        target_channel = ctx.guild.get_channel(self.warning_channel_id)
 
         if not target_channel:
-            await ctx.send(f"❌ 채널을 찾을 수 없습니다 (ID: {target_channel_id})")
+            await ctx.send(f"❌ 채널을 찾을 수 없습니다 (ID: {self.warning_channel_id})")
             return
 
-        # Create the instruction embed
-        embed = discord.Embed(
-            title="🚨 경고 시스템 (Warning System)",
-            description="이 시스템을 통해 서버 멤버들에게 경고를 발행하고 관리할 수 있습니다.",
-            color=discord.Color.red(),
-            timestamp=datetime.datetime.now()
-        )
-
-        embed.add_field(
-            name="📋 사용 방법",
-            value=(
-                "1️⃣ 아래 **경고 추가** 버튼을 클릭하세요\n"
-                "2️⃣ 경고를 받을 사용자를 입력하세요\n"
-                "3️⃣ 경고 사유를 입력하세요\n"
-                "4️⃣ 필요시 추가 정보를 입력하세요\n"
-                "5️⃣ 제출하면 자동으로 기록됩니다"
-            ),
-            inline=False
-        )
-
-        embed.add_field(
-            name="⚠️ 권한 요구사항",
-            value="이 시스템을 사용하려면 **멤버 관리** 권한이 필요합니다.",
-            inline=False
-        )
-
-        embed.add_field(
-            name="📊 추적 정보",
-            value=(
-                "• 경고 받은 사용자의 모든 정보\n"
-                "• 경고 발행자 정보\n"
-                "• 경고 날짜 및 시간\n"
-                "• 경고 사유 및 추가 정보\n"
-                "• 총 경고 횟수\n"
-                "• 고유 경고 ID"
-            ),
-            inline=False
-        )
-
-        embed.set_footer(text="경고 시스템 | 관리자 전용")
-
-        # Send the embed with the button
-        view = WarningView()
-        await target_channel.send(embed=embed, view=view)
+        await self.create_warning_embed(ctx.guild, target_channel)
         await ctx.send(f"✅ 경고 시스템이 {target_channel.mention}에 설정되었습니다!")
 
-    @app_commands.command(name="warnings", description="특정 사용자의 경고 내역을 조회합니다")
+    @commands.command(name='경고체크')
+    @commands.has_permissions(moderate_members=True)
+    async def check_warning_embed(self, ctx):
+        """Check if warning embed exists and recreate if necessary"""
+        await self.check_and_setup_warning_embeds()
+        await ctx.send("✅ 경고 시스템 임베드 상태를 확인하고 필요시 재생성했습니다.")
+
+    @app_commands.command(name="경고기록", description="특정 사용자의 경고 내역을 조회합니다")
     @app_commands.describe(user="경고 내역을 조회할 사용자")
     async def check_warnings(self, interaction: discord.Interaction, user: discord.Member):
         """Check warnings for a specific user"""
