@@ -478,11 +478,25 @@ class XPSystemCog(commands.Cog):
         if not self.xp_gain_task.is_running():
             self.xp_gain_task.start()
 
-        # Setup initial leaderboards
+        # Clean up and setup leaderboards for all configured servers
         all_configs = config.get_all_server_configs()
         for guild_id_str in all_configs.keys():
             guild_id = int(guild_id_str)
+
+            # Delete old messages first
+            await self.delete_old_leaderboard_messages(guild_id)
+
+            # Clear stored message ID
+            if guild_id_str in self.guild_leaderboard_data:
+                del self.guild_leaderboard_data[guild_id_str]
+
+            # Wait a moment then create new leaderboard
+            await asyncio.sleep(1)
             await self.update_leaderboard_now(guild_id)
+
+        # Save updated message IDs
+        await self.save_message_ids()
+        self.logger.info("XP system reloaded - cleaned up old messages and created fresh leaderboards")
 
     @commands.Cog.listener()
     async def on_voice_state_update(self, member, before, after):
@@ -763,6 +777,43 @@ class XPSystemCog(commands.Cog):
             self.logger.error(f"Error in admin_set_xp for user {user.id} in guild {guild_id}: {e}",
                               extra={'guild_id': guild_id})
 
+    async def delete_old_leaderboard_messages(self, guild_id: int):
+        """Delete old leaderboard messages from the channel"""
+        try:
+            # Hardcoded channel ID as in your original code
+            leaderboard_channel_id = 1421263904809553982
+            channel = self.bot.get_channel(leaderboard_channel_id)
+
+            if not channel:
+                self.logger.error(f"XP leaderboard channel {leaderboard_channel_id} not found for guild {guild_id}",
+                                  extra={'guild_id': guild_id})
+                return False
+
+            deleted_count = 0
+            async for message in channel.history(limit=50):
+                if (message.author == self.bot.user and
+                        message.embeds and
+                        message.embeds[0].title and
+                        "경험치 리더보드" in message.embeds[0].title):
+                    try:
+                        await message.delete()
+                        deleted_count += 1
+                        await asyncio.sleep(0.5)  # Rate limit protection
+                    except discord.NotFound:
+                        pass  # Message already deleted
+                    except discord.Forbidden:
+                        self.logger.warning(f"No permission to delete message in channel {leaderboard_channel_id}",
+                                            extra={'guild_id': guild_id})
+                        break
+
+            self.logger.info(f"Deleted {deleted_count} old XP leaderboard messages in guild {guild_id}",
+                             extra={'guild_id': guild_id})
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Error deleting old XP leaderboard messages for guild {guild_id}: {e}",
+                              extra={'guild_id': guild_id})
+            return False
 
 async def setup(bot):
     await bot.add_cog(XPSystemCog(bot))

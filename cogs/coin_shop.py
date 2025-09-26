@@ -27,7 +27,7 @@ class ShopView(discord.ui.View):
             "xp_boost_3h": {
                 "name": "2배 경험치 부스터 (3시간)",
                 "description": "3시간 동안 보이스 채팅에서 2배 경험치를 획득합니다.",
-                "price": 1000,
+                "price": 500,
                 "emoji": "🚀",
                 "duration_hours": 3,
                 "role_id": 1421264239900889118
@@ -35,7 +35,7 @@ class ShopView(discord.ui.View):
             "xp_boost_6h": {
                 "name": "2배 경험치 부스터 (6시간)",
                 "description": "6시간 동안 보이스 채팅에서 2배 경험치를 획득합니다.",
-                "price": 1800,
+                "price": 900,
                 "emoji": "⚡",
                 "duration_hours": 6,
                 "role_id": 1421264239900889118
@@ -43,7 +43,7 @@ class ShopView(discord.ui.View):
             "xp_boost_12h": {
                 "name": "2배 경험치 부스터 (12시간)",
                 "description": "12시간 동안 보이스 채팅에서 2배 경험치를 획득합니다.",
-                "price": 3200,
+                "price": 1600,
                 "emoji": "🔥",
                 "duration_hours": 12,
                 "role_id": 1421264239900889118
@@ -243,7 +243,7 @@ class ShopSystemCog(commands.Cog):
         except Exception as e:
             self.logger.error(f"Error recording purchase: {e}", extra={'guild_id': guild_id})
 
-    async def setup_shop_message(self):
+    async def setup_shop_message(self, force_new=False):
         """Setup the persistent shop message"""
         try:
             channel = self.bot.get_channel(self.shop_channel_id)
@@ -254,19 +254,27 @@ class ShopSystemCog(commands.Cog):
             shop_view = ShopView(self.bot)
             embed = shop_view.create_shop_embed()
 
-            # Try to find existing shop message
-            async for message in channel.history(limit=50):
-                if (message.author == self.bot.user and
-                        message.embeds and
-                        message.embeds[0].title and
-                        "상점" in message.embeds[0].title):
-                    try:
-                        await message.edit(embed=embed, view=shop_view)
-                        self.shop_message_id = message.id
-                        self.logger.info("Updated existing shop message")
-                        return
-                    except discord.HTTPException:
-                        continue
+            # If force_new is True (like during reload), delete old messages first
+            if force_new:
+                await self.delete_old_shop_messages()
+                self.shop_message_id = None
+                await asyncio.sleep(1)  # Wait for deletions
+
+            # Only search for existing message if not forcing new
+            if not force_new:
+                # Try to find existing shop message
+                async for message in channel.history(limit=50):
+                    if (message.author == self.bot.user and
+                            message.embeds and
+                            message.embeds[0].title and
+                            "상점" in message.embeds[0].title):
+                        try:
+                            await message.edit(embed=embed, view=shop_view)
+                            self.shop_message_id = message.id
+                            self.logger.info("Updated existing shop message")
+                            return
+                        except discord.HTTPException:
+                            continue
 
             # Create new shop message
             message = await channel.send(embed=embed, view=shop_view)
@@ -280,7 +288,9 @@ class ShopSystemCog(commands.Cog):
     async def on_ready(self):
         """Setup when bot is ready"""
         await self.setup_database()
-        await self.setup_shop_message()
+
+        # Setup shop message with cleanup (force new message)
+        await self.setup_shop_message(force_new=True)
 
         # Load active purchases
         await self.load_active_purchases()
@@ -288,6 +298,8 @@ class ShopSystemCog(commands.Cog):
         # Start expiry check task
         if not self.check_expired_purchases.is_running():
             self.check_expired_purchases.start()
+
+        self.logger.info("Shop system reloaded - cleaned up old messages and created fresh shop interface")
 
     async def load_active_purchases(self):
         """Load active purchases from database"""
@@ -526,6 +538,35 @@ class ShopSystemCog(commands.Cog):
             await interaction.followup.send(f"❌ 부스터 상태 확인 중 오류가 발생했습니다: {e}", ephemeral=True)
             self.logger.error(f"Error in booster_status command: {e}", extra={'guild_id': guild_id})
 
+    async def delete_old_shop_messages(self):
+        """Delete old shop messages from the channel"""
+        try:
+            channel = self.bot.get_channel(self.shop_channel_id)
+            if not channel:
+                self.logger.error(f"Shop channel {self.shop_channel_id} not found")
+                return False
 
+            deleted_count = 0
+            async for message in channel.history(limit=50):
+                if (message.author == self.bot.user and
+                        message.embeds and
+                        message.embeds[0].title and
+                        "상점" in message.embeds[0].title):
+                    try:
+                        await message.delete()
+                        deleted_count += 1
+                        await asyncio.sleep(0.5)  # Rate limit protection
+                    except discord.NotFound:
+                        pass  # Message already deleted
+                    except discord.Forbidden:
+                        self.logger.warning(f"No permission to delete message in shop channel {self.shop_channel_id}")
+                        break
+
+            self.logger.info(f"Deleted {deleted_count} old shop messages")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Error deleting old shop messages: {e}")
+            return False
 async def setup(bot):
     await bot.add_cog(ShopSystemCog(bot))
