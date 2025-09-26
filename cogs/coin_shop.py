@@ -53,7 +53,7 @@ class ShopView(discord.ui.View):
     def create_shop_embed(self) -> discord.Embed:
         """Create the main shop embed"""
         embed = discord.Embed(
-            title="🛒 아날로그 상점",
+            title="🛒 코인 상점",
             description="코인을 사용해서 다양한 아이템을 구매하세요!",
             color=discord.Color.blue(),
             timestamp=datetime.now(timezone.utc)
