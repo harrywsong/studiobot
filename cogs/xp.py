@@ -37,16 +37,30 @@ class XPLeaderboardView(discord.ui.View):
         """Calculate level from XP using a progressive formula"""
         if xp <= 0:
             return 1
-        # Formula: level = floor(sqrt(xp / 100)) + 1
-        # This means: Level 1: 0-99 XP, Level 2: 100-399 XP, Level 3: 400-899 XP, etc.
-        return int(math.sqrt(xp / 100)) + 1
+
+        # New faster progression formula: level = floor(xp / (50 + level * 25)) + 1
+        # This creates much shorter level requirements that scale reasonably
+        level = 1
+        total_xp_needed = 0
+
+        while True:
+            xp_for_this_level = 50 + (level - 1) * 25  # Level 1: 50, Level 2: 75, Level 3: 100, etc.
+            if total_xp_needed + xp_for_this_level > xp:
+                break
+            total_xp_needed += xp_for_this_level
+            level += 1
+
+        return level
 
     def calculate_xp_for_level(self, level: int) -> int:
         """Calculate minimum XP required for a level"""
         if level <= 1:
             return 0
-        # Inverse of level formula: xp = (level - 1)^2 * 100
-        return (level - 1) ** 2 * 100
+
+        total_xp = 0
+        for i in range(1, level):
+            total_xp += 50 + (i - 1) * 25
+        return total_xp
 
     async def create_leaderboard_embed(self, page=0):
         """Create leaderboard embed for specific page"""
