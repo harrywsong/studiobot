@@ -1870,7 +1870,7 @@ class ScrimCog(commands.Cog):
         embed = discord.Embed(
             title="🎮 내전 생성 패널",
             description=(
-                "**개선된 내전 시스템**에 오신 것을 환영합니다! 아래 버튼을 클릭하여 새 내전을 생성하세요.\n\n"
+                "**내전 시스템**에 오신 것을 환영합니다! 아래 버튼을 클릭하여 새 내전을 생성하세요.\n\n"
                 "**✨ 기능:**\n"
                 "• 역할 태그와 함께 쉬운 게임 선택\n"
                 "• 빠른 시간 선택 및 사용자 지정 시간\n"
@@ -1881,7 +1881,7 @@ class ScrimCog(commands.Cog):
                 "• 배틀그라운드 • 기타 게임"
             ),
             color=discord.Color.blue()
-        ).set_footer(text="개선된 내전 시스템 v2.1 • 시작하려면 버튼을 클릭하세요!")
+        ).set_footer(text="스튜디오 내전 시스템 • 시작하려면 버튼을 클릭하세요!")
         return embed
 
     # FIXED: This method now correctly accepts parameters instead of using `self`.

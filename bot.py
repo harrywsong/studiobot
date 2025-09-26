@@ -807,7 +807,8 @@ class MyBot(commands.Bot):
         """Load extensions with proper dependency order"""
         # Core extensions (no dependencies) - COINS MUST BE FIRST
         core_extensions = [
-            'cogs.coins',  # Move this to the very beginning
+            'cogs.coins',
+            'cogs.xp',
             'cogs.clear_messages',
             'cogs.voice',
             'cogs.welcomegoodbye',
@@ -820,7 +821,8 @@ class MyBot(commands.Bot):
             'cogs.nitro',
             'cogs.nitro_voice',
             'cogs.nitro_specialrole',
-            'cogs.warning'
+            'cogs.warning',
+            'cogs.coin_shop'
         ]
 
         # Casino extensions (depend on coins)
