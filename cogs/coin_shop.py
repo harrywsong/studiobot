@@ -27,7 +27,7 @@ class ShopView(discord.ui.View):
             "xp_boost_3h": {
                 "name": "2배 경험치 부스터 (3시간)",
                 "description": "3시간 동안 보이스 채팅에서 2배 경험치를 획득합니다.",
-                "price": 500,
+                "price": 1000,
                 "emoji": "🚀",
                 "duration_hours": 3,
                 "role_id": 1421264239900889118
@@ -35,7 +35,7 @@ class ShopView(discord.ui.View):
             "xp_boost_6h": {
                 "name": "2배 경험치 부스터 (6시간)",
                 "description": "6시간 동안 보이스 채팅에서 2배 경험치를 획득합니다.",
-                "price": 900,
+                "price": 1800,
                 "emoji": "⚡",
                 "duration_hours": 6,
                 "role_id": 1421264239900889118
@@ -43,7 +43,7 @@ class ShopView(discord.ui.View):
             "xp_boost_12h": {
                 "name": "2배 경험치 부스터 (12시간)",
                 "description": "12시간 동안 보이스 채팅에서 2배 경험치를 획득합니다.",
-                "price": 1600,
+                "price": 3200,
                 "emoji": "🔥",
                 "duration_hours": 12,
                 "role_id": 1421264239900889118
