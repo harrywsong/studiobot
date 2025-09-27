@@ -123,6 +123,54 @@ class ArenaView(discord.ui.View):
                 await interaction.followup.send(f"랭킹 조회 중 오류가 발생했습니다: {str(e)}", ephemeral=True)
 
 
+# cogs/activities.py
+# ... (기존 import)
+# ... (기존 AdventureView 클래스)
+
+# 아레나 PvP 도전 수락/거절 뷰
+class ArenaChallengeView(discord.ui.View):
+    def __init__(self, challenger_id: int, target_id: int, cog_instance: Any, *args, **kwargs):
+        """
+        :param challenger_id: 도전을 건 사용자 ID
+        :param target_id: 도전을 받은 사용자 ID
+        :param cog_instance: Activities Cog 인스턴스 (매치 시작 로직 호출용)
+        """
+        super().__init__(*args, **kwargs, timeout=300)  # 5분 타임아웃
+        self.challenger_id = challenger_id
+        self.target_id = target_id
+        self.cog = cog_instance
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        # 오직 도전을 받은 사용자(target)만 버튼을 클릭할 수 있도록 합니다.
+        if interaction.user.id != self.target_id:
+            await interaction.response.send_message(
+                f"⚠️ 이 도전은 <@{self.target_id}>님을 위한 것입니다. 당신은 응답할 수 없습니다.",
+                ephemeral=True
+            )
+            return False
+        return True
+
+    @discord.ui.button(label="수락", style=discord.ButtonStyle.green)
+    async def accept_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        for item in self.children:
+            item.disabled = True
+
+        await interaction.response.edit_message(content=f"**✅ 도전 수락!** 아레나 매치를 시작합니다...", view=self)
+        self.stop()
+
+        await self.cog.start_arena_match(self.challenger_id, self.target_id, interaction.channel)
+
+    @discord.ui.button(label="거절", style=discord.ButtonStyle.red)
+    async def decline_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        for item in self.children:
+            item.disabled = True
+
+        await interaction.response.edit_message(content=f"**❌ 도전 거절.** <@{self.target_id}>님이 도전을 거절했습니다.", view=self)
+        self.stop()
+
+        # 도전 상태 정리
+        if self.target_id in self.cog.active_challenges:
+            del self.cog.active_challenges[self.target_id]
 class DungeonView(discord.ui.View):
     """Dungeon exploration interface"""
 
@@ -350,6 +398,8 @@ class ActivitiesCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.logger = get_logger(__name__)
+        self.active_challenges: Dict[int, int] = {}
+
 
         # Adventure definitions - BALANCED REWARDS
         self.adventures = {
@@ -614,6 +664,7 @@ class ActivitiesCog(commands.Cog):
             self.logger.error(f"Error getting combat power for user {user_id}: {e}")
         return 100  # Default minimum power
 
+
     def get_recommended_adventures(self, combat_power: int) -> List[Dict]:
         """Get recommended adventures based on combat power"""
         recommended = []
@@ -629,6 +680,149 @@ class ActivitiesCog(commands.Cog):
         # Sort by recommendation and difficulty
         recommended.sort(key=lambda x: (not x['recommended'], x['min_power']))
         return recommended
+
+    async def _get_player_stats(self, user_id: int) -> dict:
+        """사용자의 전투력, 레이팅, 티어 등을 arena_stats 테이블에서 가져옵니다."""
+        try:
+            query = """
+                SELECT user_id, combat_power, rating, tier, wins, losses 
+                FROM arena_stats 
+                WHERE user_id = $1
+            """
+            record = await self.bot.pool.fetchrow(query, user_id)
+
+            if record is None:
+                return {
+                    'user_id': user_id,
+                    'combat_power': 100,
+                    'rating': 1000,
+                    'tier': 'bronze',
+                    'wins': 0,
+                    'losses': 0
+                }
+
+            return dict(record)
+
+        except Exception as e:
+            self.logger.error(f"사용자 {user_id}의 아레나 스탯 조회 오류: {e}")
+            return {'user_id': user_id, 'combat_power': 100, 'rating': 1000, 'tier': 'bronze', 'wins': 0, 'losses': 0}
+
+    async def _simulate_match(self, player_a_stats: dict, player_b_stats: dict) -> Tuple[int, int, int]:
+        """전투력 기반으로 승패를 결정하고 Elo 레이팅 변화를 계산합니다."""
+
+        power_a = player_a_stats['combat_power']
+        power_b = player_b_stats['combat_power']
+
+        total_power = power_a + power_b
+        chance_a = power_a / total_power if total_power > 0 else 0.5
+
+        if random.random() < chance_a:
+            winner_stats, loser_stats = player_a_stats, player_b_stats
+            winner_id = player_a_stats['user_id']
+        else:
+            winner_stats, loser_stats = player_b_stats, player_a_stats
+            winner_id = player_b_stats['user_id']
+
+        R_winner = winner_stats['rating']
+        R_loser = loser_stats['rating']
+        K_FACTOR = 32
+
+        E_winner = 1 / (1 + 10 ** ((R_loser - R_winner) / 400))
+        S_winner = 1
+
+        rating_change_winner = round(K_FACTOR * (S_winner - E_winner))
+        rating_change_loser = -rating_change_winner
+
+        return winner_id, rating_change_winner, rating_change_loser
+
+    async def _update_arena_stats(self, user_id: int, guild_id: int, is_winner: bool, rating_change: int):
+        """플레이어의 승/패 및 레이팅을 업데이트합니다."""
+        try:
+            field_to_update = 'wins' if is_winner else 'losses'
+
+            query = f"""
+                INSERT INTO arena_stats (user_id, guild_id, rating, {field_to_update})
+                VALUES ($1, $2, 1000 + $3, 1)
+                ON CONFLICT (user_id, guild_id) DO UPDATE
+                SET 
+                    rating = arena_stats.rating + $3,
+                    {field_to_update} = arena_stats.{field_to_update} + 1;
+            """
+
+            await self.bot.pool.execute(query, user_id, guild_id, rating_change)
+
+        except Exception as e:
+            self.logger.error(f"사용자 {user_id}의 아레나 스탯 업데이트 오류: {e}")
+
+    async def start_arena_match(self, challenger_id: int, target_id: int, channel: discord.TextChannel):
+        """도전이 수락되면 실제 전투를 실행하고 결과를 채널에 게시합니다."""
+
+        guild_id = channel.guild.id
+
+        # 도전 상태 정리
+        if target_id in self.active_challenges and self.active_challenges.get(target_id) == challenger_id:
+            del self.active_challenges[target_id]
+
+        challenger = self.bot.get_user(challenger_id)
+        target = self.bot.get_user(target_id)
+
+        await channel.send(f"**⚔️ 매치 시작!** {challenger.mention} vs. {target.mention}...")
+
+        try:
+            # 1. 스탯 가져오기
+            challenger_stats = await self._get_player_stats(challenger_id)
+            target_stats = await self._get_player_stats(target_id)
+
+            # 2. 매치 시뮬레이션
+            winner_id, winner_rating_change, loser_rating_change = await self._simulate_match(
+                challenger_stats, target_stats
+            )
+
+            # 승자/패자 객체 및 이전 스탯 설정
+            if winner_id == challenger_id:
+                winner, loser = challenger, target
+                winner_stats_old = challenger_stats
+                loser_stats_old = target_stats
+            else:
+                winner, loser = target, challenger
+                winner_stats_old = target_stats
+                loser_stats_old = challenger_stats
+
+            # 3. 데이터베이스 업데이트
+            await self._update_arena_stats(winner.id, guild_id, True, winner_rating_change)
+            await self._update_arena_stats(loser.id, guild_id, False, loser_rating_change)
+
+            # 4. 결과 메시지 구성
+            winner_rating_new = winner_stats_old['rating'] + winner_rating_change
+            loser_rating_new = loser_stats_old['rating'] + loser_rating_change
+
+            embed = discord.Embed(
+                title="🏆 아레나 매치 결과 🏆",
+                description=f"치열한 승부 끝에 **{winner.display_name}**님이 **승리**했습니다!",
+                color=discord.Color.gold()
+            )
+            embed.add_field(
+                name=f"🥇 {winner.display_name} (승리)",
+                value=(
+                    f"전투력: `{winner_stats_old['combat_power']}`\n"
+                    f"레이팅: `{winner_stats_old['rating']} -> {winner_rating_new}` (`+{winner_rating_change}`)"
+                ),
+                inline=False
+            )
+            embed.add_field(
+                name=f"💀 {loser.display_name} (패배)",
+                value=(
+                    f"전투력: `{loser_stats_old['combat_power']}`\n"
+                    f"레이팅: `{loser_stats_old['rating']} -> {loser_rating_new}` (`{loser_rating_change}`)"
+                ),
+                inline=False
+            )
+
+            await channel.send(embed=embed)
+
+        except Exception as e:
+            self.logger.error(f"아레나 매치 실행 중 치명적인 오류 발생: {e}")
+            await channel.send(f"⚠️ 아레나 매치 실행 중 예상치 못한 오류가 발생했습니다. 개발자에게 보고해 주세요: `{e}`")
 
     # ENHANCED DAILY LIMIT CHECKING
     async def check_daily_activity_limit(self, user_id: int, guild_id: int, activity_type: str) -> bool:
@@ -746,6 +940,72 @@ class ActivitiesCog(commands.Cog):
         view = AdventureView(self.bot, user_id, guild_id, adventures_data)
         await interaction.followup.send(embed=embed, view=view)
 
+    @app_commands.command(name="challenge", description="다른 플레이어에게 아레나 PvP 매치를 신청합니다.")
+    @app_commands.describe(target="도전할 플레이어를 선택하세요.")
+    async def challenge_player(self, interaction: discord.Interaction, target: discord.Member):
+        challenger = interaction.user
+        guild_id = interaction.guild.id
+
+        # 채널 확인 (ARENA_CHANNEL_ID 사용)
+        if not self.check_channel(interaction, ARENA_CHANNEL_ID):
+            arena_channel = self.bot.get_channel(ARENA_CHANNEL_ID)
+            channel_mention = arena_channel.mention if arena_channel else f"<#{ARENA_CHANNEL_ID}>"
+            await interaction.response.send_message(
+                f"⚔️ 아레나 도전은 {channel_mention} 채널에서만 이용할 수 있습니다!",
+                ephemeral=True
+            )
+            return
+
+        # 1. 유효성 검사
+        if challenger.id == target.id:
+            return await interaction.response.send_message("자신에게 도전할 수 없습니다!", ephemeral=True)
+
+        if target.bot:
+            return await interaction.response.send_message("봇에게 도전할 수 없습니다!", ephemeral=True)
+
+        # 2. 도전 중복 확인
+        if target.id in self.active_challenges:
+            return await interaction.response.send_message(
+                f"**{target.display_name}**님은 이미 다른 도전을 받고 있습니다. 잠시 기다려주세요.",
+                ephemeral=True
+            )
+
+        if challenger.id in self.active_challenges.values():
+            return await interaction.response.send_message(
+                f"이미 진행 중인 도전이 있습니다. 응답을 기다려주세요.",
+                ephemeral=True
+            )
+
+        # 3. 도전 상태 저장
+        self.active_challenges[target.id] = challenger.id
+
+        # 4. 도전 메시지 및 버튼 전송
+        challenge_message = (
+            f"**⚔️ 아레나 도전! (ARENA CHALLENGE)**\n\n"
+            f"<@{target.id}>님, **{challenger.display_name}**님이 아레나 PvP 매치를 신청했습니다!\n"
+            f"도전을 수락하시겠습니까?"
+        )
+
+        view = ArenaChallengeView(
+            challenger_id=challenger.id,
+            target_id=target.id,
+            cog_instance=self
+        )
+
+        await interaction.response.send_message(
+            content=challenge_message,
+            view=view,
+            allowed_mentions=discord.AllowedMentions(users=[target])
+        )
+
+        # 5. 타임아웃 처리
+        timed_out = await view.wait()
+
+        if timed_out:
+            if target.id in self.active_challenges and self.active_challenges.get(target.id) == challenger.id:
+                del self.active_challenges[target.id]
+                await interaction.followup.send(f"⚠️ **도전 시간 초과.** <@{target.id}>님의 응답이 없어 도전이 취소되었습니다.",
+                                                ephemeral=False)
     async def start_adventure(self, interaction: discord.Interaction, adventure_id: str):
         """Start an adventure - ENHANCED"""
         await interaction.response.defer()
