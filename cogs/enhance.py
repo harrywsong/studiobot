@@ -361,11 +361,32 @@ class EnhancementCog(commands.Cog):
         ]
 
         self.starforce_rates = {
-            0: (95, 5, 0), 1: (90, 10, 0), 2: (85, 15, 0), 3: (85, 15, 0), 4: (80, 20, 0),
-            5: (75, 25, 0), 6: (70, 30, 0), 7: (65, 35, 0), 8: (60, 40, 0), 9: (55, 45, 0),
-            10: (50, 45, 5), 11: (45, 50, 5), 12: (40, 55, 5), 13: (35, 60, 5), 14: (30, 63, 7),
-            15: (30, 67, 3), 16: (30, 67.9, 2.1), 17: (30, 67.9, 2.1), 18: (30, 67.2, 2.8), 19: (30, 67.2, 2.8),
-            20: (30, 63, 7), 21: (30, 63, 7), 22: (3, 77.6, 19.4), 23: (2, 68.6, 29.4), 24: (1, 59.4, 39.6)
+            # (Success %, Fail %, Destroy %)
+            0: (95, 5, 0),
+            1: (90, 10, 0),
+            2: (85, 15, 0),
+            3: (85, 15, 0),
+            4: (80, 20, 0),
+            5: (75, 25, 0),
+            6: (70, 30, 0),
+            7: (65, 35, 0),
+            8: (60, 40, 0),
+            9: (55, 45, 0),
+            10: (50, 50, 0),
+            11: (45, 55, 0),
+            12: (40, 60, 0),
+            13: (35, 65, 0),
+            14: (30, 70, 0),
+            15: (30, 67.9, 2.1),
+            16: (30, 67.9, 2.1),
+            17: (30, 67.2, 2.8),
+            18: (30, 67.2, 2.8),
+            19: (30, 63, 7),
+            20: (30, 63, 7),
+            21: (30, 63, 7),
+            22: (3, 77.6, 19.4),
+            23: (2, 68.6, 29.4),
+            24: (1, 59.4, 39.6)
         }
 
         self.enhancement_costs = {
@@ -692,10 +713,17 @@ class EnhancementCog(commands.Cog):
                         "success", current_level + 1, 0, "✅ **강화 성공!**", discord.Color.green()
                     )
                 elif roll <= success_rate + fail_rate:
-                    new_level_on_fail = current_level - 1 if current_level in [15, 20] else current_level
+
+                    levels_that_drop = [16, 17, 18, 19, 21, 23, 24]
+
+                    if current_level in levels_that_drop:
+                        new_level_on_fail = current_level - 1  # Level drops by 1
+                    else:
+                        new_level_on_fail = current_level  # Level holds (0-15, 20, 22)
+
                     result, new_level, new_fail_streak, result_text, result_color = (
                         "fail", new_level_on_fail, fail_streak + 1, "⚠ **강화 실패**", discord.Color.red()
-                    )
+                )
                 else:
                     result, new_level, new_fail_streak, result_text, result_color = (
                         "destroy", -1, 0, "💥 **아이템 파괴!**", discord.Color.dark_red()
