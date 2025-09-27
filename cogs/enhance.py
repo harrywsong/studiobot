@@ -37,7 +37,7 @@ class EnhancementView(discord.ui.View):
         try:
             if hasattr(self, 'message') and self.message:
                 await self.message.edit(view=self)
-        except discord.NotFound:
+        except (discord.NotFound, discord.HTTPException):
             pass
 
     @discord.ui.button(label="⭐ 강화하기", style=discord.ButtonStyle.primary, emoji="⚡")
@@ -48,8 +48,9 @@ class EnhancementView(discord.ui.View):
         if hasattr(self, 'message') and self.message:
             try:
                 await self.message.delete()
-            except discord.NotFound:
+            except (discord.NotFound, discord.HTTPException):
                 pass
+
         await interaction.response.defer()
         await self.enhancement_cog.handle_enhancement(interaction, self.item_row['item_id'])
 
@@ -800,13 +801,16 @@ class EnhancementCog(commands.Cog):
                 )
                 return
 
-            # --- Only delete the previous enhancement message AFTER coin check ---
+            # --- Always delete the previous enhancement message before sending a new one ---
             if item_id in self.last_enhancement_message:
+                old_msg = self.last_enhancement_message[item_id]
                 try:
-                    old_msg = self.last_enhancement_message[item_id]
                     await old_msg.delete()
-                except discord.NotFound:
+                except (discord.NotFound, discord.HTTPException):
                     pass
+                finally:
+                    self.last_enhancement_message.pop(item_id, None)
+
 
             # Calculate enhancement result
             fail_streak = item_row['fail_streak'] or 0
@@ -1476,14 +1480,11 @@ class EnhancementResultView(discord.ui.View):
         self.stop()
 
     async def on_timeout(self) -> None:
-        # Disable all buttons when the view times out
-        for child in self.children:
-            if isinstance(child, discord.ui.Button):
-                child.disabled = True
         try:
-            if hasattr(self, 'message') and self.message:
-                await self.message.edit(view=self)
-        except discord.NotFound:
+            if hasattr(self, "message") and self.message:
+                # Delete the message entirely when the view times out
+                await self.message.delete()
+        except (discord.NotFound, discord.HTTPException):
             pass
 
 
