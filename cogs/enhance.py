@@ -828,9 +828,20 @@ class EnhancementCog(commands.Cog):
             embed.add_field(name="💳 남은 코인", value=f"{refreshed_coins:,} 코인", inline=True)
             embed.set_footer(text=f"강화 확률: 성공 {rates[0]}% | 실패 {rates[1]}% | 파괴 {rates[2]}%")
 
-            # Send new message
-            msg = await interaction.followup.send(embed=embed)
-            self.last_enhancement_message[item_id] = msg  # store the latest message
+            # Prepare the interactive view again (only if the item still exists)
+            updated_item_row = await self.bot.pool.fetchrow("SELECT * FROM user_items WHERE item_id = $1", item_id)
+            view = None
+            if updated_item_row and result != "destroy":
+                view = EnhancementView(self.bot, user_id, guild_id, template, dict(updated_item_row))
+                view.message = None  # will be set after sending
+
+            # Send new message with buttons
+            msg = await interaction.followup.send(embed=embed, view=view)
+            if view:
+                view.message = msg
+
+            # Save the latest message for cleanup next time
+            self.last_enhancement_message[item_id] = msg
 
             self.logger.info(
                 f"사용자 {user_id}가 {template['name']} 강화: {current_level}→{new_level if result != 'destroy' else '파괴'} ({result})",
