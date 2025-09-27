@@ -48,17 +48,27 @@ class EnhancementView(discord.ui.View):
             await interaction.response.send_message("다른 사용자의 아이템을 강화할 수 없습니다.", ephemeral=True)
             return
 
+        await interaction.response.defer()
+
         await self.enhancement_cog.handle_enhancement(interaction, self.item_row['item_id'])
 
-    @discord.ui.button(label="📊 상세 정보", style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label="🔍 상세정보", style=discord.ButtonStyle.secondary, emoji="🔎")
     async def detailed_info(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.enhancement_cog.show_detailed_item_info(interaction, self.item_row['item_id'])
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("다른 사용자의 아이템을 조회할 수 없습니다.", ephemeral=True)
+            return
 
-    @discord.ui.button(label="💰 마켓에 판매", style=discord.ButtonStyle.success)
+        await interaction.response.defer()
+
+        await self.enhancement_cog.show_item_details(interaction, self.item_row)
+
+    @discord.ui.button(label="💰 마켓 판매", style=discord.ButtonStyle.secondary)
     async def sell_to_market(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.user_id:
             await interaction.response.send_message("다른 사용자의 아이템을 판매할 수 없습니다.", ephemeral=True)
             return
+
+        await interaction.response.defer(ephemeral=True)
 
         await self.enhancement_cog.show_market_sell_confirmation(interaction, self.item_row['item_id'])
 
