@@ -515,50 +515,7 @@ class EnhancementCog(commands.Cog):
         if not channel:
             return
 
-        # --- Build leaderboard data ---
-        records = await self.bot.pool.fetch(
-            "SELECT DISTINCT user_id FROM user_items WHERE guild_id = $1",
-            guild.id
-        )
-
-        leaderboard = []
-        for record in records:
-            user_id = record["user_id"]
-            user = guild.get_member(user_id)
-            if not user:
-                continue
-
-            stats = await self.calculate_total_stats(user_id, guild.id)
-            character = await self.get_user_character(user_id, guild.id)
-            char_class = character['class'] if character else "무직"
-            power = self.calculate_combat_power(stats, char_class)
-
-            equipped = await self.get_equipped_items(user_id, guild.id)
-            equipped_list = []
-            for slot, item_data in equipped.items():
-                template = self.get_item_template(item_data['template_id'])
-                if template:
-                    enh = f"+{item_data['enhancement_level']}" if item_data['enhancement_level'] > 0 else ""
-                    equipped_list.append(f"{template['emoji']} {template['name']} {enh}")
-            equipped_str = "\n".join(equipped_list) if equipped_list else "없음"
-
-            leaderboard.append((user, None, power, stats, char_class, equipped_str))
-
-        # Sort and rank
-        leaderboard.sort(key=lambda x: x[2], reverse=True)
-        leaderboard = [(u, i + 1, p, s, c, e) for i, (u, _, p, s, c, e) in enumerate(leaderboard)]
-
-        if not leaderboard:
-            embed = discord.Embed(
-                title="⚠️ 현재 랭킹에 표시할 유저가 없습니다.",
-                color=discord.Color.red()
-            )
-            view = None
-        else:
-            view = LeaderboardView(self.bot, leaderboard, 0)
-            embed = view.get_embed()
-
-        # --- Manage persistent leaderboard message ---
+        # delete all old leaderboard messages if needed
         if not hasattr(self, 'leaderboard_messages'):
             self.leaderboard_messages = {}
 
@@ -570,6 +527,17 @@ class EnhancementCog(commands.Cog):
             except discord.NotFound:
                 msg = None
 
+        # If no saved message, clean up old ones
+        if not msg:
+            async for old in channel.history(limit=50):
+                if old.author == self.bot.user:
+                    try:
+                        await old.delete()
+                    except discord.HTTPException:
+                        pass
+
+        # build leaderboard (same as your code)
+        ...
         if msg:
             await msg.edit(embed=embed, view=view)
         else:
