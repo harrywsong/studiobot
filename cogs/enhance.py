@@ -467,14 +467,13 @@ class EnhancementCog(commands.Cog):
             self.logger.error(f"Error loading item_templates.json: {e}")
             return []
 
-
     async def post_or_update_leaderboard(self, guild: discord.Guild):
         """Post or update the combat power leaderboard in the leaderboard channel."""
         channel = guild.get_channel(LEADERBOARD_CHANNEL_ID)
         if not channel:
             return
 
-        # Fetch all users in this guild
+        # Fetch all users who own items in this guild
         records = await self.bot.pool.fetch(
             """
             SELECT DISTINCT user_id FROM user_items
@@ -489,25 +488,52 @@ class EnhancementCog(commands.Cog):
             user = guild.get_member(user_id)
             if not user:
                 continue
-            power = await self.calculate_combat_power(user_id, guild.id)
-            leaderboard.append((user, power))
 
+            # --- Get stats, class, and power ---
+            stats = await self.calculate_total_stats(user_id, guild.id)
+            character = await self.get_user_character(user_id, guild.id)
+            char_class = character['class'] if character else "전사"
+            power = self.calculate_combat_power(stats, char_class)
+
+            # --- Get equipped items (names) ---
+            equipped = await self.get_equipped_items(user_id, guild.id)
+            equipped_names = []
+            for slot, item_data in equipped.items():
+                template = self.get_item_template(item_data['template_id'])
+                if template:
+                    enh = f"+{item_data['enhancement_level']}" if item_data['enhancement_level'] > 0 else ""
+                    equipped_names.append(f"{template['emoji']}{template['name']}{enh}")
+            equipped_str = ", ".join(equipped_names) if equipped_names else "없음"
+
+            leaderboard.append((user, power, stats, equipped_str))
+
+        # Sort by combat power
         leaderboard.sort(key=lambda x: x[1], reverse=True)
         top = leaderboard[:10]
 
         embed = discord.Embed(
             title="🏆 전투력 랭킹",
-            description="서버 최강자 순위!",
+            description="서버 최강자 TOP 10",
             color=discord.Color.gold()
         )
-        for rank, (user, power) in enumerate(top, start=1):
+
+        for rank, (user, power, stats, equipped_str) in enumerate(top, start=1):
+            stats_line = (
+                f"STR {stats['str']} | DEX {stats['dex']} | "
+                f"INT {stats['int']} | LUK {stats['luk']} | "
+                f"ATT {stats['att']} | M.ATT {stats['m_att']}"
+            )
             embed.add_field(
                 name=f"{rank}. {user.display_name}",
-                value=f"⚔️ 전투력: {power:,}",
+                value=(
+                    f"⚔️ 전투력: **{power:,}**\n"
+                    f"📊 {stats_line}\n"
+                    f"🪓 장착: {equipped_str}"
+                ),
                 inline=False
             )
 
-        # Save message id somewhere (DB or in-memory)
+        # Update existing leaderboard message or create new one
         if hasattr(self, "leaderboard_message_id"):
             try:
                 msg = await channel.fetch_message(self.leaderboard_message_id)
@@ -516,7 +542,6 @@ class EnhancementCog(commands.Cog):
             except discord.NotFound:
                 pass
 
-        # Post new leaderboard if none exists
         msg = await channel.send(embed=embed)
         self.leaderboard_message_id = msg.id
 
