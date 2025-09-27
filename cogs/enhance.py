@@ -44,38 +44,28 @@ class EnhancementView(discord.ui.View):
             await interaction.response.send_message("다른 사용자의 아이템을 판매할 수 없습니다.", ephemeral=True)
             return
 
-        await self.enhancement_cog.show_market_sell_modal(interaction, self.item_row['item_id'])
+        await self.enhancement_cog.show_market_sell_confirmation(interaction, self.item_row['item_id'])
 
+class MarketSellConfirmView(discord.ui.View):
+    """Confirmation view for automatic market pricing"""
 
-class MarketSellModal(discord.ui.Modal):
-    """Modal for setting market sell price"""
-
-    def __init__(self, bot, item_id: str):
-        super().__init__(title="마켓에 아이템 판매")
+    def __init__(self, bot, item_id: str, calculated_price: int, template: dict, enhancement_level: int):
+        super().__init__(timeout=300)
         self.bot = bot
         self.item_id = item_id
+        self.calculated_price = calculated_price
+        self.template = template
+        self.enhancement_level = enhancement_level
 
-    price = discord.ui.TextInput(
-        label="판매 가격 (코인)",
-        placeholder="원하는 판매 가격을 입력하세요 (최소 100코인)",
-        min_length=3,
-        max_length=10
-    )
+    @discord.ui.button(label="✅ 판매 확인", style=discord.ButtonStyle.success)
+    async def confirm_sell(self, interaction: discord.Interaction, button: discord.ui.Button):
+        enhancement_cog = self.bot.get_cog('EnhancementCog')
+        if enhancement_cog:
+            await enhancement_cog.list_item_on_market(interaction, self.item_id, self.calculated_price)
 
-    async def on_submit(self, interaction: discord.Interaction):
-        try:
-            sell_price = int(self.price.value)
-            if sell_price < 100:
-                await interaction.response.send_message("최소 판매가는 100코인입니다.", ephemeral=True)
-                return
-
-            enhancement_cog = self.bot.get_cog('EnhancementCog')
-            if enhancement_cog:
-                await enhancement_cog.list_item_on_market(interaction, self.item_id, sell_price)
-
-        except ValueError:
-            await interaction.response.send_message("올바른 숫자를 입력해주세요.", ephemeral=True)
-
+    @discord.ui.button(label="❌ 취소", style=discord.ButtonStyle.danger)
+    async def cancel_sell(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message("판매가 취소되었습니다.", ephemeral=True)
 
 class EquipmentSelectView(discord.ui.View):
     """Equipment slot selection view"""
@@ -228,7 +218,7 @@ class ItemManagementView(discord.ui.View):
             await interaction.response.send_message("다른 사용자의 아이템을 판매할 수 없습니다.", ephemeral=True)
             return
 
-        await self.enhancement_cog.show_market_sell_modal(interaction, self.item_row['item_id'])
+        await self.enhancement_cog.show_market_sell_confirmation(interaction, self.item_row['item_id'])
 
 
 class MarketplaceView(discord.ui.View):
@@ -339,11 +329,11 @@ class EnhancementCog(commands.Cog):
 
         # Enhancement costs (in coins)
         self.enhancement_costs = {
-            0: 1000, 1: 1200, 2: 1500, 3: 1800, 4: 2200,
-            5: 2700, 6: 3300, 7: 4000, 8: 4800, 9: 5700,
-            10: 6700, 11: 7800, 12: 9000, 13: 10300, 14: 11700,
-            15: 13200, 16: 14800, 17: 16500, 18: 18300, 19: 20200,
-            20: 22200, 21: 24300, 22: 35000, 23: 45000, 24: 60000
+            0: 10, 1: 15, 2: 20, 3: 25, 4: 30,
+            5: 35, 6: 40, 7: 45, 8: 50, 9: 60,
+            10: 70, 11: 80, 12: 90, 13: 100, 14: 120,
+            15: 140, 16: 160, 17: 180, 18: 200, 19: 220,
+            20: 250, 21: 280, 22: 350, 23: 450, 24: 600
         }
 
         # Fail streak tracking for guaranteed success
@@ -553,6 +543,29 @@ class EnhancementCog(commands.Cog):
         }
         base = rarity_prices.get(rarity, 100)
         return int(base * (tier + 1) * 1.5)
+
+    def calculate_market_price(self, template: Dict, enhancement_level: int) -> int:
+        """Calculate automatic market price based on item stats and enhancement"""
+        base_price = template['base_price']
+
+        # Enhancement multiplier (each level adds 15% to base price)
+        enhancement_multiplier = 1 + (enhancement_level * 0.15)
+
+        # Rarity multiplier for market pricing
+        rarity_market_multipliers = {
+            "일반": 1.0, "고급": 1.5, "희귀": 2.2, "영웅": 3.5,
+            "고유": 5.5, "전설": 8.0, "신화": 12.0
+        }
+
+        rarity_multiplier = rarity_market_multipliers.get(template['rarity'], 1.0)
+
+        # Calculate final price
+        final_price = int(base_price * enhancement_multiplier * rarity_multiplier)
+
+        # Ensure minimum price based on enhancement level
+        min_price = 5 + (enhancement_level * 10)
+
+        return max(final_price, min_price)
 
     def calculate_combat_power(self, stats: Dict[str, int], character_class: str) -> int:
         """Calculate total combat power based on stats and class"""
@@ -1145,10 +1158,57 @@ class EnhancementCog(commands.Cog):
             self.logger.error(f"장착 해제 오류: {e}", extra={'guild_id': guild_id})
             await interaction.followup.send(f"❌ 장착 해제 중 오류가 발생했습니다: {e}", ephemeral=True)
 
-    async def show_market_sell_modal(self, interaction: discord.Interaction, item_id: str):
-        """Show modal for setting market sell price"""
-        modal = MarketSellModal(self.bot, item_id)
-        await interaction.response.send_modal(modal)
+    async def show_market_sell_confirmation(self, interaction: discord.Interaction, item_id: str):
+        """Show automatic price calculation and confirmation"""
+        await interaction.response.defer(ephemeral=True)
+
+        user_id = interaction.user.id
+        guild_id = interaction.guild.id
+
+        try:
+            # Get item info
+            query = """
+                SELECT ui.item_id, ui.template_id, ui.enhancement_level, ui.is_equipped
+                FROM user_items ui
+                WHERE ui.item_id = $1 AND ui.user_id = $2 AND ui.guild_id = $3
+            """
+            item_row = await self.bot.pool.fetchrow(query, item_id, user_id, guild_id)
+
+            if not item_row:
+                await interaction.followup.send("❌ 아이템을 찾을 수 없습니다.", ephemeral=True)
+                return
+
+            template = self.get_item_template(item_row['template_id'])
+            if not template:
+                await interaction.followup.send("❌ 아이템 정보를 불러올 수 없습니다.", ephemeral=True)
+                return
+
+            # Calculate automatic price
+            calculated_price = self.calculate_market_price(template, item_row['enhancement_level'])
+
+            rarity_info = self.item_rarities[template['rarity']]
+            embed = discord.Embed(
+                title="🏪 마켓 판매 확인",
+                color=rarity_info['color'],
+                timestamp=datetime.now(timezone.utc)
+            )
+
+            enhancement_text = f"+{item_row['enhancement_level']}" if item_row['enhancement_level'] > 0 else ""
+            item_display = f"{template['emoji']} **{template['name']}** {enhancement_text}"
+
+            embed.add_field(name="판매할 아이템", value=item_display, inline=False)
+            embed.add_field(name="등급", value=rarity_info['name'], inline=True)
+            embed.add_field(name="강화 레벨", value=f"+{item_row['enhancement_level']}", inline=True)
+            embed.add_field(name="💰 자동 계산된 가격", value=f"{calculated_price:,} 코인", inline=True)
+
+            embed.set_footer(text="가격은 아이템의 등급, 강화 레벨, 기본 능력치를 바탕으로 자동 계산됩니다.")
+
+            view = MarketSellConfirmView(self.bot, item_id, calculated_price, template, item_row['enhancement_level'])
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+
+        except Exception as e:
+            self.logger.error(f"마켓 가격 계산 오류: {e}", extra={'guild_id': guild_id})
+            await interaction.followup.send(f"❌ 가격 계산 중 오류가 발생했습니다: {e}", ephemeral=True)
 
     async def list_item_on_market(self, interaction: discord.Interaction, item_id: str, price: int):
         """List item on marketplace"""
