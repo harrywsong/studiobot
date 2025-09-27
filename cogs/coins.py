@@ -625,37 +625,43 @@ class CoinsCog(commands.Cog):
 
     async def remove_coins(self, user_id: int, guild_id: int, amount: int, transaction_type: str = "spent",
                            description: str = "") -> bool:
-        """Atomically remove coins from a user's account and log the transaction."""
+        """Remove coins from user account and trigger leaderboard update"""
         try:
-            # Use a transaction to ensure both update and log succeed or fail together
-            async with self.bot.pool.transaction():
-                # Atomically check and update the balance in one query
-                result = await self.bot.pool.fetchval("""
-                    UPDATE user_coins
-                    SET 
-                        coins = coins - $3,
-                        total_spent = total_spent + $3
-                    WHERE user_id = $1 AND guild_id = $2 AND coins >= $3
-                    RETURNING coins
-                """, user_id, guild_id, amount)
+            current_coins_str = await self.get_user_coins(user_id, guild_id)
 
-                # If result is None, it means the WHERE clause (coins >= amount) failed
-                if result is None:
-                    return False  # Not enough coins, transaction will be rolled back
+            # Solution: Convert the string value to an integer
+            try:
+                current_coins = int(current_coins_str)
+            except (ValueError, TypeError):
+                # FIX: Add guild_id to log message
+                self.logger.error(f"❌ '{user_id}'의 잔액이 유효한 숫자가 아닙니다: {current_coins_str}", extra={'guild_id': guild_id})
+                return False
 
-                # If successful, log the transaction
-                await self.bot.pool.execute("""
-                    INSERT INTO coin_transactions (user_id, guild_id, amount, transaction_type, description)
-                    VALUES ($1, $2, $3, $4, $5)
-                """, user_id, guild_id, -amount, transaction_type, description)
+            if current_coins < amount:
+                return False
 
-            # If the transaction was successful, schedule the leaderboard update
+            # Update user coins
+            await self.bot.pool.execute("""
+                UPDATE user_coins 
+                SET coins = coins - $3, total_spent = total_spent + $3
+                WHERE user_id = $1 AND guild_id = $2
+            """, user_id, guild_id, amount)
+
+            # Log transaction
+            await self.bot.pool.execute("""
+                INSERT INTO coin_transactions (user_id, guild_id, amount, transaction_type, description)
+                VALUES ($1, $2, $3, $4, $5)
+            """, user_id, guild_id, -amount, transaction_type, description)
+
+            # Trigger real-time leaderboard update
             self.bot.loop.create_task(self.schedule_leaderboard_update(guild_id))
-            self.logger.info(f"Removed {amount} coins from user {user_id}: {description}", extra={'guild_id': guild_id})
-            return True
 
+            # FIX: Add guild_id to log message
+            self.logger.info(f"Removed {amount} coins from user {user_id} in guild {guild_id}: {description}", extra={'guild_id': guild_id})
+            return True
         except Exception as e:
-            self.logger.error(f"Error removing coins from {user_id}: {e}", extra={'guild_id': guild_id})
+            # FIX: Add guild_id to log message
+            self.logger.error(f"Error removing coins from {user_id} in guild {guild_id}: {e}", extra={'guild_id': guild_id})
             return False
 
     # Keep the original scheduled task as a backup/maintenance function
