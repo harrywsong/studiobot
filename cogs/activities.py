@@ -25,10 +25,13 @@ def ensure_timezone_aware(dt):
     """Ensure datetime object is timezone-aware (UTC)"""
     if dt is None:
         return None
-    if dt.tzinfo is None:
-        # Assume naive datetime is in UTC
-        return dt.replace(tzinfo=timezone.utc)
-    return dt
+
+    # If it's already timezone-aware, return as-is
+    if dt.tzinfo is not None:
+        return dt
+
+    # If it's naive, assume it's UTC and make it aware
+    return dt.replace(tzinfo=timezone.utc)
 
 class AdventureView(discord.ui.View):
     """Adventure selection and management view"""
@@ -467,8 +470,8 @@ class ActivitiesCog(commands.Cog):
                     user_id BIGINT NOT NULL,
                     guild_id BIGINT NOT NULL,
                     adventure_id VARCHAR(50) NOT NULL,
-                    start_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    end_time TIMESTAMP,
+                    start_time TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                    end_time TIMESTAMPTZ,
                     success BOOLEAN DEFAULT FALSE,
                     rewards_coins INTEGER DEFAULT 0,
                     rewards_exp INTEGER DEFAULT 0,
@@ -476,7 +479,7 @@ class ActivitiesCog(commands.Cog):
                 )
             """)
 
-            # Arena stats (already exists, but ensure it's there)
+            # Arena stats - also fix the timestamp column
             await self.bot.pool.execute("""
                 CREATE TABLE IF NOT EXISTS arena_stats (
                     user_id BIGINT,
@@ -487,12 +490,12 @@ class ActivitiesCog(commands.Cog):
                     losses INTEGER DEFAULT 0,
                     current_streak INTEGER DEFAULT 0,
                     best_streak INTEGER DEFAULT 0,
-                    last_battle TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_battle TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
                     PRIMARY KEY (user_id, guild_id)
                 )
             """)
 
-            # Dungeon progress (already exists, but ensure it's there)
+            # Dungeon progress - fix timestamp column
             await self.bot.pool.execute("""
                 CREATE TABLE IF NOT EXISTS dungeon_progress (
                     user_id BIGINT,
@@ -500,12 +503,12 @@ class ActivitiesCog(commands.Cog):
                     dungeon_name VARCHAR(50),
                     completions INTEGER DEFAULT 0,
                     best_time INTEGER DEFAULT 0,
-                    last_attempt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_attempt TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
                     PRIMARY KEY (user_id, guild_id, dungeon_name)
                 )
             """)
 
-            # Add this to your setup_activities_database method
+            # Daily activity limits
             await self.bot.pool.execute("""
                 CREATE TABLE IF NOT EXISTS daily_activity_limits (
                     user_id BIGINT,
@@ -518,7 +521,7 @@ class ActivitiesCog(commands.Cog):
                 )
             """)
 
-            # Party system
+            # Party system - fix timestamp columns
             await self.bot.pool.execute("""
                 CREATE TABLE IF NOT EXISTS parties (
                     party_id VARCHAR(36) PRIMARY KEY,
@@ -528,7 +531,7 @@ class ActivitiesCog(commands.Cog):
                     description TEXT,
                     max_members INTEGER DEFAULT 5,
                     min_power INTEGER DEFAULT 0,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
                     is_active BOOLEAN DEFAULT TRUE
                 )
             """)
@@ -537,30 +540,36 @@ class ActivitiesCog(commands.Cog):
                 CREATE TABLE IF NOT EXISTS party_members (
                     party_id VARCHAR(36),
                     user_id BIGINT,
-                    joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    joined_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
                     role VARCHAR(20) DEFAULT 'member',
                     PRIMARY KEY (party_id, user_id),
                     FOREIGN KEY (party_id) REFERENCES parties(party_id) ON DELETE CASCADE
                 )
             """)
 
-            # Active adventures tracking
+            # Active adventures tracking - MOST IMPORTANT FIX
             await self.bot.pool.execute("""
                 CREATE TABLE IF NOT EXISTS active_adventures (
                     user_id BIGINT,
                     guild_id BIGINT,
                     adventure_id VARCHAR(50),
-                    start_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    end_time TIMESTAMP,
+                    start_time TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                    end_time TIMESTAMPTZ,
                     message_id BIGINT,
                     PRIMARY KEY (user_id, guild_id)
                 )
             """)
 
+            # If tables already exist, alter them to use TIMESTAMPTZ
+            try:
+                await self.bot.pool.execute("ALTER TABLE active_adventures ALTER COLUMN start_time TYPE TIMESTAMPTZ")
+                await self.bot.pool.execute("ALTER TABLE active_adventures ALTER COLUMN end_time TYPE TIMESTAMPTZ")
+            except:
+                pass  # Columns might already be correct type
+
             self.logger.info("활동 시스템 데이터베이스가 준비되었습니다.")
         except Exception as e:
             self.logger.error(f"활동 데이터베이스 설정 실패: {e}")
-
     def check_channel(self, interaction: discord.Interaction, required_channel_id: int) -> bool:
         """Check if command is used in correct channel"""
         if interaction.channel_id != required_channel_id:
@@ -622,19 +631,31 @@ class ActivitiesCog(commands.Cog):
         )
 
         if active:
-            # FIXED: Ensure both datetimes are timezone-aware for comparison
-            end_time = ensure_timezone_aware(active['end_time'])
-            current_time = datetime.now(timezone.utc)  # Already timezone-aware
-            remaining_time = end_time - current_time
+            # CRITICAL FIX: Properly handle timezone-aware datetime comparison
+            try:
+                # Ensure end_time is timezone-aware
+                end_time = ensure_timezone_aware(active['end_time'])
+                current_time = datetime.now(timezone.utc)
 
-            if remaining_time.total_seconds() > 0:
-                minutes = int(remaining_time.total_seconds() // 60)
-                seconds = int(remaining_time.total_seconds() % 60)
-                await interaction.followup.send(
-                    f"⏰ 이미 모험을 진행 중입니다!\n남은 시간: {minutes}분 {seconds}초",
-                    ephemeral=True
+                # Calculate remaining time
+                remaining_time = end_time - current_time
+
+                if remaining_time.total_seconds() > 0:
+                    minutes = int(remaining_time.total_seconds() // 60)
+                    seconds = int(remaining_time.total_seconds() % 60)
+                    await interaction.followup.send(
+                        f"⏰ 이미 모험을 진행 중입니다!\n남은 시간: {minutes}분 {seconds}초",
+                        ephemeral=True
+                    )
+                    return
+
+            except Exception as e:
+                self.logger.error(f"Adventure time calculation error: {e}")
+                # If there's an error with time calculation, clear the active adventure
+                await self.bot.pool.execute(
+                    "DELETE FROM active_adventures WHERE user_id = $1 AND guild_id = $2",
+                    user_id, guild_id
                 )
-                return
 
         combat_power = await self.get_user_combat_power(user_id, guild_id)
         adventures_data = self.get_recommended_adventures(combat_power)
@@ -686,37 +707,45 @@ class ActivitiesCog(commands.Cog):
         power_ratio = combat_power / adventure['min_power']
         base_success_chance = min(95, 50 + (power_ratio - 1) * 30)
 
-        # Create timezone-aware datetimes consistently
+        # CRITICAL FIX: Create timezone-aware datetimes and use proper SQL
         start_time = datetime.now(timezone.utc)
         end_time = start_time + timedelta(seconds=adventure['duration'])
 
-        # Store active adventure
-        await self.bot.pool.execute("""
-            INSERT INTO active_adventures (user_id, guild_id, adventure_id, start_time, end_time)
-            VALUES ($1, $2, $3, $4, $5)
-            ON CONFLICT (user_id, guild_id) DO UPDATE SET
-            adventure_id = EXCLUDED.adventure_id,
-            start_time = EXCLUDED.start_time,
-            end_time = EXCLUDED.end_time
-        """, user_id, guild_id, adventure_id, start_time, end_time)
+        try:
+            # Store active adventure with explicit timezone handling
+            await self.bot.pool.execute("""
+                INSERT INTO active_adventures (user_id, guild_id, adventure_id, start_time, end_time)
+                VALUES ($1, $2, $3, $4::timestamptz, $5::timestamptz)
+                ON CONFLICT (user_id, guild_id) DO UPDATE SET
+                adventure_id = EXCLUDED.adventure_id,
+                start_time = EXCLUDED.start_time,
+                end_time = EXCLUDED.end_time
+            """, user_id, guild_id, adventure_id, start_time, end_time)
 
-        embed = discord.Embed(
-            title=f"{adventure['emoji']} 모험 시작!",
-            description=f"**{adventure['name']}**에 출발했습니다!",
-            color=discord.Color.blue()
-        )
-        embed.add_field(name="예상 소요시간", value=f"{adventure['duration'] // 60}분", inline=True)
-        embed.add_field(name="성공 확률", value=f"{base_success_chance:.1f}%", inline=True)
-        embed.add_field(name="전투력", value=f"{combat_power:,}", inline=True)
+            embed = discord.Embed(
+                title=f"{adventure['emoji']} 모험 시작!",
+                description=f"**{adventure['name']}**에 출발했습니다!",
+                color=discord.Color.blue()
+            )
+            embed.add_field(name="예상 소요시간", value=f"{adventure['duration'] // 60}분", inline=True)
+            embed.add_field(name="성공 확률", value=f"{base_success_chance:.1f}%", inline=True)
+            embed.add_field(name="전투력", value=f"{combat_power:,}", inline=True)
+            embed.set_footer(text=f"모험 완료 시각: {end_time.strftime('%H:%M')} UTC")
 
-        # Format time for display - use UTC time to avoid timezone issues
-        embed.set_footer(text=f"모험 완료 시각: {end_time.strftime('%H:%M')} UTC")
+            await interaction.followup.send(embed=embed)
 
-        await interaction.followup.send(embed=embed)
+            # Schedule adventure completion
+            await asyncio.sleep(adventure['duration'])
+            await self.complete_adventure(user_id, guild_id, adventure_id, base_success_chance, combat_power)
 
-        # Schedule adventure completion
-        await asyncio.sleep(adventure['duration'])
-        await self.complete_adventure(user_id, guild_id, adventure_id, base_success_chance, combat_power)
+        except Exception as e:
+            self.logger.error(f"Adventure start error: {e}")
+            await interaction.followup.send(f"모험 시작 중 오류가 발생했습니다. 다시 시도해주세요.", ephemeral=True)
+            # Clean up any partial data
+            await self.bot.pool.execute(
+                "DELETE FROM active_adventures WHERE user_id = $1 AND guild_id = $2",
+                user_id, guild_id
+            )
     async def complete_adventure(self, user_id: int, guild_id: int, adventure_id: str, success_chance: float, combat_power: int):
         """Complete an adventure and give rewards"""
         try:
