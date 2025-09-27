@@ -48,8 +48,14 @@ class EnhancementView(discord.ui.View):
             await interaction.response.send_message("다른 사용자의 아이템을 강화할 수 없습니다.", ephemeral=True)
             return
 
-        await interaction.response.defer()
+        # Delete the previous enhancement message to prevent clutter
+        if hasattr(self, 'message') and self.message:
+            try:
+                await self.message.delete()
+            except discord.NotFound:
+                pass  # Message already deleted
 
+        await interaction.response.defer()
         await self.enhancement_cog.handle_enhancement(interaction, self.item_row['item_id'])
 
     @discord.ui.button(label="🔍 상세정보", style=discord.ButtonStyle.secondary, emoji="🔎")
@@ -240,6 +246,13 @@ class ItemManagementView(discord.ui.View):
         if interaction.user.id != self.user_id:
             await interaction.response.send_message("다른 사용자의 아이템을 강화할 수 없습니다.", ephemeral=True)
             return
+
+        # Delete the previous enhancement message to prevent clutter
+        if hasattr(self, 'message') and self.message:
+            try:
+                await self.message.delete()
+            except discord.NotFound:
+                pass  # Message already deleted
 
         await interaction.response.defer()
         await self.enhancement_cog.handle_enhancement(interaction, self.item_row['item_id'])
