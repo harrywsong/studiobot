@@ -1161,9 +1161,8 @@ class EnhancementCog(commands.Cog):
             self.logger.error(f"장착 아이템 조회 오류: {e}", extra={'guild_id': guild_id})
             return {}
 
-
     async def calculate_total_stats(self, user_id: int, guild_id: int) -> Dict[str, int]:
-        """총 능력치 계산"""
+        """이 능력치 계산"""
         try:
             equipped_items = await self.get_equipped_items(user_id, guild_id)
             total_stats = {"str": 0, "dex": 0, "int": 0, "luk": 0, "att": 0, "m_att": 0}
@@ -1189,17 +1188,22 @@ class EnhancementCog(commands.Cog):
 
             for slot, item_data in equipped_items.items():
                 template = self.get_item_template(item_data['template_id'])
-                if template:
+                if template and 'base_stats' in template:
                     enhancement_level = item_data['enhancement_level']
+                    self.logger.info(
+                        f"Processing item {template.get('name', 'Unknown')} with stats: {template['base_stats']}")
                     for stat, value in template['base_stats'].items():
                         if value > 0:
                             enhanced_value = calculate_star_bonus(value, enhancement_level)
                             total_stats[stat] += enhanced_value
+                            self.logger.info(f"Added {enhanced_value} {stat} from {template.get('name', 'Unknown')}")
+
+            # Return the calculated stats AFTER the loop completes
             return total_stats
+
         except Exception as e:
             self.logger.error(f"능력치 계산 오류: {e}", extra={'guild_id': guild_id})
             return {"str": 0, "dex": 0, "int": 0, "luk": 0, "att": 0, "m_att": 0}
-
     async def show_inventory(self, interaction: discord.Interaction):
         """인벤토리 표시"""
         await interaction.response.defer(ephemeral=True)
