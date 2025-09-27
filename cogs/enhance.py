@@ -830,11 +830,12 @@ class EnhancementCog(commands.Cog):
                     "SELECT item_id, template_id, enhancement_level, fail_streak, user_id, is_equipped, equipped_slot FROM user_items WHERE item_id = $1",
                     item_id
                 )
-                # Use the new item row and template
+                # Use the new item row and template, which will automatically include the '강화하기' button
                 view = EnhancementView(self.bot, user_id, guild_id, template, new_item_row)
                 message = await interaction.followup.send(embed=embed, view=view)
                 view.message = message
             else:
+                # Item destroyed, no view needed
                 message = await interaction.followup.send(embed=embed)
 
             # 3. STORE NEW MESSAGE ID
@@ -1399,69 +1400,6 @@ class EnhancementCog(commands.Cog):
         """Setup when bot is ready"""
         if not self.update_marketplace.is_running():
             self.update_marketplace.start()
-
-
-class EnhancementResultView(discord.ui.View):
-    """View for enhancement results with action buttons"""
-
-    def __init__(self, bot, user_id, guild_id, item_row, template):
-        super().__init__(timeout=300)
-        self.bot = bot
-        self.user_id = user_id
-        self.guild_id = guild_id
-        self.item_row = item_row
-        self.template = template
-        self.enhancement_cog = bot.get_cog('EnhancementCog')
-
-    @discord.ui.button(label="⭐ 강화하기", style=discord.ButtonStyle.primary)
-    async def enhance_item(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.user_id:
-            await interaction.response.send_message("다른 사용자의 아이템을 강화할 수 없습니다.", ephemeral=True)
-            return
-
-        await interaction.response.defer()
-
-        try:
-            await self.enhancement_cog.handle_enhancement(interaction, self.item_row['item_id'])
-        except Exception as e:
-            # Since we've deferred, we must use followup to send the error message
-            await interaction.followup.send(f"오류가 발생했습니다: {e}", ephemeral=True)
-
-    @discord.ui.button(label="🔹 장착하기", style=discord.ButtonStyle.success)
-    async def equip_item(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.user_id:
-            await interaction.response.send_message("다른 사용자의 아이템을 장착할 수 없습니다.", ephemeral=True)
-            return
-        try:
-            await self.enhancement_cog.equip_item(interaction, self.item_row['item_id'])
-        except Exception as e:
-            await interaction.response.send_message(f"오류가 발생했습니다: {e}", ephemeral=True)
-
-    @discord.ui.button(label="💰 마켓 판매", style=discord.ButtonStyle.secondary)
-    async def sell_item(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if interaction.user.id != self.user_id:
-            await interaction.response.send_message("다른 사용자의 아이템을 판매할 수 없습니다.", ephemeral=True)
-            return
-        try:
-            await self.enhancement_cog.show_market_sell_confirmation(interaction, self.item_row['item_id'])
-        except Exception as e:
-            await interaction.response.send_message(f"오류가 발생했습니다: {e}", ephemeral=True)
-
-    @discord.ui.button(label="❌ 강화 멈추기", style=discord.ButtonStyle.danger)
-    async def stop_enhancement(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Disables the view and stops the enhancement interaction."""
-        if interaction.user.id != self.user_id:
-            await interaction.response.send_message("다른 사용자의 강화 작업을 멈출 수 없습니다.", ephemeral=True)
-            return
-
-        # Disable all buttons on the view
-        for child in self.children:
-            if isinstance(child, discord.ui.Button):
-                child.disabled = True
-
-        # Edit the message to show the operation has stopped and update the view (disabling buttons)
-        await interaction.response.edit_message(content="강화 작업이 중단되었습니다.", view=self)
-        self.stop()  # Stops the view's timeout and waits for next command call
 
     async def on_timeout(self) -> None:
         # Disable all buttons when the view times out
