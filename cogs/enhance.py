@@ -1121,7 +1121,7 @@ class EnhancementCog(commands.Cog):
             embed.add_field(name="💰 획득 코인", value=f"{sell_price:,} 코인", inline=True)
             embed.set_footer(text="상점 NPC와의 거래가 완료되었습니다!")
 
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            await interaction.followup.send(embed=embed)
 
         except Exception as e:
             await interaction.followup.send(f"판매 중 오류가 발생했습니다: {e}", ephemeral=True)
