@@ -59,27 +59,51 @@ class ShopView(discord.ui.View):
             timestamp=datetime.now(timezone.utc)
         )
 
+        # XP Boosters section
+        booster_text = ""
         for item_id, item in self.shop_items.items():
-            embed.add_field(
-                name=f"{item['emoji']} {item['name']}",
-                value=f"{item['description']}\n💰 **가격:** {item['price']:,} 코인",
-                inline=False
-            )
+            booster_text += f"{item['emoji']} **{item['name']}**\n"
+            booster_text += f"{item['description']}\n💰 **가격:** {item['price']:,} 코인\n\n"
+
+        embed.add_field(
+            name="🚀 경험치 부스터",
+            value=booster_text,
+            inline=False
+        )
+
+        # Item Gacha section
+        embed.add_field(
+            name="🎁 아이템 뽑기",
+            value=(
+                "🎰 **랜덤 아이템 뽑기**\n"
+                "200 코인으로 랜덤 장비를 획득하세요!\n"
+                "모든 등급의 아이템이 나올 수 있습니다.\n"
+                "💰 **가격:** 200 코인\n\n"
+                "📊 **확률:**\n"
+                "일반 45% | 고급 30% | 희귀 15%\n"
+                "영웅 7% | 고유 2.5% | 전설 0.4% | 신화 0.1%"
+            ),
+            inline=False
+        )
 
         embed.set_footer(text="아래 버튼을 클릭하여 아이템을 구매하세요!")
         return embed
 
-    @discord.ui.button(label="🚀 3시간 부스터", style=discord.ButtonStyle.green, custom_id="buy_xp_boost_3h")
+    @discord.ui.button(label="🚀 3시간 부스터", style=discord.ButtonStyle.green, custom_id="buy_xp_boost_3h", row=0)
     async def buy_3h_booster(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.handle_purchase(interaction, "xp_boost_3h")
 
-    @discord.ui.button(label="⚡ 6시간 부스터", style=discord.ButtonStyle.green, custom_id="buy_xp_boost_6h")
+    @discord.ui.button(label="⚡ 6시간 부스터", style=discord.ButtonStyle.green, custom_id="buy_xp_boost_6h", row=0)
     async def buy_6h_booster(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.handle_purchase(interaction, "xp_boost_6h")
 
-    @discord.ui.button(label="🔥 12시간 부스터", style=discord.ButtonStyle.green, custom_id="buy_xp_boost_12h")
+    @discord.ui.button(label="🔥 12시간 부스터", style=discord.ButtonStyle.green, custom_id="buy_xp_boost_12h", row=0)
     async def buy_12h_booster(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self.handle_purchase(interaction, "xp_boost_12h")
+
+    @discord.ui.button(label="🎁 아이템 뽑기 (200코인)", style=discord.ButtonStyle.primary, custom_id="item_gacha_pull", row=1)
+    async def pull_item(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.handle_item_gacha(interaction)
 
     async def handle_purchase(self, interaction: discord.Interaction, item_id: str):
         """Handle item purchase"""
@@ -177,6 +201,109 @@ class ShopView(discord.ui.View):
         except Exception as e:
             self.logger.error(f"Error handling purchase for user {user_id}: {e}", extra={'guild_id': guild_id})
             await interaction.followup.send(f"❌ 구매 처리 중 오류가 발생했습니다: {e}", ephemeral=True)
+
+    async def handle_item_gacha(self, interaction: discord.Interaction):
+        """Handle item gacha pull"""
+        await interaction.response.defer(ephemeral=True)
+
+        user_id = interaction.user.id
+        guild_id = interaction.guild.id
+        price = 200
+
+        try:
+            # Check if enhancement system is available
+            enhancement_cog = self.bot.get_cog('EnhancementCog')
+            if not enhancement_cog:
+                await interaction.followup.send("❌ 강화 시스템을 사용할 수 없습니다.", ephemeral=True)
+                return
+
+            # Check if user has a character
+            character_data = await enhancement_cog.get_user_character(user_id, guild_id)
+            if not character_data:
+                await interaction.followup.send(
+                    "❌ 먼저 `/직업선택` 명령어로 캐릭터를 생성해주세요!",
+                    ephemeral=True
+                )
+                return
+
+            # Check coins
+            coins_cog = self.bot.get_cog('CoinsCog')
+            if not coins_cog:
+                await interaction.followup.send("❌ 코인 시스템을 사용할 수 없습니다.", ephemeral=True)
+                return
+
+            current_coins = await coins_cog.get_user_coins(user_id, guild_id)
+            if current_coins < price:
+                await interaction.followup.send(
+                    f"❌ 코인이 부족합니다!\n필요 코인: {price:,}\n보유 코인: {current_coins:,}",
+                    ephemeral=True
+                )
+                return
+
+            # Deduct coins
+            if not await coins_cog.remove_coins(user_id, guild_id, price, "item_gacha", "아이템 뽑기"):
+                await interaction.followup.send("❌ 코인 차감 중 오류가 발생했습니다.", ephemeral=True)
+                return
+
+            # Get random item
+            item_data = enhancement_cog.get_random_item()
+            item_id = await enhancement_cog.create_item_in_db(user_id, guild_id, item_data)
+
+            if not item_id:
+                # Refund coins if item creation failed
+                await coins_cog.add_coins(user_id, guild_id, price, "gacha_refund", "아이템 뽑기 실패 환불")
+                await interaction.followup.send("❌ 아이템 생성 중 오류가 발생했습니다. 코인이 환불되었습니다.", ephemeral=True)
+                return
+
+            # Create result embed
+            rarity_info = enhancement_cog.item_rarities[item_data['rarity']]
+            embed = discord.Embed(
+                title="🎁 아이템 획득!",
+                color=rarity_info['color'],
+                timestamp=datetime.now(timezone.utc)
+            )
+
+            # Add sparkle effect for higher rarities
+            sparkle = ""
+            if item_data['rarity'] in ['전설', '신화']:
+                sparkle = "✨ "
+            elif item_data['rarity'] in ['고유', '영웅']:
+                sparkle = "⭐ "
+
+            item_display = f"{sparkle}{item_data['emoji']} **{item_data['name']}**"
+            embed.add_field(name="획득 아이템", value=item_display, inline=False)
+            embed.add_field(name="등급", value=f"{rarity_info['name']}", inline=True)
+            embed.add_field(name="종류", value=f"{item_data['slot_type']}", inline=True)
+            embed.add_field(name="아이템 ID", value=f"`{item_id}`", inline=True)
+
+            # Show base stats
+            stats_text = ""
+            for stat, value in item_data['base_stats'].items():
+                if value > 0:
+                    stats_text += f"{stat.upper()}: +{value} "
+
+            if stats_text:
+                embed.add_field(name="기본 능력치", value=stats_text.strip(), inline=False)
+
+            # Show class requirement if any
+            if item_data.get('class_req'):
+                embed.add_field(name="직업 제한", value=item_data['class_req'], inline=True)
+
+            embed.add_field(name="💰 소모 코인", value=f"{price} 코인", inline=True)
+            embed.add_field(name="💳 남은 코인", value=f"{current_coins - price:,} 코인", inline=True)
+
+            embed.set_footer(text="인벤토리에서 아이템을 확인하고 장비해보세요!")
+
+            await interaction.followup.send(embed=embed, ephemeral=True)
+
+            self.logger.info(
+                f"사용자 {user_id}가 아이템 뽑기로 {item_data['name']}({item_data['rarity']})을 획득했습니다.",
+                extra={'guild_id': guild_id}
+            )
+
+        except Exception as e:
+            self.logger.error(f"아이템 뽑기 오류: {e}", extra={'guild_id': guild_id})
+            await interaction.followup.send(f"❌ 아이템 뽑기 중 오류가 발생했습니다: {e}", ephemeral=True)
 
 
 class ShopSystemCog(commands.Cog):
@@ -512,7 +639,7 @@ class ShopSystemCog(commands.Cog):
                 embed.add_field(name="📦 부스터 종류", value=item['name'], inline=True)
 
             embed.add_field(
-                name="🕒 구매 시각",
+                name="🕑 구매 시각",
                 value=discord.utils.format_dt(record['purchased_at'], 'F'),
                 inline=True
             )
@@ -568,5 +695,6 @@ class ShopSystemCog(commands.Cog):
         except Exception as e:
             self.logger.error(f"Error deleting old shop messages: {e}")
             return False
+
 async def setup(bot):
     await bot.add_cog(ShopSystemCog(bot))
