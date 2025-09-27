@@ -398,6 +398,8 @@ class EnhancementCog(commands.Cog):
         self.item_pool = self.load_item_pool()
         self.last_enhancement_message: Dict[str, discord.Message] = {}
         self.active_enhancement_messages = {}
+        self.marketplace_message: Optional[discord.Message] = None
+
 
         self.character_classes = {
             "전사": {"name": "전사", "emoji": "⚔️", "primary_stats": ["str", "att"],
@@ -630,25 +632,29 @@ class EnhancementCog(commands.Cog):
             self.logger.error(f"데이터베이스 설정 실패: {e}")
 
     async def setup_marketplace_message(self):
-        """Setup marketplace message"""
+        """Ensure marketplace message exists on startup"""
         try:
             channel = self.bot.get_channel(self.marketplace_channel_id)
             if not channel:
                 self.logger.error(f"Marketplace channel {self.marketplace_channel_id} not found")
                 return
-            async for message in channel.history(limit=10):
+
+            # Delete old marketplace messages (cleanup only once)
+            async for message in channel.history(limit=20):
                 if message.author == self.bot.user:
                     try:
                         await message.delete()
                         await asyncio.sleep(0.5)
                     except:
                         pass
+
             await self.create_marketplace_message()
+
         except Exception as e:
             self.logger.error(f"Marketplace setup error: {e}")
 
     async def create_marketplace_message(self):
-        """Create or update the marketplace message without duplicates"""
+        """Create or update marketplace message without duplicates"""
         try:
             channel = self.bot.get_channel(self.marketplace_channel_id)
             if not channel:
@@ -663,14 +669,15 @@ class EnhancementCog(commands.Cog):
             )
 
             if not market_items:
-                embed.add_field(name="📦 현재 판매중인 아이템이 없습니다",
-                                value="다른 플레이어들이 아이템을 올릴 때까지 기다려주세요!",
-                                inline=False)
+                embed.add_field(
+                    name="📦 현재 판매중인 아이템이 없습니다",
+                    value="다른 플레이어들이 아이템을 올릴 때까지 기다려주세요!",
+                    inline=False
+                )
                 view = None
             else:
                 items_text = ""
-                start = 0
-                for i, (entry, template) in enumerate(market_items[start:start + 10], start=1):
+                for i, (entry, template) in enumerate(market_items[:10], start=1):
                     rarity_info = self.item_rarities[template['rarity']]
                     enh = f"+{entry['enhancement_level']}" if entry['enhancement_level'] > 0 else ""
                     items_text += (
@@ -682,9 +689,12 @@ class EnhancementCog(commands.Cog):
                 embed.set_footer(text="드롭다운으로 아이템을 구매하세요! (10분마다 자동 갱신)")
                 view = MarketplaceView(self.bot, market_items)
 
-            # --- reuse the same message instead of posting new ---
-            if hasattr(self, "marketplace_message") and self.marketplace_message:
-                await self.marketplace_message.edit(embed=embed, view=view)
+            # --- Reuse or create message ---
+            if self.marketplace_message:
+                try:
+                    await self.marketplace_message.edit(embed=embed, view=view)
+                except discord.NotFound:
+                    self.marketplace_message = await channel.send(embed=embed, view=view)
             else:
                 self.marketplace_message = await channel.send(embed=embed, view=view)
 
