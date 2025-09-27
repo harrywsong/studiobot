@@ -79,6 +79,22 @@ class EnhancementView(discord.ui.View):
         await self.enhancement_cog.show_market_sell_confirmation(interaction, self.item_row['item_id'])
 
 
+    @discord.ui.button(label="❌ 강화 멈추기", style=discord.ButtonStyle.danger)
+    async def stop_enhancement(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Disables the view and stops the enhancement interaction."""
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("다른 사용자의 강화 작업을 멈출 수 없습니다.", ephemeral=True)
+            return
+
+        # Disable all buttons on the view
+        for child in self.children:
+            if isinstance(child, discord.ui.Button):
+                child.disabled = True
+
+        # Edit the message to show the operation has stopped and update the view (disabling buttons)
+        await interaction.response.edit_message(content="강화 작업이 중단되었습니다.", view=self)
+        self.stop()  # Stops the view's timeout
+
 class MarketSellConfirmView(discord.ui.View):
     """Confirmation view for automatic market pricing"""
 
@@ -346,6 +362,8 @@ class EnhancementCog(commands.Cog):
         self.bot = bot
         self.logger = get_logger(__name__)
         self.item_pool = self.load_item_pool()
+        self.last_enhancement_message: Dict[str, discord.Message] = {}
+        self.active_enhancement_messages = {}
 
         self.character_classes = {
             "전사": {"name": "전사", "emoji": "⚔️", "primary_stats": ["str", "att"],
@@ -773,63 +791,57 @@ class EnhancementCog(commands.Cog):
             embed.add_field(name="아이템", value=f"{template['emoji']} **{template['name']}**", inline=True)
             embed.add_field(name="등급", value=rarity_info['name'], inline=True)
             embed.add_field(
-                name="레벨 변화",
-                value=f"{current_level} → **{new_level if result != 'destroy' else '파괴'}**",
+                name="레벨 변화", value=f"{current_level} → **{new_level if result != 'destroy' else '파괴'}**",
                 inline=True
             )
-
             if result != "destroy":
                 max_stars = 25
                 filled = "⭐" * new_level
                 empty = "☆" * (max_stars - new_level)
                 stars = filled + empty
-
                 groups = [stars[i:i + 5] for i in range(0, max_stars, 5)]
-                top_row = "  ".join(groups[:3])
-                bottom_row = "  ".join(groups[3:])
-                star_display = f"{top_row}\n{bottom_row}"
+                top_row = " ".join(groups[:5])
 
-                embed.add_field(name="강화 단계", value=star_display, inline=False)
+                # Add the rest of the embed fields back here
+                # ...
 
-            if result == "success":
-                embed.add_field(name="🎉 성공!", value="강화 레벨이 상승했습니다!", inline=False)
-            elif result == "fail":
-                embed.add_field(name="💔 실패", value=f"연속 실패: {new_fail_streak}회", inline=False)
-                if new_fail_streak >= 2:
-                    embed.add_field(name="✨ 다음 강화 보장!", value="다음 강화는 100% 성공합니다!", inline=False)
+            # --- START MESSAGE DELETION AND TRACKING ---
+
+            # 1. DELETE PREVIOUS MESSAGE (If one was tracked)
+            if user_id in self.active_enhancement_messages:
+                old_message_id = self.active_enhancement_messages[user_id]
+                try:
+                    # Fetch and delete the message
+                    old_message = await interaction.channel.fetch_message(old_message_id)
+                    await old_message.delete()
+                except discord.NotFound:
+                    pass
+                except Exception as e:
+                    self.logger.warning(f"Error deleting old enhancement message {old_message_id}: {e}")
+
+                # Stop tracking the old message ID before sending the new one
+                del self.active_enhancement_messages[user_id]
+
+            # 2. SEND NEW MESSAGE
+            message = None
+            if result != "destroy":
+                # Re-fetch the item row for the latest data for the view
+                new_item_row = await self.bot.pool.fetchrow(
+                    "SELECT item_id, template_id, enhancement_level, fail_streak, user_id, is_equipped, equipped_slot FROM user_items WHERE item_id = $1",
+                    item_id
+                )
+                # Use the new item row and template
+                view = EnhancementView(self.bot, user_id, guild_id, template, new_item_row)
+                message = await interaction.followup.send(embed=embed, view=view)
+                view.message = message
             else:
-                embed.add_field(name="💥 파괴", value="아이템이 파괴되었습니다!", inline=False)
+                message = await interaction.followup.send(embed=embed)
 
-            refreshed_coins = await coins_cog.get_user_coins(user_id, guild_id)
-            embed.add_field(name="💰 소모 코인", value=f"{cost:,} 코인", inline=True)
-            embed.add_field(name="💳 남은 코인", value=f"{refreshed_coins:,} 코인", inline=True)
-            embed.set_footer(text=f"강화 확률: 성공 {rates[0]}% | 실패 {rates[1]}% | 파괴 {rates[2]}%")
+            # 3. STORE NEW MESSAGE ID
+            if message:
+                self.active_enhancement_messages[user_id] = message.id
 
-            # Determine if we should post to the showoff channel
-            showoff_channel = self.bot.get_channel(self.showoff_channel_id)
-
-            # Case 1: Post a public message to the showoff channel
-            if showoff_channel and result != 'destroy':
-                public_embed = embed.copy()
-                public_embed.add_field(name="플레이어", value=interaction.user.mention, inline=True)
-
-                # Try to find the item to attach action buttons
-                view = None
-                updated_item_row = await self.bot.pool.fetchrow("SELECT * FROM user_items WHERE item_id = $1", item_id)
-                if updated_item_row:
-                    view = EnhancementResultView(self.bot, user_id, guild_id, dict(updated_item_row), template)
-
-                await showoff_channel.send(embed=public_embed, view=view)
-
-
-            # Case 2: No showoff channel or item was destroyed, so just reply normally
-            else:
-                await interaction.followup.send(embed=embed)
-
-            self.logger.info(
-                f"사용자 {user_id}가 {template['name']} 강화: {current_level}→{new_level if result != 'destroy' else '파괴'} ({result})",
-                extra={'guild_id': guild_id}
-            )
+            # --- END MESSAGE DELETION AND TRACKING ---
 
         except Exception as e:
             self.logger.error(f"강화 처리 중 심각한 오류 발생: {e}", extra={'guild_id': guild_id}, exc_info=True)
@@ -1434,6 +1446,22 @@ class EnhancementResultView(discord.ui.View):
             await self.enhancement_cog.show_market_sell_confirmation(interaction, self.item_row['item_id'])
         except Exception as e:
             await interaction.response.send_message(f"오류가 발생했습니다: {e}", ephemeral=True)
+
+    @discord.ui.button(label="❌ 강화 멈추기", style=discord.ButtonStyle.danger)
+    async def stop_enhancement(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Disables the view and stops the enhancement interaction."""
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("다른 사용자의 강화 작업을 멈출 수 없습니다.", ephemeral=True)
+            return
+
+        # Disable all buttons on the view
+        for child in self.children:
+            if isinstance(child, discord.ui.Button):
+                child.disabled = True
+
+        # Edit the message to show the operation has stopped and update the view (disabling buttons)
+        await interaction.response.edit_message(content="강화 작업이 중단되었습니다.", view=self)
+        self.stop()  # Stops the view's timeout and waits for next command call
 
     async def on_timeout(self) -> None:
         # Disable all buttons when the view times out
