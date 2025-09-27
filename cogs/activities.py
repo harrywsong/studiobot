@@ -445,6 +445,9 @@ class ActivitiesCog(commands.Cog):
         await self.bot.wait_until_ready()
         await self.setup_activities_database()
 
+        # Check for any adventures that should have completed while bot was offline
+        await self.check_completed_adventures()
+
     async def setup_activities_database(self):
         """Setup database tables for activities"""
         try:
@@ -611,9 +614,13 @@ class ActivitiesCog(commands.Cog):
 
         if active:
             end_time = active['end_time']
+            # FIXED: Ensure end_time is timezone-aware
             if end_time.tzinfo is None:
                 end_time = end_time.replace(tzinfo=timezone.utc)
-            remaining_time = end_time - datetime.now(timezone.utc)
+
+            current_time = datetime.now(timezone.utc)
+            remaining_time = end_time - current_time
+
             if remaining_time.total_seconds() > 0:
                 await interaction.followup.send(
                     f"⏰ 이미 모험을 진행 중입니다!\n남은 시간: {int(remaining_time.total_seconds() // 60)}분 {int(remaining_time.total_seconds() % 60)}초",
@@ -650,12 +657,12 @@ class ActivitiesCog(commands.Cog):
         # Check daily limit
         daily_limit_check = await self.check_daily_activity_limit(user_id, guild_id, "adventure")
         if not daily_limit_check:
-            await interaction.followup.send("⚠ 일일 모험 한도에 도달했습니다! (하루 최대 10회)", ephemeral=True)
+            await interaction.followup.send("⚠️ 일일 모험 한도에 도달했습니다! (하루 최대 10회)", ephemeral=True)
             return
 
         adventure = self.adventures.get(adventure_id)
         if not adventure:
-            await interaction.followup.send("⚠ 유효하지 않은 모험입니다.", ephemeral=True)
+            await interaction.followup.send("⚠️ 유효하지 않은 모험입니다.", ephemeral=True)
             return
 
         combat_power = await self.get_user_combat_power(user_id, guild_id)
@@ -671,7 +678,7 @@ class ActivitiesCog(commands.Cog):
         power_ratio = combat_power / adventure['min_power']
         base_success_chance = min(95, 50 + (power_ratio - 1) * 30)
 
-        # Start adventure
+        # Start adventure - FIXED: Ensure both datetimes are timezone-aware
         start_time = datetime.now(timezone.utc)
         end_time = start_time + timedelta(seconds=adventure['duration'])
 
@@ -846,6 +853,12 @@ class ActivitiesCog(commands.Cog):
         user_id = interaction.user.id
         guild_id = interaction.guild.id
 
+        # Check daily limit for arena battles
+        daily_limit_check = await self.check_daily_activity_limit(user_id, guild_id, "arena")
+        if not daily_limit_check:
+            await interaction.followup.send("⚠️ 일일 아레나 한도에 도달했습니다! (하루 최대 20회)", ephemeral=True)
+            return
+
         # Find opponent with similar rating
         user_stats = await self.bot.pool.fetchrow(
             "SELECT * FROM arena_stats WHERE user_id = $1 AND guild_id = $2",
@@ -930,6 +943,9 @@ class ActivitiesCog(commands.Cog):
 
         await interaction.followup.send(embed=embed)
 
+        # Increment arena battle count
+        await self.increment_arena_battle_count(user_id, guild_id)
+
     async def battle_player_opponent(self, interaction: discord.Interaction, user_stats: dict, opponent_data: dict):
         """Battle against another player (simulated)"""
         user_id = interaction.user.id
@@ -1006,6 +1022,9 @@ class ActivitiesCog(commands.Cog):
             embed.add_field(name="보상", value=f"{coins_reward:,} 코인", inline=True)
 
         await interaction.followup.send(embed=embed)
+
+        # Increment arena battle count
+        await self.increment_arena_battle_count(user_id, guild_id)
 
     async def start_practice_battle(self, interaction: discord.Interaction):
         """Start a practice battle (no rating change)"""
@@ -1230,30 +1249,30 @@ class ActivitiesCog(commands.Cog):
             limit = daily_limits.get(activity_type, 10)
 
             if activity_type == "adventure":
-                # Check adventure logs from today
                 count = await self.bot.pool.fetchval("""
                     SELECT COUNT(*) FROM adventure_logs 
                     WHERE user_id = $1 AND guild_id = $2 
-                    AND start_time::date = CURRENT_DATE
+                    AND DATE(start_time AT TIME ZONE 'UTC') = CURRENT_DATE
                 """, user_id, guild_id)
 
             elif activity_type == "dungeon":
-                # Check dungeon attempts from today - count actual attempts today
                 count = await self.bot.pool.fetchval("""
                     SELECT COUNT(*) FROM dungeon_progress 
                     WHERE user_id = $1 AND guild_id = $2 
-                    AND last_attempt::date = CURRENT_DATE
+                    AND DATE(last_attempt AT TIME ZONE 'UTC') = CURRENT_DATE
                 """, user_id, guild_id)
                 if count is None:
                     count = 0
 
             elif activity_type == "arena":
-                # Check arena battles from today
+                # IMPROVED: Create a separate table or use a different approach for arena battles
+                # For now, we'll check from a daily_activity_limits table
                 count = await self.bot.pool.fetchval("""
-                    SELECT COUNT(*) FROM arena_stats 
-                    WHERE user_id = $1 AND guild_id = $2 
-                    AND DATE(last_battle) = CURRENT_DATE
+                    SELECT arena_count FROM daily_activity_limits
+                    WHERE user_id = $1 AND guild_id = $2 AND activity_date = CURRENT_DATE
                 """, user_id, guild_id)
+                if count is None:
+                    count = 0
 
             else:
                 return True  # Unknown activity type, allow it
@@ -1264,6 +1283,53 @@ class ActivitiesCog(commands.Cog):
             self.logger.error(f"Daily limit check error: {e}")
             return True  # Allow on error to prevent blocking gameplay
 
+    async def increment_arena_battle_count(self, user_id: int, guild_id: int):
+        """Increment the daily arena battle count"""
+        try:
+            await self.bot.pool.execute("""
+                INSERT INTO daily_activity_limits (user_id, guild_id, activity_date, arena_count)
+                VALUES ($1, $2, CURRENT_DATE, 1)
+                ON CONFLICT (user_id, guild_id, activity_date) 
+                DO UPDATE SET arena_count = daily_activity_limits.arena_count + 1
+            """, user_id, guild_id)
+        except Exception as e:
+            self.logger.error(f"Error incrementing arena battle count: {e}")
+
+    async def check_completed_adventures(self):
+        """Check for adventures that should be completed but haven't been processed"""
+        try:
+            current_time = datetime.now(timezone.utc)
+
+            # Find adventures that should be completed
+            completed_adventures = await self.bot.pool.fetch("""
+                SELECT user_id, guild_id, adventure_id, start_time, end_time 
+                FROM active_adventures 
+                WHERE end_time <= $1
+            """, current_time)
+
+            for adventure in completed_adventures:
+                # Calculate what the success chance and combat power would have been
+                adventure_data = self.adventures.get(adventure['adventure_id'])
+                if adventure_data:
+                    # Get combat power (might be different now, but we'll use current)
+                    combat_power = await self.get_user_combat_power(
+                        adventure['user_id'], adventure['guild_id']
+                    )
+
+                    power_ratio = combat_power / adventure_data['min_power']
+                    success_chance = min(95, 50 + (power_ratio - 1) * 30)
+
+                    # Complete the adventure
+                    await self.complete_adventure(
+                        adventure['user_id'],
+                        adventure['guild_id'],
+                        adventure['adventure_id'],
+                        success_chance,
+                        combat_power
+                    )
+
+        except Exception as e:
+            self.logger.error(f"Error checking completed adventures: {e}")
     @app_commands.command(name="파티", description="파티를 생성하고 관리하세요!")
     async def party(self, interaction: discord.Interaction):
         guild_id = interaction.guild.id
