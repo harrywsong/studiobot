@@ -358,38 +358,40 @@ class CharacterView(discord.ui.View):
 
 class LeaderboardView(discord.ui.View):
     def __init__(self, bot, leaderboard_data: list, start_index: int = 0):
-        super().__init__(timeout=300)
+        super().__init__(timeout=None)  # persistent
         self.bot = bot
         self.leaderboard_data = leaderboard_data
         self.index = start_index
 
-        # Add navigation buttons
-        self.prev_button = discord.ui.Button(label="◀ 이전", style=discord.ButtonStyle.secondary)
+        # Navigation buttons
+        self.prev_button = discord.ui.Button(label="◀ 이전", style=discord.ButtonStyle.secondary, custom_id="lb_prev")
         self.prev_button.callback = self.prev_page
         self.add_item(self.prev_button)
 
-        self.next_button = discord.ui.Button(label="다음 ▶", style=discord.ButtonStyle.secondary)
+        self.next_button = discord.ui.Button(label="다음 ▶", style=discord.ButtonStyle.secondary, custom_id="lb_next")
         self.next_button.callback = self.next_page
         self.add_item(self.next_button)
 
     def get_embed(self) -> discord.Embed:
         user, rank, power, stats, char_class, equipped_str = self.leaderboard_data[self.index]
+        rank_emoji = {1: "🥇", 2: "🥈", 3: "🥉"}.get(rank, f"#{rank}")
 
         embed = discord.Embed(
-            title=f"🏆 전투력 랭킹 #{rank}",
+            title=f"{rank_emoji} 전투력 랭킹 {rank}",
             color=discord.Color.gold()
         )
         embed.set_author(name=user.display_name, icon_url=user.display_avatar.url if user.display_avatar else None)
+        embed.set_thumbnail(url=user.display_avatar.url if user.display_avatar else None)
 
+        # Basic info
         embed.add_field(name="👤 직업", value=char_class, inline=True)
         embed.add_field(name="⚔️ 전투력", value=f"{power:,}", inline=True)
 
-        stats_block = (
-            f"**STR** {stats['str']} ｜ **DEX** {stats['dex']}\n"
-            f"**INT** {stats['int']} ｜ **LUK** {stats['luk']}\n"
-            f"**ATT** {stats['att']} ｜ **M.ATT** {stats['m_att']}"
-        )
-        embed.add_field(name="📊 스탯", value=stats_block, inline=False)
+        # Stats split into two columns
+        stats_left = f"**STR** {stats['str']}\n**INT** {stats['int']}\n**ATT** {stats['att']}"
+        stats_right = f"**DEX** {stats['dex']}\n**LUK** {stats['luk']}\n**M.ATT** {stats['m_att']}"
+        embed.add_field(name="📊 능력치 (좌)", value=stats_left, inline=True)
+        embed.add_field(name="📊 능력치 (우)", value=stats_right, inline=True)
 
         embed.add_field(name="🪓 장착 아이템", value=equipped_str, inline=False)
 
@@ -548,7 +550,6 @@ class EnhancementCog(commands.Cog):
 
             leaderboard.append((user, None, power, stats, char_class, equipped_str))
 
-        # Sort & enumerate ranks
         leaderboard.sort(key=lambda x: x[2], reverse=True)
         leaderboard = [(u, i + 1, p, s, c, e) for i, (u, _, p, s, c, e) in enumerate(leaderboard)]
 
@@ -1612,6 +1613,8 @@ class EnhancementResultView(discord.ui.View):
         self.item_row = item_row
         self.template = template
         self.enhancement_cog = bot.get_cog('EnhancementCog')
+        # Register persistent view so buttons don’t expire
+        self.bot.add_view(LeaderboardView(self.bot, []))
 
     @discord.ui.button(label="⭐ 강화하기", style=discord.ButtonStyle.primary)
     async def enhance_item(self, interaction: discord.Interaction, button: discord.ui.Button):
