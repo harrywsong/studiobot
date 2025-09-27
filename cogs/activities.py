@@ -372,6 +372,31 @@ class ActivitiesCog(commands.Cog):
         # Check for any adventures that should have completed while bot was offline
         await self.check_completed_adventures()
 
+    async def _check_concurrent_activity(self, user_id: int) -> Optional[str]:
+        """
+        Checks if the user is currently engaged in an adventure or a dungeon.
+
+        Returns:
+            The name of the active activity ('모험' or '던전') or None.
+        """
+        # Check for active adventure
+        adventure_check = await self.bot.pool.fetchrow(
+            "SELECT 1 FROM active_adventures WHERE user_id = $1",
+            user_id
+        )
+        if adventure_check:
+            return "모험"
+
+        # Check for active dungeon
+        dungeon_check = await self.bot.pool.fetchrow(
+            "SELECT 1 FROM active_dungeons WHERE user_id = $1",
+            user_id
+        )
+        if dungeon_check:
+            return "던전"
+
+        return None
+
     async def setup_activities_database(self):
         """Setup database tables for activities"""
         try:
@@ -744,32 +769,17 @@ class ActivitiesCog(commands.Cog):
             )
             return
 
-        # Check if user is already on an adventure
+        # Check if already in an adventure
         active = await self.bot.pool.fetchrow(
-            "SELECT * FROM active_adventures WHERE user_id = $1 AND guild_id = $2",
+            "SELECT 1 FROM active_adventures WHERE user_id = $1 AND guild_id = $2",
             user_id, guild_id
         )
-
         if active:
-            try:
-                end_time = ensure_timezone_aware(active['end_time'])
-                current_time = datetime.now(timezone.utc)
-                remaining_time = end_time - current_time
-
-                if remaining_time.total_seconds() > 0:
-                    minutes = int(remaining_time.total_seconds() // 60)
-                    seconds = int(remaining_time.total_seconds() % 60)
-                    await interaction.followup.send(
-                        f"⏰ 이미 모험을 진행 중입니다!\n남은 시간: {minutes}분 {seconds}초",
-                        ephemeral=True
-                    )
-                    return
-            except Exception as e:
-                self.logger.error(f"Adventure time calculation error: {e}")
-                await self.bot.pool.execute(
-                    "DELETE FROM active_adventures WHERE user_id = $1 AND guild_id = $2",
-                    user_id, guild_id
-                )
+            await interaction.followup.send(
+                "⚠️ 이미 모험을 진행 중입니다. 동시에 두 개의 모험은 불가능합니다!",
+                ephemeral=True
+            )
+            return
 
         combat_power = await self.get_user_combat_power(user_id, guild_id)
         adventures_data = self.get_recommended_adventures(combat_power)
@@ -959,31 +969,16 @@ class ActivitiesCog(commands.Cog):
             return
 
         # Check if already in a dungeon
-        active_dungeon = await self.bot.pool.fetchrow(
-            "SELECT * FROM active_dungeons WHERE user_id = $1 AND guild_id = $2",
+        active = await self.bot.pool.fetchrow(
+            "SELECT 1 FROM active_dungeons WHERE user_id = $1 AND guild_id = $2",
             user_id, guild_id
         )
-
-        if active_dungeon:
-            try:
-                end_time = ensure_timezone_aware(active_dungeon['end_time'])
-                current_time = datetime.now(timezone.utc)
-                remaining_time = end_time - current_time
-
-                if remaining_time.total_seconds() > 0:
-                    minutes = int(remaining_time.total_seconds() // 60)
-                    seconds = int(remaining_time.total_seconds() % 60)
-                    await interaction.followup.send(
-                        f"⏰ 이미 던전을 진행 중입니다!\n남은 시간: {minutes}분 {seconds}초",
-                        ephemeral=True
-                    )
-                    return
-            except Exception as e:
-                self.logger.error(f"Dungeon time calculation error: {e}")
-                await self.bot.pool.execute(
-                    "DELETE FROM active_dungeons WHERE user_id = $1 AND guild_id = $2",
-                    user_id, guild_id
-                )
+        if active:
+            await interaction.followup.send(
+                "⚠️ 이미 던전을 진행 중입니다. 동시에 두 개의 던전은 불가능합니다!",
+                ephemeral=True
+            )
+            return
 
         combat_power = await self.get_user_combat_power(user_id, guild_id)
 
