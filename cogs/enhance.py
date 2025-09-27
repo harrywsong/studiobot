@@ -491,13 +491,13 @@ class EnhancementCog(commands.Cog):
             power = self.calculate_combat_power(stats, char_class)
 
             equipped = await self.get_equipped_items(user_id, guild.id)
-            equipped_names = []
+            equipped_list = []
             for slot, item_data in equipped.items():
                 template = self.get_item_template(item_data['template_id'])
                 if template:
                     enh = f"+{item_data['enhancement_level']}" if item_data['enhancement_level'] > 0 else ""
-                    equipped_names.append(f"{template['emoji']}{template['name']}{enh}")
-            equipped_str = " | ".join(equipped_names) if equipped_names else "없음"
+                    equipped_list.append(f"{template['emoji']} {template['name']} {enh}")
+            equipped_str = "\n".join(equipped_list) if equipped_list else "없음"
 
             leaderboard.append((user, power, stats, char_class, equipped_str))
 
@@ -512,16 +512,17 @@ class EnhancementCog(commands.Cog):
 
         for rank, (user, power, stats, char_class, equipped_str) in enumerate(top, start=1):
             stats_block = (
-                f"🧩 **스탯**\n"
-                f"STR {stats['str']} | DEX {stats['dex']} | "
-                f"INT {stats['int']} | LUK {stats['luk']}\n"
-                f"ATT {stats['att']} | M.ATT {stats['m_att']}"
+                f"**STR** {stats['str']} ｜ **DEX** {stats['dex']}\n"
+                f"**INT** {stats['int']} ｜ **LUK** {stats['luk']}\n"
+                f"**ATT** {stats['att']} ｜ **M.ATT** {stats['m_att']}"
             )
 
             value_text = (
-                f"👤 직업: {char_class}\n"
-                f"⚔️ 전투력: **{power:,}**\n\n"
-                f"{stats_block}\n\n"
+                f"👤 **직업**: {char_class}\n"
+                f"⚔️ **전투력**: {power:,}\n"
+                f"━━━━━━━━━━━━━\n"
+                f"📊 **스탯**\n{stats_block}\n"
+                f"━━━━━━━━━━━━━\n"
                 f"🪓 **장착 아이템**\n{equipped_str}"
             )
 
@@ -530,6 +531,8 @@ class EnhancementCog(commands.Cog):
                 value=value_text,
                 inline=False
             )
+
+        embed.set_footer(text="자동 업데이트: 장비/강화/시장 거래 시 즉시 반영")
 
         if hasattr(self, "leaderboard_message_id"):
             try:
