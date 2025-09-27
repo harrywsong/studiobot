@@ -950,7 +950,7 @@ class ActivitiesCog(commands.Cog):
         view = AdventureView(self.bot, user_id, guild_id, adventures_data)
         await interaction.followup.send(embed=embed, view=view)
 
-    @app_commands.command(name="challenge", description="다른 플레이어에게 아레나 PvP 매치를 신청합니다.")
+    @app_commands.command(name="아레나대결", description="다른 플레이어에게 아레나 PvP 매치를 신청합니다.")
     @app_commands.describe(target="도전할 플레이어를 선택하세요.")
     async def challenge_player(self, interaction: discord.Interaction, target: discord.Member):
         challenger = interaction.user
