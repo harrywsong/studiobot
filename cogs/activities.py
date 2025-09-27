@@ -26,9 +26,9 @@ def ensure_timezone_aware(dt):
     if dt is None:
         return None
     if dt.tzinfo is None:
+        # Assume naive datetime is in UTC
         return dt.replace(tzinfo=timezone.utc)
     return dt
-
 
 class AdventureView(discord.ui.View):
     """Adventure selection and management view"""
@@ -622,13 +622,16 @@ class ActivitiesCog(commands.Cog):
         )
 
         if active:
+            # FIXED: Ensure both datetimes are timezone-aware for comparison
             end_time = ensure_timezone_aware(active['end_time'])
             current_time = datetime.now(timezone.utc)  # Already timezone-aware
             remaining_time = end_time - current_time
 
             if remaining_time.total_seconds() > 0:
+                minutes = int(remaining_time.total_seconds() // 60)
+                seconds = int(remaining_time.total_seconds() % 60)
                 await interaction.followup.send(
-                    f"⏰ 이미 모험을 진행 중입니다!\n남은 시간: {int(remaining_time.total_seconds() // 60)}분 {int(remaining_time.total_seconds() % 60)}초",
+                    f"⏰ 이미 모험을 진행 중입니다!\n남은 시간: {minutes}분 {seconds}초",
                     ephemeral=True
                 )
                 return
@@ -652,8 +655,6 @@ class ActivitiesCog(commands.Cog):
 
         view = AdventureView(self.bot, user_id, guild_id, adventures_data)
         await interaction.followup.send(embed=embed, view=view)
-
-    # Replace the start_adventure method (lines ~360-420) with this fixed version:
 
     async def start_adventure(self, interaction: discord.Interaction, adventure_id: str):
         """Start an adventure"""
@@ -685,9 +686,9 @@ class ActivitiesCog(commands.Cog):
         power_ratio = combat_power / adventure['min_power']
         base_success_chance = min(95, 50 + (power_ratio - 1) * 30)
 
-        # FIXED: Create timezone-aware datetimes consistently
-        start_time = datetime.now(timezone.utc)  # Already timezone-aware
-        end_time = start_time + timedelta(seconds=adventure['duration'])  # Will be timezone-aware
+        # Create timezone-aware datetimes consistently
+        start_time = datetime.now(timezone.utc)
+        end_time = start_time + timedelta(seconds=adventure['duration'])
 
         # Store active adventure
         await self.bot.pool.execute("""
@@ -707,7 +708,9 @@ class ActivitiesCog(commands.Cog):
         embed.add_field(name="예상 소요시간", value=f"{adventure['duration'] // 60}분", inline=True)
         embed.add_field(name="성공 확률", value=f"{base_success_chance:.1f}%", inline=True)
         embed.add_field(name="전투력", value=f"{combat_power:,}", inline=True)
-        embed.set_footer(text=f"모험 완료 시각: {end_time.strftime('%H:%M')}")
+
+        # Format time for display - use UTC time to avoid timezone issues
+        embed.set_footer(text=f"모험 완료 시각: {end_time.strftime('%H:%M')} UTC")
 
         await interaction.followup.send(embed=embed)
 
@@ -1302,7 +1305,7 @@ class ActivitiesCog(commands.Cog):
     async def check_completed_adventures(self):
         """Check for adventures that should be completed but haven't been processed"""
         try:
-            current_time = datetime.now(timezone.utc)  # Already timezone-aware
+            current_time = datetime.now(timezone.utc)  # Ensure timezone-aware
 
             # Find adventures that should be completed
             completed_adventures = await self.bot.pool.fetch("""
@@ -1334,7 +1337,6 @@ class ActivitiesCog(commands.Cog):
 
         except Exception as e:
             self.logger.error(f"Error checking completed adventures: {e}")
-
     @app_commands.command(name="파티", description="파티를 생성하고 관리하세요!")
     async def party(self, interaction: discord.Interaction):
         guild_id = interaction.guild.id
