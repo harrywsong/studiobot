@@ -26,35 +26,28 @@ class EnhancementView(discord.ui.View):
         self.item_data = item_data
         self.item_row = item_row
         self.enhancement_cog = bot.get_cog('EnhancementCog')
-        self.message = None # <--- ADD THIS LINE
-
+        self.message = None
 
     async def on_timeout(self) -> None:
-        # Disable all buttons when the view times out
         for child in self.children:
             if isinstance(child, discord.ui.Button):
                 child.disabled = True
-
-        # Try to edit the message to reflect the change, but don't fail if the message is gone
         try:
             if hasattr(self, 'message') and self.message:
                 await self.message.edit(view=self)
         except discord.NotFound:
-            pass  # Message was deleted
+            pass
 
     @discord.ui.button(label="⭐ 강화하기", style=discord.ButtonStyle.primary, emoji="⚡")
     async def enhance_item(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.user_id:
             await interaction.response.send_message("다른 사용자의 아이템을 강화할 수 없습니다.", ephemeral=True)
             return
-
-        # Delete the previous enhancement message to prevent clutter
         if hasattr(self, 'message') and self.message:
             try:
                 await self.message.delete()
             except discord.NotFound:
-                pass  # Message already deleted
-
+                pass
         await interaction.response.defer()
         await self.enhancement_cog.handle_enhancement(interaction, self.item_row['item_id'])
 
@@ -63,37 +56,24 @@ class EnhancementView(discord.ui.View):
         if interaction.user.id != self.user_id:
             await interaction.response.send_message("다른 사용자의 아이템을 조회할 수 없습니다.", ephemeral=True)
             return
-
         await interaction.response.defer()
-
-        await self.enhancement_cog.show_item_details(interaction, self.item_row)
+        await self.enhancement_cog.show_detailed_item_info(interaction, self.item_row['item_id'])
 
     @discord.ui.button(label="💰 마켓 판매", style=discord.ButtonStyle.secondary)
     async def sell_to_market(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.user_id:
             await interaction.response.send_message("다른 사용자의 아이템을 판매할 수 없습니다.", ephemeral=True)
             return
-
-        await interaction.response.defer(ephemeral=True)
-
+        await interaction.response.defer()
         await self.enhancement_cog.show_market_sell_confirmation(interaction, self.item_row['item_id'])
 
-
-    @discord.ui.button(label="❌ 강화 멈추기", style=discord.ButtonStyle.danger)
-    async def stop_enhancement(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Disables the view and stops the enhancement interaction."""
+    @discord.ui.button(label="⬅️ 뒤로 가기", style=discord.ButtonStyle.secondary)
+    async def go_back(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.user_id:
-            await interaction.response.send_message("다른 사용자의 강화 작업을 멈출 수 없습니다.", ephemeral=True)
+            await interaction.response.send_message("다른 사용자의 메뉴를 열 수 없습니다.", ephemeral=True)
             return
-
-        # Disable all buttons on the view
-        for child in self.children:
-            if isinstance(child, discord.ui.Button):
-                child.disabled = True
-
-        # Edit the message to show the operation has stopped and update the view (disabling buttons)
-        await interaction.response.edit_message(content="강화 작업이 중단되었습니다.", view=self)
-        self.stop()  # Stops the view's timeout
+        await self.enhancement_cog.show_item_management(interaction, self.item_row['item_id'])
+        self.stop()
 
 class MarketSellConfirmView(discord.ui.View):
     """Confirmation view for automatic market pricing"""
@@ -172,12 +152,11 @@ class SlotItemsView(discord.ui.View):
         self.items = items
         self.enhancement_cog = bot.get_cog('EnhancementCog')
 
-        # Add buttons for each item
-        for i, item_data in enumerate(items[:20]):  # Limit to 20 items
+        # Item buttons
+        for i, item_data in enumerate(items[:20]):
             item_row, template = item_data
             enhancement_text = f"+{item_row['enhancement_level']}" if item_row['enhancement_level'] > 0 else ""
             equipped_text = "🔒" if item_row['is_equipped'] else ""
-
             button = discord.ui.Button(
                 label=f"{template['emoji']}{template['name'][:15]}{enhancement_text}{equipped_text}",
                 custom_id=f"item_{item_row['item_id']}",
@@ -187,15 +166,25 @@ class SlotItemsView(discord.ui.View):
             button.callback = self.create_item_callback(item_row['item_id'])
             self.add_item(button)
 
+        # Back button
+        back_button = discord.ui.Button(label="⬅️ 뒤로 가기", style=discord.ButtonStyle.secondary)
+        back_button.callback = self.go_back
+        self.add_item(back_button)
+
     def create_item_callback(self, item_id: str):
         async def item_callback(interaction: discord.Interaction):
             if interaction.user.id != self.user_id:
                 await interaction.response.send_message("다른 사용자의 아이템을 관리할 수 없습니다.", ephemeral=True)
                 return
-
             await self.enhancement_cog.show_item_management(interaction, item_id)
-
         return item_callback
+
+    async def go_back(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("다른 사용자의 메뉴를 열 수 없습니다.", ephemeral=True)
+            return
+        await self.enhancement_cog.show_equipment_manager(interaction)
+        self.stop()
 
 
 class ItemManagementView(discord.ui.View):
@@ -210,49 +199,37 @@ class ItemManagementView(discord.ui.View):
         self.template = template
         self.enhancement_cog = bot.get_cog('EnhancementCog')
 
-        # --- REORDERED BUTTONS FOR CONSISTENCY ---
-        # Order: Enhance, Equip/Unequip, Sell
-
-        # Enhancement button
-        enhance_button = discord.ui.Button(
-            label="⭐ 강화하기",
-            style=discord.ButtonStyle.primary,
-            custom_id="enhance_item",
-            emoji="⚡"
-        )
+        # Enhance button
+        enhance_button = discord.ui.Button(label="⭐ 강화하기", style=discord.ButtonStyle.primary,
+                                           custom_id="enhance_item", emoji="⚡")
         enhance_button.callback = self.enhance_item
         self.add_item(enhance_button)
 
         # Equip/Unequip button
         if item_row['is_equipped']:
-            equip_button = discord.ui.Button(
-                label="⚪ 장착 해제",
-                style=discord.ButtonStyle.danger,
-                custom_id="unequip_item"
-            )
+            equip_button = discord.ui.Button(label="⚪ 장착 해제", style=discord.ButtonStyle.danger,
+                                             custom_id="unequip_item")
         else:
-            equip_button = discord.ui.Button(
-                label="🔹 장착하기",
-                style=discord.ButtonStyle.success,
-                custom_id="equip_item"
-            )
+            equip_button = discord.ui.Button(label="🔹 장착하기", style=discord.ButtonStyle.success,
+                                             custom_id="equip_item")
         equip_button.callback = self.toggle_equip
         self.add_item(equip_button)
 
         # Market sell button
-        market_button = discord.ui.Button(
-            label="💰 마켓 판매",
-            style=discord.ButtonStyle.secondary,
-            custom_id="market_sell"
-        )
+        market_button = discord.ui.Button(label="💰 마켓 판매", style=discord.ButtonStyle.secondary,
+                                          custom_id="market_sell")
         market_button.callback = self.market_sell
         self.add_item(market_button)
+
+        # Back button
+        back_button = discord.ui.Button(label="⬅️ 뒤로 가기", style=discord.ButtonStyle.secondary)
+        back_button.callback = self.go_back
+        self.add_item(back_button)
 
     async def toggle_equip(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id:
             await interaction.response.send_message("다른 사용자의 장비를 관리할 수 없습니다.", ephemeral=True)
             return
-
         if self.item_row['is_equipped']:
             await self.enhancement_cog.unequip_item(interaction, self.item_row['item_id'])
         else:
@@ -262,14 +239,6 @@ class ItemManagementView(discord.ui.View):
         if interaction.user.id != self.user_id:
             await interaction.response.send_message("다른 사용자의 아이템을 강화할 수 없습니다.", ephemeral=True)
             return
-
-        # Delete the previous enhancement message to prevent clutter
-        if hasattr(self, 'message') and self.message:
-            try:
-                await self.message.delete()
-            except discord.NotFound:
-                pass  # Message already deleted
-
         await interaction.response.defer()
         await self.enhancement_cog.handle_enhancement(interaction, self.item_row['item_id'])
 
@@ -277,20 +246,14 @@ class ItemManagementView(discord.ui.View):
         if interaction.user.id != self.user_id:
             await interaction.response.send_message("다른 사용자의 아이템을 판매할 수 없습니다.", ephemeral=True)
             return
-
         await self.enhancement_cog.show_market_sell_confirmation(interaction, self.item_row['item_id'])
 
-    async def on_timeout(self) -> None:
-        # Disable all buttons when the view times out
-        for child in self.children:
-            if isinstance(child, discord.ui.Button):
-                child.disabled = True
-
-        try:
-            if hasattr(self, 'message') and self.message:
-                await self.message.edit(view=self)
-        except discord.NotFound:
-            pass
+    async def go_back(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("다른 사용자의 메뉴를 열 수 없습니다.", ephemeral=True)
+            return
+        await self.enhancement_cog.show_inventory(interaction)
+        self.stop()
 
 
 class MarketplaceView(discord.ui.View):
@@ -303,30 +266,23 @@ class MarketplaceView(discord.ui.View):
         self.page = page
         self.items_per_page = items_per_page
         self.enhancement_cog = bot.get_cog("EnhancementCog")
-
         self.refresh_view()
 
     def refresh_view(self):
-        """Rebuild the dropdown + navigation buttons for the current page"""
         self.clear_items()
         start = self.page * self.items_per_page
         end = start + self.items_per_page
         current_items = self.market_items[start:end]
 
-        # Dropdown for purchases
+        # Dropdown
         options = []
         for entry, template in current_items:
             enh = f"+{entry['enhancement_level']}" if entry['enhancement_level'] > 0 else ""
             label = f"{template['emoji']} {template['name'][:20]} {enh}"
             desc = f"{template['slot_type']} | {entry['price']:,} 코인"
             options.append(discord.SelectOption(label=label, description=desc, value=entry['market_id']))
-
         if options:
-            select = discord.ui.Select(
-                placeholder="구매할 아이템을 선택하세요",
-                options=options,
-                custom_id="market_select"
-            )
+            select = discord.ui.Select(placeholder="구매할 아이템을 선택하세요", options=options, custom_id="market_select")
             select.callback = self.select_callback
             self.add_item(select)
 
@@ -342,6 +298,11 @@ class MarketplaceView(discord.ui.View):
             next_btn.callback = self.next_page
             self.add_item(next_btn)
 
+        # Back button
+        back_button = discord.ui.Button(label="⬅️ 뒤로 가기", style=discord.ButtonStyle.secondary)
+        back_button.callback = self.go_back
+        self.add_item(back_button)
+
     async def select_callback(self, interaction: discord.Interaction):
         market_id = interaction.data["values"][0]
         await self.enhancement_cog.handle_market_purchase(interaction, market_id)
@@ -356,6 +317,14 @@ class MarketplaceView(discord.ui.View):
         self.page = min(max_page, self.page + 1)
         self.refresh_view()
         await interaction.response.edit_message(view=self)
+
+    async def go_back(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("다른 사용자의 메뉴를 열 수 없습니다.", ephemeral=True)
+            return
+
+        await self.enhancement_cog.show_inventory(interaction)
+        self.stop()
 
 
 class CharacterView(discord.ui.View):
@@ -1516,21 +1485,15 @@ class EnhancementResultView(discord.ui.View):
         except Exception as e:
             await interaction.response.send_message(f"오류가 발생했습니다: {e}", ephemeral=True)
 
-    @discord.ui.button(label="❌ 강화 멈추기", style=discord.ButtonStyle.danger)
-    async def stop_enhancement(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Disables the view and stops the enhancement interaction."""
+    @discord.ui.button(label="⬅️ 뒤로 가기", style=discord.ButtonStyle.secondary)
+    async def go_back(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Return to the item management menu."""
         if interaction.user.id != self.user_id:
-            await interaction.response.send_message("다른 사용자의 강화 작업을 멈출 수 없습니다.", ephemeral=True)
+            await interaction.response.send_message("다른 사용자의 메뉴를 열 수 없습니다.", ephemeral=True)
             return
 
-        # Disable all buttons on the view
-        for child in self.children:
-            if isinstance(child, discord.ui.Button):
-                child.disabled = True
-
-        # Edit the message to show the operation has stopped and update the view (disabling buttons)
-        await interaction.response.edit_message(content="강화 작업이 중단되었습니다.", view=self)
-        self.stop()  # Stops the view's timeout and waits for next command call
+        await self.enhancement_cog.show_item_management(interaction, self.item_row['item_id'])
+        self.stop()
 
     async def on_timeout(self) -> None:
         # Disable all buttons when the view times out
