@@ -225,7 +225,7 @@ class MarketplaceView(discord.ui.View):
     """Marketplace viewing and purchasing interface"""
 
     def __init__(self, bot, market_items: List):
-        super().__init__(timeout=300)
+        super().__init__(timeout=None)
         self.bot = bot
         self.market_items = market_items
         self.enhancement_cog = bot.get_cog('EnhancementCog')
@@ -528,6 +528,10 @@ class EnhancementCog(commands.Cog):
             stat_pool -= value
 
         return stats
+
+    async def show_detailed_item_info(self, interaction: discord.Interaction, item_id: str):
+        """Show detailed item information"""
+        await self.show_item_management(interaction, item_id)
 
     def get_rarity_multiplier(self, rarity: str) -> float:
         """Get stat multiplier based on rarity"""
@@ -895,6 +899,9 @@ class EnhancementCog(commands.Cog):
                 await interaction.followup.send("❌ 코인 차감 중 오류가 발생했습니다.", ephemeral=True)
                 return
 
+            # Get rates for display (needed for footer)
+            rates = self.starforce_rates.get(current_level, (30, 67, 3))
+
             # Calculate enhancement result
             if fail_streak >= 2:
                 # Guaranteed success after 2 consecutive fails
@@ -905,7 +912,6 @@ class EnhancementCog(commands.Cog):
                 result_color = discord.Color.gold()
             else:
                 # Normal rates
-                rates = self.starforce_rates.get(current_level, (30, 67, 3))
                 success_rate, fail_rate, destroy_rate = rates
 
                 roll = random.randint(1, 100)
@@ -997,7 +1003,34 @@ class EnhancementCog(commands.Cog):
 
             embed.set_footer(text=f"강화 확률: 성공 {rates[0]}% | 실패 {rates[1]}% | 파괴 {rates[2]}%")
 
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            # Post result to show-off channel with action buttons
+            showoff_channel = self.bot.get_channel(self.showoff_channel_id)
+            if showoff_channel:
+                embed.add_field(name="플레이어", value=interaction.user.mention, inline=True)
+
+                # Get updated item info for the view
+                updated_item_query = """
+                    SELECT item_id, template_id, enhancement_level, is_equipped, equipped_slot, fail_streak
+                    FROM user_items
+                    WHERE item_id = $1
+                """
+                updated_item_row = await self.bot.pool.fetchrow(updated_item_query, item_id)
+
+                # Create view with action buttons
+                # Create view with action buttons - convert to dict for easier access
+                item_dict = {
+                    'item_id': updated_item_row['item_id'],
+                    'template_id': updated_item_row['template_id'],
+                    'enhancement_level': updated_item_row['enhancement_level'],
+                    'is_equipped': updated_item_row['is_equipped'],
+                    'equipped_slot': updated_item_row['equipped_slot'],
+                    'fail_streak': updated_item_row['fail_streak']
+                }
+                view = EnhancementResultView(self.bot, user_id, guild_id, item_dict, template)
+                await showoff_channel.send(embed=embed, view=view)
+
+            # Send brief confirmation to user
+            await interaction.followup.send("강화 결과가 게시되었습니다!", ephemeral=True)
 
             self.logger.info(
                 f"사용자 {user_id}가 {template['name']} 강화: {current_level}→{new_level} ({result})",
@@ -1094,7 +1127,12 @@ class EnhancementCog(commands.Cog):
             embed.add_field(name="장착 슬롯", value=slot_type, inline=True)
             embed.add_field(name="등급", value=rarity_info['name'], inline=True)
 
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            showoff_channel = self.bot.get_channel(self.showoff_channel_id)
+            if showoff_channel:
+                embed.add_field(name="플레이어", value=interaction.user.mention, inline=True)
+                await showoff_channel.send(embed=embed)
+            else:
+                await interaction.followup.send(embed=embed, ephemeral=True)
 
         except Exception as e:
             self.logger.error(f"장착 오류: {e}", extra={'guild_id': guild_id})
@@ -1154,7 +1192,12 @@ class EnhancementCog(commands.Cog):
             embed.add_field(name="해제된 아이템", value=item_display, inline=False)
             embed.add_field(name="해제된 슬롯", value=item_row['equipped_slot'], inline=True)
 
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            showoff_channel = self.bot.get_channel(self.showoff_channel_id)
+            if showoff_channel:
+                embed.add_field(name="플레이어", value=interaction.user.mention, inline=True)
+                await showoff_channel.send(embed=embed)
+            else:
+                await interaction.followup.send(embed=embed, ephemeral=True)
 
         except Exception as e:
             self.logger.error(f"장착 해제 오류: {e}", extra={'guild_id': guild_id})
@@ -1856,6 +1899,50 @@ class EnhancementCog(commands.Cog):
         if not self.update_marketplace.is_running():
             self.update_marketplace.start()
 
+class EnhancementResultView(discord.ui.View):
+    """View for enhancement results with action buttons"""
+
+    def __init__(self, bot, user_id, guild_id, item_row, template):
+        super().__init__(timeout=300)
+        self.bot = bot
+        self.user_id = user_id
+        self.guild_id = guild_id
+        self.item_row = item_row
+        self.template = template
+        self.enhancement_cog = bot.get_cog('EnhancementCog')
+
+    @discord.ui.button(label="⚡ 강화하기", style=discord.ButtonStyle.primary, emoji="⭐")
+    async def enhance_again(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("다른 사용자의 아이템을 강화할 수 없습니다.", ephemeral=True)
+            return
+
+        try:
+            await self.enhancement_cog.handle_enhancement(interaction, self.item_row['item_id'])
+        except Exception as e:
+            await interaction.response.send_message(f"오류가 발생했습니다: {e}", ephemeral=True)
+
+    @discord.ui.button(label="🔹 장착하기", style=discord.ButtonStyle.success)
+    async def equip_item(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("다른 사용자의 아이템을 장착할 수 없습니다.", ephemeral=True)
+            return
+
+        try:
+            await self.enhancement_cog.equip_item(interaction, self.item_row['item_id'])
+        except Exception as e:
+            await interaction.response.send_message(f"오류가 발생했습니다: {e}", ephemeral=True)
+
+    @discord.ui.button(label="💰 마켓 판매", style=discord.ButtonStyle.secondary)
+    async def sell_item(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("다른 사용자의 아이템을 판매할 수 없습니다.", ephemeral=True)
+            return
+
+        try:
+            await self.enhancement_cog.show_market_sell_confirmation(interaction, self.item_row['item_id'])
+        except Exception as e:
+            await interaction.response.send_message(f"오류가 발생했습니다: {e}", ephemeral=True)
 
 async def setup(bot):
     await bot.add_cog(EnhancementCog(bot))
