@@ -319,10 +319,6 @@ class MarketplaceView(discord.ui.View):
         await interaction.response.edit_message(view=self)
 
     async def go_back(self, interaction: discord.Interaction):
-        if interaction.user.id != self.user_id:
-            await interaction.response.send_message("다른 사용자의 메뉴를 열 수 없습니다.", ephemeral=True)
-            return
-
         await self.enhancement_cog.show_inventory(interaction)
         self.stop()
 
@@ -1197,8 +1193,9 @@ class EnhancementCog(commands.Cog):
         guild_id = interaction.guild.id
         try:
             items = await self.bot.pool.fetch(
-                "SELECT ui.item_id, ui.template_id, ui.enhancement_level, ui.is_equipped FROM user_items ui WHERE ui.user_id = $1 AND ui.guild_id = $2 AND ui.is_equipped = FALSE ORDER BY ui.created_at DESC",
+                "SELECT ui.item_id, ui.template_id, ui.enhancement_level, ui.is_equipped FROM user_items ui WHERE ui.user_id = $1 AND ui.guild_id = $2 ORDER BY ui.created_at DESC",
                 user_id, guild_id)
+
             if not items:
                 await interaction.followup.send("📦 장착 가능한 아이템이 없습니다.", ephemeral=True)
                 return
