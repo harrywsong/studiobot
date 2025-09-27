@@ -832,11 +832,11 @@ class EnhancementCog(commands.Cog):
                 )
                 # Use the new item row and template, which will automatically include the '강화하기' button
                 view = EnhancementView(self.bot, user_id, guild_id, template, new_item_row)
-                message = await interaction.followup.send(embed=embed, view=view)
+                message = await interaction.channel.send(embed=embed)
                 view.message = message
             else:
                 # Item destroyed, no view needed
-                message = await interaction.followup.send(embed=embed)
+                message = await interaction.channel.send(embed=embed)
 
             # 3. STORE NEW MESSAGE ID
             if message:
