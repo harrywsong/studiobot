@@ -313,7 +313,6 @@ class EnhancementCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.logger = get_logger(__name__)
-        self.db = self.bot.db
 
         # Load item pool from JSON file instead of generating it every time
         self.item_pool = self.load_item_pool()
