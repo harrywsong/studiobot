@@ -1030,7 +1030,6 @@ class EnhancementCog(commands.Cog):
                 await showoff_channel.send(embed=embed, view=view)
 
             # Send brief confirmation to user
-            await interaction.followup.send("강화 결과가 게시되었습니다!", ephemeral=True)
 
             self.logger.info(
                 f"사용자 {user_id}가 {template['name']} 강화: {current_level}→{new_level} ({result})",
