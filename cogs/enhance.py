@@ -653,14 +653,10 @@ class EnhancementCog(commands.Cog):
             if stat in multipliers:
                 power += int(value * multipliers[stat])
 
-        # Slot multipliers
-        if slot_type == "무기":
-            power = int(power * 0.7)
-        elif slot_type == "보조무기":
-            power = int(power * 0.8)
+        # Remove problematic slot multipliers that cause power to drop to 1
+        # The slot_type parameter is not being passed correctly from activities.py anyway
 
-        return max(1, int(power))
-
+        return max(100, int(power))  # Ensure minimum 100 instead of 1
     def get_random_item(self) -> Dict[str, Any]:
         """Get a random item based on rarity weights using random.choices."""
         items = self.item_pool
@@ -1171,14 +1167,33 @@ class EnhancementCog(commands.Cog):
         try:
             equipped_items = await self.get_equipped_items(user_id, guild_id)
             total_stats = {"str": 0, "dex": 0, "int": 0, "luk": 0, "att": 0, "m_att": 0}
+
+            def calculate_star_bonus(base_value, star_level):
+                if star_level == 0:
+                    return base_value
+
+                if star_level <= 5:
+                    return int(base_value * (1 + star_level * 0.1))
+                elif star_level <= 10:
+                    base_bonus = base_value * 1.5
+                    additional_bonus = base_value * ((star_level - 5) * 0.15)
+                    return int(base_bonus + additional_bonus)
+                elif star_level <= 15:
+                    base_bonus = base_value * 2.25
+                    additional_bonus = base_value * ((star_level - 10) * 0.20)
+                    return int(base_bonus + additional_bonus)
+                else:
+                    base_bonus = base_value * 3.25
+                    additional_bonus = base_value * ((star_level - 15) * 0.25)
+                    return int(base_bonus + additional_bonus)
+
             for slot, item_data in equipped_items.items():
                 template = self.get_item_template(item_data['template_id'])
                 if template:
                     enhancement_level = item_data['enhancement_level']
-                    enhancement_multiplier = 1 + (enhancement_level * 0.1)
                     for stat, value in template['base_stats'].items():
                         if value > 0:
-                            enhanced_value = int(value * enhancement_multiplier)
+                            enhanced_value = calculate_star_bonus(value, enhancement_level)
                             total_stats[stat] += enhanced_value
             return total_stats
         except Exception as e:
@@ -1296,11 +1311,37 @@ class EnhancementCog(commands.Cog):
             if template.get('class_req'):
                 embed.add_field(name="직업 제한", value=template['class_req'], inline=True)
             enhanced_stats = template['base_stats'].copy()
-            enhancement_multiplier = 1 + (item_row['enhancement_level'] * 0.1)
+            enhancement_level = item_row['enhancement_level']
+
+            # Star-based bonus calculation
+            def calculate_star_bonus(base_value, star_level):
+                if star_level == 0:
+                    return base_value
+
+                # Different bonus tiers based on star levels
+                if star_level <= 5:
+                    # Early levels: +10% per star
+                    return int(base_value * (1 + star_level * 0.1))
+                elif star_level <= 10:
+                    # Mid levels: +15% per star after 5th
+                    base_bonus = base_value * 1.5  # 50% at 5 stars
+                    additional_bonus = base_value * ((star_level - 5) * 0.15)
+                    return int(base_bonus + additional_bonus)
+                elif star_level <= 15:
+                    # High levels: +20% per star after 10th
+                    base_bonus = base_value * 2.25  # 125% at 10 stars
+                    additional_bonus = base_value * ((star_level - 10) * 0.20)
+                    return int(base_bonus + additional_bonus)
+                else:
+                    # Epic levels: +25% per star after 15th
+                    base_bonus = base_value * 3.25  # 225% at 15 stars
+                    additional_bonus = base_value * ((star_level - 15) * 0.25)
+                    return int(base_bonus + additional_bonus)
+
             stats_text = ""
             for stat, value in enhanced_stats.items():
                 if value > 0:
-                    enhanced_value = int(value * enhancement_multiplier)
+                    enhanced_value = calculate_star_bonus(value, enhancement_level)
                     stats_text += f"**{stat.upper()}**: {enhanced_value}\n"
             if stats_text:
                 embed.add_field(name="📊 현재 능력치", value=stats_text, inline=False)
