@@ -294,34 +294,68 @@ class ItemManagementView(discord.ui.View):
 
 
 class MarketplaceView(discord.ui.View):
-    """Marketplace viewing and purchasing interface"""
+    """Paginated marketplace with dropdown selection"""
 
-    def __init__(self, bot, market_items: List):
-        super().__init__(timeout=None)
+    def __init__(self, bot, market_items: List, page: int = 0, items_per_page: int = 10):
+        super().__init__(timeout=300)
         self.bot = bot
         self.market_items = market_items
-        self.enhancement_cog = bot.get_cog('EnhancementCog')
+        self.page = page
+        self.items_per_page = items_per_page
+        self.enhancement_cog = bot.get_cog("EnhancementCog")
 
-        # Add purchase buttons for each item
-        for i, item_data in enumerate(market_items[:20]):  # Limit to 20 items
-            market_entry, template = item_data
-            enhancement_text = f"+{market_entry['enhancement_level']}" if market_entry[
-                                                                              'enhancement_level'] > 0 else ""
+        self.refresh_view()
 
-            button = discord.ui.Button(
-                label=f"{template['emoji']}{template['name'][:12]}{enhancement_text} {market_entry['price']:,}💰",
-                custom_id=f"buy_{market_entry['market_id']}",
-                style=discord.ButtonStyle.success,
-                row=i // 5
+    def refresh_view(self):
+        """Rebuild the dropdown + navigation buttons for the current page"""
+        self.clear_items()
+        start = self.page * self.items_per_page
+        end = start + self.items_per_page
+        current_items = self.market_items[start:end]
+
+        # Dropdown for purchases
+        options = []
+        for entry, template in current_items:
+            enh = f"+{entry['enhancement_level']}" if entry['enhancement_level'] > 0 else ""
+            label = f"{template['emoji']} {template['name'][:20]} {enh}"
+            desc = f"{template['slot_type']} | {entry['price']:,} 코인"
+            options.append(discord.SelectOption(label=label, description=desc, value=entry['market_id']))
+
+        if options:
+            select = discord.ui.Select(
+                placeholder="구매할 아이템을 선택하세요",
+                options=options,
+                custom_id="market_select"
             )
-            button.callback = self.create_purchase_callback(market_entry['market_id'])
-            self.add_item(button)
+            select.callback = self.select_callback
+            self.add_item(select)
 
-    def create_purchase_callback(self, market_id: str):
-        async def purchase_callback(interaction: discord.Interaction):
-            await self.enhancement_cog.handle_market_purchase(interaction, market_id)
+        # Navigation
+        if self.page > 0:
+            prev_btn = discord.ui.Button(label="⬅ 이전", style=discord.ButtonStyle.secondary, custom_id="prev_page")
+            prev_btn.callback = self.prev_page
+            self.add_item(prev_btn)
 
-        return purchase_callback
+        max_page = (len(self.market_items) - 1) // self.items_per_page
+        if self.page < max_page:
+            next_btn = discord.ui.Button(label="➡ 다음", style=discord.ButtonStyle.secondary, custom_id="next_page")
+            next_btn.callback = self.next_page
+            self.add_item(next_btn)
+
+    async def select_callback(self, interaction: discord.Interaction):
+        market_id = interaction.data["values"][0]
+        await self.enhancement_cog.handle_market_purchase(interaction, market_id)
+
+    async def prev_page(self, interaction: discord.Interaction):
+        self.page = max(0, self.page - 1)
+        self.refresh_view()
+        await interaction.response.edit_message(view=self)
+
+    async def next_page(self, interaction: discord.Interaction):
+        max_page = (len(self.market_items) - 1) // self.items_per_page
+        self.page = min(max_page, self.page + 1)
+        self.refresh_view()
+        await interaction.response.edit_message(view=self)
 
 
 class CharacterView(discord.ui.View):
@@ -614,29 +648,46 @@ class EnhancementCog(commands.Cog):
             self.logger.error(f"Marketplace setup error: {e}")
 
     async def create_marketplace_message(self):
-        """Create/update marketplace message"""
+        """Create or update the marketplace message without duplicates"""
         try:
             channel = self.bot.get_channel(self.marketplace_channel_id)
-            if not channel: return
-            market_items = await self.get_marketplace_items()
-            embed = discord.Embed(title="🏪 아이템 마켓플레이스", description="다른 플레이어들이 판매하는 아이템을 구매해보세요!",
-                                  color=discord.Color.gold(), timestamp=datetime.now(timezone.utc))
-            if not market_items:
-                embed.add_field(name="📦 현재 판매중인 아이템이 없습니다", value="다른 플레이어들이 아이템을 올릴 때까지 기다려주세요!", inline=False)
-                await channel.send(embed=embed)
+            if not channel:
                 return
-            items_text = ""
-            for i, (market_entry, template) in enumerate(market_items[:10]):
-                rarity_info = self.item_rarities[template['rarity']]
-                enhancement_text = f"+{market_entry['enhancement_level']}" if market_entry[
-                                                                                  'enhancement_level'] > 0 else ""
-                items_text += f"**{i + 1}.** {template['emoji']} **{template['name']}** {enhancement_text}\n"
-                items_text += f"   {rarity_info['name']} | {template['slot_type']} | 💰 **{market_entry['price']:,}** 코인\n"
-                items_text += f"   판매자: <@{market_entry['seller_id']}>\n\n"
-            embed.add_field(name="🛒 판매중인 아이템", value=items_text or "판매중인 아이템이 없습니다.", inline=False)
-            embed.set_footer(text="아래 버튼을 눌러 아이템을 구매하세요! (10분마다 자동 갱신)")
-            view = MarketplaceView(self.bot, market_items[:10])
-            await channel.send(embed=embed, view=view)
+
+            market_items = await self.get_marketplace_items()
+            embed = discord.Embed(
+                title="🏪 아이템 마켓플레이스",
+                description="다른 플레이어들이 판매하는 아이템을 구매해보세요!",
+                color=discord.Color.gold(),
+                timestamp=datetime.now(timezone.utc)
+            )
+
+            if not market_items:
+                embed.add_field(name="📦 현재 판매중인 아이템이 없습니다",
+                                value="다른 플레이어들이 아이템을 올릴 때까지 기다려주세요!",
+                                inline=False)
+                view = None
+            else:
+                items_text = ""
+                start = 0
+                for i, (entry, template) in enumerate(market_items[start:start + 10], start=1):
+                    rarity_info = self.item_rarities[template['rarity']]
+                    enh = f"+{entry['enhancement_level']}" if entry['enhancement_level'] > 0 else ""
+                    items_text += (
+                        f"**{i}.** {template['emoji']} **{template['name']}** {enh}\n"
+                        f"   {rarity_info['name']} | {template['slot_type']} | 💰 **{entry['price']:,}** 코인\n"
+                        f"   판매자: <@{entry['seller_id']}>\n\n"
+                    )
+                embed.add_field(name="🛒 판매중인 아이템", value=items_text, inline=False)
+                embed.set_footer(text="드롭다운으로 아이템을 구매하세요! (10분마다 자동 갱신)")
+                view = MarketplaceView(self.bot, market_items)
+
+            # --- reuse the same message instead of posting new ---
+            if hasattr(self, "marketplace_message") and self.marketplace_message:
+                await self.marketplace_message.edit(embed=embed, view=view)
+            else:
+                self.marketplace_message = await channel.send(embed=embed, view=view)
+
         except Exception as e:
             self.logger.error(f"Marketplace message creation error: {e}")
 
