@@ -377,25 +377,42 @@ class LeaderboardView(discord.ui.View):
         rank_emoji = {1: "🥇", 2: "🥈", 3: "🥉"}.get(rank, f"#{rank}")
 
         embed = discord.Embed(
-            title=f"{rank_emoji} 전투력 랭킹 {rank}",
-            color=discord.Color.gold()
+            title=f"{rank_emoji} {user.display_name}",
+            description=f"**직업**: {char_class}",
+            color=discord.Color.dark_blue()
         )
-        embed.set_author(name=user.display_name, icon_url=user.display_avatar.url if user.display_avatar else None)
         embed.set_thumbnail(url=user.display_avatar.url if user.display_avatar else None)
 
-        # Basic info
-        embed.add_field(name="👤 직업", value=char_class, inline=True)
-        embed.add_field(name="⚔️ 전투력", value=f"{power:,}", inline=True)
+        # Combat Power
+        embed.add_field(
+            name="⚔️ 전투력",
+            value=f"**{power:,}**",
+            inline=False
+        )
 
-        # Stats split into two columns
-        stats_left = f"**STR** {stats['str']}\n**INT** {stats['int']}\n**ATT** {stats['att']}"
-        stats_right = f"**DEX** {stats['dex']}\n**LUK** {stats['luk']}\n**M.ATT** {stats['m_att']}"
-        embed.add_field(name="📊 능력치 (좌)", value=stats_left, inline=True)
-        embed.add_field(name="📊 능력치 (우)", value=stats_right, inline=True)
+        # Main stats (formatted like Maple grid)
+        stats_block = (
+            f"**STR** {stats['str']:,}\n"
+            f"**DEX** {stats['dex']:,}\n"
+            f"**INT** {stats['int']:,}\n"
+            f"**LUK** {stats['luk']:,}\n"
+            f"**ATT** {stats['att']:,}\n"
+            f"**M.ATT** {stats['m_att']:,}"
+        )
+        embed.add_field(
+            name="📊 능력치",
+            value=stats_block,
+            inline=False
+        )
 
-        embed.add_field(name="🪓 장착 아이템", value=equipped_str, inline=False)
+        # Equipped items
+        embed.add_field(
+            name="🪓 장착 아이템",
+            value=equipped_str,
+            inline=False
+        )
 
-        embed.set_footer(text=f"{rank}/{len(self.leaderboard_data)} • 좌우 버튼으로 이동")
+        embed.set_footer(text=f"{rank}/{len(self.leaderboard_data)} • ◀ ▶ 버튼으로 이동")
         return embed
 
     async def prev_page(self, interaction: discord.Interaction):
