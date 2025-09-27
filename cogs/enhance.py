@@ -356,6 +356,54 @@ class CharacterView(discord.ui.View):
         if enhancement_cog:
             await enhancement_cog.show_equipment_manager(interaction)
 
+class LeaderboardView(discord.ui.View):
+    def __init__(self, bot, leaderboard_data: list, start_index: int = 0):
+        super().__init__(timeout=300)
+        self.bot = bot
+        self.leaderboard_data = leaderboard_data
+        self.index = start_index
+
+        # Add navigation buttons
+        self.prev_button = discord.ui.Button(label="◀ 이전", style=discord.ButtonStyle.secondary)
+        self.prev_button.callback = self.prev_page
+        self.add_item(self.prev_button)
+
+        self.next_button = discord.ui.Button(label="다음 ▶", style=discord.ButtonStyle.secondary)
+        self.next_button.callback = self.next_page
+        self.add_item(self.next_button)
+
+    def get_embed(self) -> discord.Embed:
+        user, rank, power, stats, char_class, equipped_str = self.leaderboard_data[self.index]
+
+        embed = discord.Embed(
+            title=f"🏆 전투력 랭킹 #{rank}",
+            color=discord.Color.gold()
+        )
+        embed.set_author(name=user.display_name, icon_url=user.display_avatar.url if user.display_avatar else None)
+
+        embed.add_field(name="👤 직업", value=char_class, inline=True)
+        embed.add_field(name="⚔️ 전투력", value=f"{power:,}", inline=True)
+
+        stats_block = (
+            f"**STR** {stats['str']} ｜ **DEX** {stats['dex']}\n"
+            f"**INT** {stats['int']} ｜ **LUK** {stats['luk']}\n"
+            f"**ATT** {stats['att']} ｜ **M.ATT** {stats['m_att']}"
+        )
+        embed.add_field(name="📊 스탯", value=stats_block, inline=False)
+
+        embed.add_field(name="🪓 장착 아이템", value=equipped_str, inline=False)
+
+        embed.set_footer(text=f"{rank}/{len(self.leaderboard_data)} • 좌우 버튼으로 이동")
+        return embed
+
+    async def prev_page(self, interaction: discord.Interaction):
+        self.index = (self.index - 1) % len(self.leaderboard_data)
+        await interaction.response.edit_message(embed=self.get_embed(), view=self)
+
+    async def next_page(self, interaction: discord.Interaction):
+        self.index = (self.index + 1) % len(self.leaderboard_data)
+        await interaction.response.edit_message(embed=self.get_embed(), view=self)
+
 
 class EnhancementCog(commands.Cog):
 
@@ -468,7 +516,6 @@ class EnhancementCog(commands.Cog):
             return []
 
     async def post_or_update_leaderboard(self, guild: discord.Guild):
-        """Post or update the combat power leaderboard in the leaderboard channel."""
         channel = guild.get_channel(LEADERBOARD_CHANNEL_ID)
         if not channel:
             return
@@ -499,50 +546,28 @@ class EnhancementCog(commands.Cog):
                     equipped_list.append(f"{template['emoji']} {template['name']} {enh}")
             equipped_str = "\n".join(equipped_list) if equipped_list else "없음"
 
-            leaderboard.append((user, power, stats, char_class, equipped_str))
+            leaderboard.append((user, None, power, stats, char_class, equipped_str))
 
-        leaderboard.sort(key=lambda x: x[1], reverse=True)
-        top = leaderboard[:10]
+        # Sort & enumerate ranks
+        leaderboard.sort(key=lambda x: x[2], reverse=True)
+        leaderboard = [(u, i + 1, p, s, c, e) for i, (u, _, p, s, c, e) in enumerate(leaderboard)]
 
-        embed = discord.Embed(
-            title="🏆 전투력 랭킹",
-            description="서버 최강자 TOP 10",
-            color=discord.Color.gold()
-        )
+        if not leaderboard:
+            await channel.send("⚠️ 현재 랭킹에 표시할 유저가 없습니다.")
+            return
 
-        for rank, (user, power, stats, char_class, equipped_str) in enumerate(top, start=1):
-            stats_block = (
-                f"**STR** {stats['str']} ｜ **DEX** {stats['dex']}\n"
-                f"**INT** {stats['int']} ｜ **LUK** {stats['luk']}\n"
-                f"**ATT** {stats['att']} ｜ **M.ATT** {stats['m_att']}"
-            )
-
-            value_text = (
-                f"👤 **직업**: {char_class}\n"
-                f"⚔️ **전투력**: {power:,}\n"
-                f"━━━━━━━━━━━━━\n"
-                f"📊 **스탯**\n{stats_block}\n"
-                f"━━━━━━━━━━━━━\n"
-                f"🪓 **장착 아이템**\n{equipped_str}"
-            )
-
-            embed.add_field(
-                name=f"{rank}. {user.display_name}",
-                value=value_text,
-                inline=False
-            )
-
-        embed.set_footer(text="자동 업데이트: 장비/강화/시장 거래 시 즉시 반영")
+        view = LeaderboardView(self.bot, leaderboard, 0)
+        embed = view.get_embed()
 
         if hasattr(self, "leaderboard_message_id"):
             try:
                 msg = await channel.fetch_message(self.leaderboard_message_id)
-                await msg.edit(embed=embed)
+                await msg.edit(embed=embed, view=view)
                 return
             except discord.NotFound:
                 pass
 
-        msg = await channel.send(embed=embed)
+        msg = await channel.send(embed=embed, view=view)
         self.leaderboard_message_id = msg.id
 
     async def show_detailed_item_info(self, interaction: discord.Interaction, item_id: str):
