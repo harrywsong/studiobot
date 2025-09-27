@@ -764,22 +764,29 @@ class EnhancementCog(commands.Cog):
             embed.add_field(name="💳 남은 코인", value=f"{refreshed_coins:,} 코인", inline=True)
             embed.set_footer(text=f"강화 확률: 성공 {rates[0]}% | 실패 {rates[1]}% | 파괴 {rates[2]}%")
 
-            # Post result (not ephemeral anymore)
-            await interaction.followup.send(embed=embed)
+            # Determine if we should post to the showoff channel
+            showoff_channel = self.bot.get_channel(self.showoff_channel_id)
 
-            # Send to showoff channel if not destroyed
-            if result != 'destroy':
-                showoff_channel = self.bot.get_channel(self.showoff_channel_id)
-                if showoff_channel:
-                    public_embed = embed.copy()
-                    public_embed.add_field(name="플레이어", value=interaction.user.mention, inline=True)
-                    updated_item_row = await self.bot.pool.fetchrow("SELECT * FROM user_items WHERE item_id = $1",
-                                                                    item_id)
-                    if updated_item_row:
-                        view = EnhancementResultView(self.bot, user_id, guild_id, dict(updated_item_row), template)
-                        await showoff_channel.send(embed=public_embed, view=view)
-                    else:
-                        await showoff_channel.send(embed=public_embed)
+            # Case 1: Post a public message to the showoff channel
+            if showoff_channel and result != 'destroy':
+                public_embed = embed.copy()
+                public_embed.add_field(name="플레이어", value=interaction.user.mention, inline=True)
+
+                # Try to find the item to attach action buttons
+                view = None
+                updated_item_row = await self.bot.pool.fetchrow("SELECT * FROM user_items WHERE item_id = $1", item_id)
+                if updated_item_row:
+                    view = EnhancementResultView(self.bot, user_id, guild_id, dict(updated_item_row), template)
+
+                await showoff_channel.send(embed=public_embed, view=view)
+
+                # Then, send a quiet, ephemeral confirmation to the user who clicked the button
+                await interaction.followup.send(content=f"강화 결과가 {showoff_channel.mention} 채널에 게시되었습니다.",
+                                                ephemeral=True)
+
+            # Case 2: No showoff channel or item was destroyed, so just reply normally
+            else:
+                await interaction.followup.send(embed=embed)
 
             self.logger.info(
                 f"사용자 {user_id}가 {template['name']} 강화: {current_level}→{new_level if result != 'destroy' else '파괴'} ({result})",
