@@ -853,7 +853,7 @@ class EnhancementCog(commands.Cog):
 
         except Exception as e:
             self.logger.error(f"강화 처리 중 심각한 오류 발생: {e}", extra={'guild_id': guild_id}, exc_info=True)
-            await interaction.followup.send(f"⚠ 강화 처리 중 예측하지 못한 오류가 발생했습니다: {e}")
+            await interaction.followup.send(f"⚠ 강화 처리 중 예측하지 못한 오류가 발생했습니다: {e}", ephemeral=True)
 
     async def equip_item(self, interaction: discord.Interaction, item_id: str):
         """Equip an item"""
