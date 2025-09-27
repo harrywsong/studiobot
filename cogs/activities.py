@@ -1234,15 +1234,15 @@ class ActivitiesCog(commands.Cog):
                 count = await self.bot.pool.fetchval("""
                     SELECT COUNT(*) FROM adventure_logs 
                     WHERE user_id = $1 AND guild_id = $2 
-                    AND DATE(start_time) = CURRENT_DATE
+                    AND start_time::date = CURRENT_DATE
                 """, user_id, guild_id)
 
             elif activity_type == "dungeon":
-                # Check dungeon attempts from today
+                # Check dungeon attempts from today - count actual attempts today
                 count = await self.bot.pool.fetchval("""
-                    SELECT SUM(completions) FROM dungeon_progress 
+                    SELECT COUNT(*) FROM dungeon_progress 
                     WHERE user_id = $1 AND guild_id = $2 
-                    AND DATE(last_attempt) = CURRENT_DATE
+                    AND last_attempt::date = CURRENT_DATE
                 """, user_id, guild_id)
                 if count is None:
                     count = 0
