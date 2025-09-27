@@ -514,6 +514,10 @@ class EnhancementCog(commands.Cog):
         if not channel:
             return
 
+        # Initialize leaderboard_messages dict if it doesn't exist
+        if not hasattr(self, 'leaderboard_messages'):
+            self.leaderboard_messages = {}
+
         records = await self.bot.pool.fetch(
             "SELECT DISTINCT user_id FROM user_items WHERE guild_id = $1",
             guild.id
@@ -546,23 +550,28 @@ class EnhancementCog(commands.Cog):
         leaderboard = [(u, i + 1, p, s, c, e) for i, (u, _, p, s, c, e) in enumerate(leaderboard)]
 
         if not leaderboard:
-            await channel.send("⚠️ 현재 랭킹에 표시할 유저가 없습니다.")
+            # Only send this message if we haven't already posted a leaderboard for this guild
+            if guild.id not in self.leaderboard_messages:
+                msg = await channel.send("⚠️ 현재 랭킹에 표시할 유저가 없습니다.")
+                self.leaderboard_messages[guild.id] = msg.id
             return
 
         view = LeaderboardView(self.bot, leaderboard, 0)
         embed = view.get_embed()
 
-        if hasattr(self, "leaderboard_message_id"):
+        # Check if we already have a leaderboard message for this guild
+        if guild.id in self.leaderboard_messages:
             try:
-                msg = await channel.fetch_message(self.leaderboard_message_id)
+                msg = await channel.fetch_message(self.leaderboard_messages[guild.id])
                 await msg.edit(embed=embed, view=view)
                 return
             except discord.NotFound:
-                pass
+                # Message was deleted, remove from tracking
+                del self.leaderboard_messages[guild.id]
 
+        # Create new message and track it per guild
         msg = await channel.send(embed=embed, view=view)
-        self.leaderboard_message_id = msg.id
-
+        self.leaderboard_messages[guild.id] = msg.id
     async def show_detailed_item_info(self, interaction: discord.Interaction, item_id: str):
         """Show detailed item information"""
         await self.show_item_management(interaction, item_id)
