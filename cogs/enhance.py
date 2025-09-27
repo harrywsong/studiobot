@@ -780,9 +780,6 @@ class EnhancementCog(commands.Cog):
 
                 await showoff_channel.send(embed=public_embed, view=view)
 
-                # Then, send a quiet, ephemeral confirmation to the user who clicked the button
-                await interaction.followup.send(content=f"강화 결과가 {showoff_channel.mention} 채널에 게시되었습니다.",
-                                                ephemeral=True)
 
             # Case 2: No showoff channel or item was destroyed, so just reply normally
             else:
