@@ -726,17 +726,13 @@ class EnhancementCog(commands.Cog):
                 inline=True
             )
 
-            # ⭐ NEW STAR DISPLAY (two-row, 5-group layout)
             if result != "destroy":
                 max_stars = 25
                 filled = "⭐" * new_level
                 empty = "☆" * (max_stars - new_level)
                 stars = filled + empty
 
-                # Split into 5-groups
                 groups = [stars[i:i + 5] for i in range(0, max_stars, 5)]
-
-                # First row = first 3 groups (15 stars), second row = last 2 groups (10 stars)
                 top_row = "  ".join(groups[:3])
                 bottom_row = "  ".join(groups[3:])
                 star_display = f"{top_row}\n{bottom_row}"
@@ -1149,8 +1145,21 @@ class EnhancementCog(commands.Cog):
                 return
             rarity_info = self.item_rarities[template['rarity']]
             embed = discord.Embed(title=f"{template['emoji']} {template['name']}", color=rarity_info['color'])
-            enhancement_text = f"+{item_row['enhancement_level']}" if item_row['enhancement_level'] > 0 else "강화 안됨"
-            embed.add_field(name="강화", value=enhancement_text, inline=True)
+            enhancement_level = item_row['enhancement_level']
+            enhancement_text = f"+{enhancement_level}" if enhancement_level > 0 else "강화 안됨"
+
+            # ⭐ Two-row star grid (3 groups of 5 on top, 2 on bottom)
+            max_stars = 25
+            filled = "⭐" * enhancement_level
+            empty = "☆" * (max_stars - enhancement_level)
+            stars = filled + empty
+            groups = [stars[i:i + 5] for i in range(0, max_stars, 5)]
+            top_row = "  ".join(groups[:3])
+            bottom_row = "  ".join(groups[3:])
+            star_display = f"{top_row}\n{bottom_row}"
+
+            embed.add_field(name="강화", value=f"{enhancement_text}\n{star_display}", inline=False)
+
             embed.add_field(name="등급", value=rarity_info['name'], inline=True)
             embed.add_field(name="종류", value=template['slot_type'], inline=True)
             if template.get('class_req'):
