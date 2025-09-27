@@ -1,3 +1,4 @@
+# cogs/enhance.py
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
@@ -175,7 +176,7 @@ class ItemManagementView(discord.ui.View):
         self.template = template
         self.enhancement_cog = bot.get_cog('EnhancementCog')
 
-        # --- START: BUTTON CONSISTENCY FIX ---
+        # --- REORDERED BUTTONS FOR CONSISTENCY ---
         # Order: Enhance, Equip/Unequip, Sell
 
         # Enhancement button
@@ -207,12 +208,11 @@ class ItemManagementView(discord.ui.View):
         # Market sell button
         market_button = discord.ui.Button(
             label="💰 마켓 판매",
-            style=discord.ButtonStyle.secondary,  # Changed to secondary for consistency
+            style=discord.ButtonStyle.secondary,
             custom_id="market_sell"
         )
         market_button.callback = self.market_sell
         self.add_item(market_button)
-        # --- END: BUTTON CONSISTENCY FIX ---
 
     async def toggle_equip(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id:
@@ -244,12 +244,11 @@ class ItemManagementView(discord.ui.View):
             if isinstance(child, discord.ui.Button):
                 child.disabled = True
 
-        # Try to edit the message to reflect the change, but don't fail if the message is gone
         try:
             if hasattr(self, 'message') and self.message:
                 await self.message.edit(view=self)
         except discord.NotFound:
-            pass  # Message was deleted
+            pass
 
 
 class MarketplaceView(discord.ui.View):
@@ -320,11 +319,8 @@ class EnhancementCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.logger = get_logger(__name__)
-
-        # Load item pool from JSON file instead of generating it every time
         self.item_pool = self.load_item_pool()
 
-        # Character classes
         self.character_classes = {
             "전사": {"name": "전사", "emoji": "⚔️", "primary_stats": ["str", "att"],
                    "description": "강력한 물리 공격력을 가진 근접 전투의 달인"},
@@ -336,7 +332,6 @@ class EnhancementCog(commands.Cog):
                    "description": "다양한 무기와 스킬을 활용하는 자유로운 모험가"}
         }
 
-        # Item rarities with Korean names and colors
         self.item_rarities = {
             "일반": {"name": "일반", "color": 0x808080, "weight": 45},
             "고급": {"name": "고급", "color": 0x00FF00, "weight": 30},
@@ -347,15 +342,12 @@ class EnhancementCog(commands.Cog):
             "신화": {"name": "신화", "color": 0xFFD700, "weight": 0.1}
         }
 
-        # Equipment slots
         self.equipment_slots = [
             "무기", "보조무기", "모자", "상의", "하의", "신발",
             "장갑", "망토", "목걸이", "귀걸이", "반지", "벨트"
         ]
 
-        # MapleStory-style StarForce rates
         self.starforce_rates = {
-            # Format: level: (success%, fail%, destroy%)
             0: (95, 5, 0), 1: (90, 10, 0), 2: (85, 15, 0), 3: (85, 15, 0), 4: (80, 20, 0),
             5: (75, 25, 0), 6: (70, 30, 0), 7: (65, 35, 0), 8: (60, 40, 0), 9: (55, 45, 0),
             10: (50, 45, 5), 11: (45, 50, 5), 12: (40, 55, 5), 13: (35, 60, 5), 14: (30, 63, 7),
@@ -363,7 +355,6 @@ class EnhancementCog(commands.Cog):
             20: (30, 63, 7), 21: (30, 63, 7), 22: (3, 77.6, 19.4), 23: (2, 68.6, 29.4), 24: (1, 59.4, 39.6)
         }
 
-        # Enhancement costs (in coins)
         self.enhancement_costs = {
             0: 10, 1: 15, 2: 20, 3: 25, 4: 30,
             5: 35, 6: 40, 7: 45, 8: 50, 9: 60,
@@ -372,48 +363,33 @@ class EnhancementCog(commands.Cog):
             20: 250, 21: 280, 22: 350, 23: 450, 24: 600
         }
 
-        # Fail streak tracking for guaranteed success
-        self.fail_streaks = {}  # user_id: consecutive_fails
-        # Marketplace channel ID
+        self.fail_streaks = {}
         self.marketplace_channel_id = 1421286971623477422
-        # Show-off channel ID for enhancement results and sales
         self.showoff_channel_id = 1421290649277435904
-
         self.bot.loop.create_task(self.setup_system())
-
-        # enhance.py
 
     def load_item_pool(self) -> List[Dict]:
         """Load the massive item pool from a static JSON file."""
-
-        # --- START OF FIX ---
-        # Get the directory where this cog file (enhance.py) is located
         cog_dir = os.path.dirname(os.path.abspath(__file__))
-        # Construct the path to the project root (one level up) and then into the data folder
         file_path = os.path.join(cog_dir, '..', 'data', 'item_templates.json')
-        # --- END OF FIX ---
 
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 items = json.load(f)
                 valid_items = []
                 for item in items:
-                    # Check if the 'id' key exists and is not None before processing
                     if 'id' in item and item['id'] is not None:
-                        # Item IDs might be stored as strings in JSON keys, ensure proper type conversion
                         if isinstance(item['id'], str):
                             try:
                                 item['id'] = int(item['id'])
                             except ValueError:
                                 self.logger.warning(
                                     f"Skipping item with non-integer ID: {item.get('name', 'Unnamed Item')}")
-                                continue  # Skip this item if ID cannot be converted to int
-
+                                continue
                         valid_items.append(item)
                     else:
                         self.logger.warning(
                             f"Skipping item due to missing 'id': {item.get('name', 'Unnamed Item')}")
-
                 self.logger.info(f"Loaded {len(valid_items)} valid items from {file_path}.")
                 return valid_items
         except FileNotFoundError:
@@ -423,6 +399,7 @@ class EnhancementCog(commands.Cog):
             self.logger.error(f"Error loading item_templates.json: {e}")
             return []
 
+    # ... (all other helper functions like show_detailed_item_info, get_rarity_multiplier, etc. remain the same) ...
     async def show_detailed_item_info(self, interaction: discord.Interaction, item_id: str):
         """Show detailed item information"""
         await self.show_item_management(interaction, item_id)
@@ -447,41 +424,25 @@ class EnhancementCog(commands.Cog):
     def calculate_market_price(self, template: Dict, enhancement_level: int) -> int:
         """Calculate automatic market price based on item stats and enhancement"""
         base_price = template['base_price']
-
-        # Enhancement multiplier (each level adds 15% to base price)
         enhancement_multiplier = 1 + (enhancement_level * 0.15)
-
-        # Rarity multiplier for market pricing
         rarity_market_multipliers = {
             "일반": 1.0, "고급": 1.5, "희귀": 2.2, "영웅": 3.5,
             "고유": 5.5, "전설": 8.0, "신화": 12.0
         }
-
         rarity_multiplier = rarity_market_multipliers.get(template['rarity'], 1.0)
-
-        # Calculate final price
         final_price = int(base_price * enhancement_multiplier * rarity_multiplier)
-
-        # Ensure minimum price based on enhancement level
         min_price = 5 + (enhancement_level * 10)
-
         return max(final_price, min_price)
 
     def calculate_combat_power(self, stats: Dict[str, int], character_class: str) -> int:
         """Calculate total combat power based on stats and class"""
         power = 0
-
-        # Base stat power
         power += stats["str"] * 4
         power += stats["dex"] * 4
         power += stats["int"] * 4
         power += stats["luk"] * 3
-
-        # Attack power (main component)
         power += stats["att"] * 15
         power += stats["m_att"] * 15
-
-        # Class-specific bonuses
         class_multipliers = {
             "전사": {"str": 1.5, "att": 1.3},
             "법사": {"int": 1.5, "m_att": 1.3},
@@ -489,36 +450,22 @@ class EnhancementCog(commands.Cog):
             "궁수": {"dex": 1.5, "att": 1.2},
             "해적": {"str": 1.2, "dex": 1.2, "att": 1.1}
         }
-
-        # Apply class multipliers
         multipliers = class_multipliers.get(character_class, {})
         for stat, value in stats.items():
             if stat in multipliers:
                 power += int(value * multipliers[stat])
-
         return max(1, int(power))
 
     def get_random_item(self) -> Dict[str, Any]:
         """Get a random item based on rarity weights using random.choices."""
-
         items = self.item_pool
-        # Ensure item pool is not empty
         if not items:
             return None
-
-        # Map item rarity to its weight
         rarity_weights = {
             r: data['weight'] for r, data in self.item_rarities.items()
         }
-
-        # Get the weight for each item in the pool
         weights = [rarity_weights.get(item['rarity'], 0) for item in items]
-
-        # Use random.choices for efficient weighted random selection
-        # k=1 returns a list, so we take the first element [0]
         chosen_item = random.choices(items, weights=weights, k=1)[0]
-
-        # Return a copy to prevent modifying the template in the item pool
         return chosen_item.copy()
 
     async def setup_system(self):
@@ -533,87 +480,53 @@ class EnhancementCog(commands.Cog):
             # Character table
             await self.bot.pool.execute("""
                 CREATE TABLE IF NOT EXISTS user_characters (
-                    user_id BIGINT,
-                    guild_id BIGINT,
-                    character_class VARCHAR(20) NOT NULL,
-                    last_class_change TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    user_id BIGINT, guild_id BIGINT, character_class VARCHAR(20) NOT NULL,
+                    last_class_change TIMESTAMP DEFAULT CURRENT_TIMESTAMP, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     PRIMARY KEY (user_id, guild_id)
                 )
             """)
-
             # Enhanced items table
             await self.bot.pool.execute("""
                 CREATE TABLE IF NOT EXISTS user_items (
-                    item_id VARCHAR(50) PRIMARY KEY,
-                    user_id BIGINT NOT NULL,
-                    guild_id BIGINT NOT NULL,
-                    template_id INTEGER NOT NULL,
-                    enhancement_level INTEGER DEFAULT 0,
-                    is_equipped BOOLEAN DEFAULT FALSE,
-                    equipped_slot VARCHAR(20),
-                    fail_streak INTEGER DEFAULT 0,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    item_id VARCHAR(50) PRIMARY KEY, user_id BIGINT NOT NULL, guild_id BIGINT NOT NULL,
+                    template_id INTEGER NOT NULL, enhancement_level INTEGER DEFAULT 0, is_equipped BOOLEAN DEFAULT FALSE,
+                    equipped_slot VARCHAR(20), fail_streak INTEGER DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     last_enhanced TIMESTAMP
                 )
             """)
-
             # Equipment slots table
             await self.bot.pool.execute("""
                 CREATE TABLE IF NOT EXISTS user_equipment (
-                    user_id BIGINT,
-                    guild_id BIGINT,
-                    slot_name VARCHAR(20),
-                    item_id VARCHAR(50),
-                    equipped_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    PRIMARY KEY (user_id, guild_id, slot_name),
+                    user_id BIGINT, guild_id BIGINT, slot_name VARCHAR(20), item_id VARCHAR(50),
+                    equipped_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (user_id, guild_id, slot_name),
                     FOREIGN KEY (item_id) REFERENCES user_items(item_id) ON DELETE SET NULL
                 )
             """)
-
             # Enhancement logs
             await self.bot.pool.execute("""
                 CREATE TABLE IF NOT EXISTS enhancement_logs (
-                    log_id SERIAL PRIMARY KEY,
-                    user_id BIGINT NOT NULL,
-                    guild_id BIGINT NOT NULL,
-                    item_id VARCHAR(50) NOT NULL,
-                    old_level INTEGER NOT NULL,
-                    new_level INTEGER NOT NULL,
-                    result VARCHAR(20) NOT NULL,
-                    cost INTEGER NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    log_id SERIAL PRIMARY KEY, user_id BIGINT NOT NULL, guild_id BIGINT NOT NULL,
+                    item_id VARCHAR(50) NOT NULL, old_level INTEGER NOT NULL, new_level INTEGER NOT NULL,
+                    result VARCHAR(20) NOT NULL, cost INTEGER NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
-
             # Marketplace table
             await self.bot.pool.execute("""
                 CREATE TABLE IF NOT EXISTS marketplace (
-                    market_id VARCHAR(50) PRIMARY KEY,
-                    seller_id BIGINT NOT NULL,
-                    guild_id BIGINT NOT NULL,
-                    item_id VARCHAR(50) NOT NULL,
-                    template_id INTEGER NOT NULL,
-                    enhancement_level INTEGER NOT NULL,
-                    price INTEGER NOT NULL,
-                    listed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    market_id VARCHAR(50) PRIMARY KEY, seller_id BIGINT NOT NULL, guild_id BIGINT NOT NULL,
+                    item_id VARCHAR(50) NOT NULL, template_id INTEGER NOT NULL, enhancement_level INTEGER NOT NULL,
+                    price INTEGER NOT NULL, listed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (item_id) REFERENCES user_items(item_id) ON DELETE CASCADE
                 )
             """)
-
             # Create indexes
-            await self.bot.pool.execute("""
-                CREATE INDEX IF NOT EXISTS idx_user_items_user_guild ON user_items(user_id, guild_id);
-            """)
-            await self.bot.pool.execute("""
-                CREATE INDEX IF NOT EXISTS idx_user_equipment_user_guild ON user_equipment(user_id, guild_id);
-            """)
-            await self.bot.pool.execute("""
-                CREATE INDEX IF NOT EXISTS idx_marketplace_guild ON marketplace(guild_id, listed_at DESC);
-            """)
-
+            await self.bot.pool.execute(
+                "CREATE INDEX IF NOT EXISTS idx_user_items_user_guild ON user_items(user_id, guild_id);")
+            await self.bot.pool.execute(
+                "CREATE INDEX IF NOT EXISTS idx_user_equipment_user_guild ON user_equipment(user_id, guild_id);")
+            await self.bot.pool.execute(
+                "CREATE INDEX IF NOT EXISTS idx_marketplace_guild ON marketplace(guild_id, listed_at DESC);")
             self.logger.info("강화 시스템 데이터베이스가 준비되었습니다.")
-
         except Exception as e:
             self.logger.error(f"데이터베이스 설정 실패: {e}")
 
@@ -624,8 +537,6 @@ class EnhancementCog(commands.Cog):
             if not channel:
                 self.logger.error(f"Marketplace channel {self.marketplace_channel_id} not found")
                 return
-
-            # Delete old marketplace messages
             async for message in channel.history(limit=10):
                 if message.author == self.bot.user:
                     try:
@@ -633,10 +544,7 @@ class EnhancementCog(commands.Cog):
                         await asyncio.sleep(0.5)
                     except:
                         pass
-
-            # Create new marketplace message
             await self.create_marketplace_message()
-
         except Exception as e:
             self.logger.error(f"Marketplace setup error: {e}")
 
@@ -644,68 +552,40 @@ class EnhancementCog(commands.Cog):
         """Create/update marketplace message"""
         try:
             channel = self.bot.get_channel(self.marketplace_channel_id)
-            if not channel:
-                return
-
-            # Get marketplace items
+            if not channel: return
             market_items = await self.get_marketplace_items()
-
-            embed = discord.Embed(
-                title="🏪 아이템 마켓플레이스",
-                description="다른 플레이어들이 판매하는 아이템을 구매해보세요!",
-                color=discord.Color.gold(),
-                timestamp=datetime.now(timezone.utc)
-            )
-
+            embed = discord.Embed(title="🏪 아이템 마켓플레이스", description="다른 플레이어들이 판매하는 아이템을 구매해보세요!",
+                                  color=discord.Color.gold(), timestamp=datetime.now(timezone.utc))
             if not market_items:
-                embed.add_field(
-                    name="📦 현재 판매중인 아이템이 없습니다",
-                    value="다른 플레이어들이 아이템을 올릴 때까지 기다려주세요!",
-                    inline=False
-                )
+                embed.add_field(name="📦 현재 판매중인 아이템이 없습니다", value="다른 플레이어들이 아이템을 올릴 때까지 기다려주세요!", inline=False)
                 await channel.send(embed=embed)
                 return
-
-            # Display items
             items_text = ""
-            for i, (market_entry, template) in enumerate(market_items[:10]):  # Show top 10
+            for i, (market_entry, template) in enumerate(market_items[:10]):
                 rarity_info = self.item_rarities[template['rarity']]
                 enhancement_text = f"+{market_entry['enhancement_level']}" if market_entry[
                                                                                   'enhancement_level'] > 0 else ""
-
                 items_text += f"**{i + 1}.** {template['emoji']} **{template['name']}** {enhancement_text}\n"
                 items_text += f"   {rarity_info['name']} | {template['slot_type']} | 💰 **{market_entry['price']:,}** 코인\n"
                 items_text += f"   판매자: <@{market_entry['seller_id']}>\n\n"
-
             embed.add_field(name="🛒 판매중인 아이템", value=items_text or "판매중인 아이템이 없습니다.", inline=False)
             embed.set_footer(text="아래 버튼을 눌러 아이템을 구매하세요! (10분마다 자동 갱신)")
-
             view = MarketplaceView(self.bot, market_items[:10])
             await channel.send(embed=embed, view=view)
-
         except Exception as e:
             self.logger.error(f"Marketplace message creation error: {e}")
 
     async def get_marketplace_items(self) -> List[Tuple]:
         """Get current marketplace items"""
         try:
-            query = """
-                SELECT m.market_id, m.seller_id, m.template_id, m.enhancement_level, 
-                       m.price, m.listed_at, m.guild_id
-                FROM marketplace m
-                ORDER BY m.listed_at DESC
-                LIMIT 20
-            """
+            query = "SELECT m.market_id, m.seller_id, m.template_id, m.enhancement_level, m.price, m.listed_at, m.guild_id FROM marketplace m ORDER BY m.listed_at DESC LIMIT 20"
             rows = await self.bot.pool.fetch(query)
-
             items = []
             for row in rows:
                 template = self.get_item_template(row['template_id'])
                 if template:
                     items.append((row, template))
-
             return items
-
         except Exception as e:
             self.logger.error(f"Error getting marketplace items: {e}")
             return []
@@ -713,18 +593,11 @@ class EnhancementCog(commands.Cog):
     async def get_user_character(self, user_id: int, guild_id: int) -> Optional[Dict]:
         """사용자 캐릭터 정보 조회"""
         try:
-            query = """
-                SELECT character_class, last_class_change, created_at
-                FROM user_characters 
-                WHERE user_id = $1 AND guild_id = $2
-            """
+            query = "SELECT character_class, last_class_change, created_at FROM user_characters WHERE user_id = $1 AND guild_id = $2"
             row = await self.bot.pool.fetchrow(query, user_id, guild_id)
             if row:
-                return {
-                    'class': row['character_class'],
-                    'last_change': row['last_class_change'],
-                    'created_at': row['created_at']
-                }
+                return {'class': row['character_class'], 'last_change': row['last_class_change'],
+                        'created_at': row['created_at']}
             return None
         except Exception as e:
             self.logger.error(f"캐릭터 조회 오류: {e}", extra={'guild_id': guild_id})
@@ -734,12 +607,9 @@ class EnhancementCog(commands.Cog):
         """데이터베이스에 아이템 생성"""
         try:
             item_id = str(uuid.uuid4())[:8]
-
-            await self.bot.pool.execute("""
-                INSERT INTO user_items (item_id, user_id, guild_id, template_id, enhancement_level)
-                VALUES ($1, $2, $3, $4, $5)
-            """, item_id, user_id, guild_id, item_data['id'], 0)
-
+            await self.bot.pool.execute(
+                "INSERT INTO user_items (item_id, user_id, guild_id, template_id, enhancement_level) VALUES ($1, $2, $3, $4, $5)",
+                item_id, user_id, guild_id, item_data['id'], 0)
             return item_id
         except Exception as e:
             self.logger.error(f"아이템 생성 오류: {e}", extra={'guild_id': guild_id})
@@ -752,6 +622,7 @@ class EnhancementCog(commands.Cog):
                 return item
         return None
 
+    # --- START OF DATABASE TRANSACTION FIX ---
     async def handle_enhancement(self, interaction: discord.Interaction, item_id: str):
         """Handle item enhancement with MapleStory-style rates"""
         await interaction.response.defer(ephemeral=True)
@@ -760,14 +631,9 @@ class EnhancementCog(commands.Cog):
         guild_id = interaction.guild.id
 
         try:
-            # Get item info
-            query = """
-                SELECT item_id, template_id, enhancement_level, fail_streak, user_id
-                FROM user_items
-                WHERE item_id = $1 AND user_id = $2 AND guild_id = $3
-            """
-            item_row = await self.bot.pool.fetchrow(query, item_id, user_id, guild_id)
-
+            item_row = await self.bot.pool.fetchrow(
+                "SELECT item_id, template_id, enhancement_level, fail_streak, user_id FROM user_items WHERE item_id = $1 AND user_id = $2 AND guild_id = $3",
+                item_id, user_id, guild_id)
             if not item_row:
                 await interaction.followup.send("❌ 아이템을 찾을 수 없습니다.", ephemeral=True)
                 return
@@ -778,16 +644,11 @@ class EnhancementCog(commands.Cog):
                 return
 
             current_level = item_row['enhancement_level']
-            fail_streak = item_row['fail_streak'] or 0
-
             if current_level >= 24:
                 await interaction.followup.send("❌ 최대 강화 레벨에 도달했습니다.", ephemeral=True)
                 return
 
-            # Get enhancement cost
             cost = self.enhancement_costs.get(current_level, 1000)
-
-            # Check coins
             coins_cog = self.bot.get_cog('CoinsCog')
             if not coins_cog:
                 await interaction.followup.send("❌ 코인 시스템을 사용할 수 없습니다.", ephemeral=True)
@@ -795,102 +656,65 @@ class EnhancementCog(commands.Cog):
 
             current_coins = await coins_cog.get_user_coins(user_id, guild_id)
             if current_coins < cost:
-                await interaction.followup.send(
-                    f"❌ 강화 비용이 부족합니다!\n필요: {cost:,} 코인\n보유: {current_coins:,} 코인",
-                    ephemeral=True
-                )
+                await interaction.followup.send(f"❌ 강화 비용이 부족합니다!\n필요: {cost:,} 코인\n보유: {current_coins:,} 코인",
+                                                ephemeral=True)
                 return
 
-            # Get rates for display
+            fail_streak = item_row['fail_streak'] or 0
             rates = self.starforce_rates.get(current_level, (30, 67, 3))
             result, new_level, new_fail_streak, result_text, result_color = "", 0, 0, "", discord.Color.default()
 
-            # Calculate enhancement result
             if fail_streak >= 2:
-                # Guaranteed success after 2 consecutive fails
-                result = "success"
-                new_level = current_level + 1
-                new_fail_streak = 0
-                result_text = "✨ **보장된 성공!** ✨"
-                result_color = discord.Color.gold()
+                result, new_level, new_fail_streak, result_text, result_color = "success", current_level + 1, 0, "✨ **보장된 성공!** ✨", discord.Color.gold()
             else:
-                # Normal rates
                 success_rate, fail_rate, _ = rates
                 roll = random.uniform(0, 100)
                 if roll <= success_rate:
-                    result = "success"
-                    new_level = current_level + 1
-                    new_fail_streak = 0
-                    result_text = "✅ **강화 성공!**"
-                    result_color = discord.Color.green()
+                    result, new_level, new_fail_streak, result_text, result_color = "success", current_level + 1, 0, "✅ **강화 성공!**", discord.Color.green()
                 elif roll <= success_rate + fail_rate:
-                    result = "fail"
-                    new_level = current_level - 1 if current_level in [15, 20] else current_level
-                    new_fail_streak = fail_streak + 1
-                    result_text = "❌ **강화 실패**"
-                    result_color = discord.Color.red()
+                    new_level_on_fail = current_level - 1 if current_level in [15, 20] else current_level
+                    result, new_level, new_fail_streak, result_text, result_color = "fail", new_level_on_fail, fail_streak + 1, "❌ **강화 실패**", discord.Color.red()
                 else:
-                    result = "destroy"
-                    new_level = -1
-                    new_fail_streak = 0
-                    result_text = "💥 **아이템 파괴!**"
-                    result_color = discord.Color.dark_red()
+                    result, new_level, new_fail_streak, result_text, result_color = "destroy", -1, 0, "💥 **아이템 파괴!**", discord.Color.dark_red()
 
-            # --- START: DATABASE TRANSACTION FIX ---
             try:
                 # Use a single transaction to ensure atomicity
                 async with self.bot.pool.transaction():
-                    # 1. Deduct coins from user
-                    await self.bot.pool.execute("""
-                        UPDATE user_coins 
-                        SET coins = coins - $3, total_spent = total_spent + $3
-                        WHERE user_id = $1 AND guild_id = $2
-                    """, user_id, guild_id, cost)
-
-                    # 2. Log the coin transaction
+                    # 1. Deduct coins & Log transaction
                     description = f"강화: {template['name']} ({result})"
-                    await self.bot.pool.execute("""
-                        INSERT INTO coin_transactions (user_id, guild_id, amount, transaction_type, description)
-                        VALUES ($1, $2, $3, $4, $5)
-                    """, user_id, guild_id, -cost, "enhancement", description)
+                    await self.bot.pool.execute(
+                        "UPDATE user_coins SET coins = coins - $3, total_spent = total_spent + $3 WHERE user_id = $1 AND guild_id = $2",
+                        user_id, guild_id, cost)
+                    await self.bot.pool.execute(
+                        "INSERT INTO coin_transactions (user_id, guild_id, amount, transaction_type, description) VALUES ($1, $2, $3, $4, $5)",
+                        user_id, guild_id, -cost, "enhancement", description)
 
-                    # 3. Update database based on enhancement result
+                    # 2. Update item database
                     if result in ["success", "fail"]:
-                        # Update item level and fail streak
-                        await self.bot.pool.execute("""
-                            UPDATE user_items
-                            SET enhancement_level = $1, fail_streak = $2, last_enhanced = CURRENT_TIMESTAMP
-                            WHERE item_id = $3
-                        """, new_level, new_fail_streak, item_id)
-
+                        await self.bot.pool.execute(
+                            "UPDATE user_items SET enhancement_level = $1, fail_streak = $2, last_enhanced = CURRENT_TIMESTAMP WHERE item_id = $3",
+                            new_level, new_fail_streak, item_id)
                     elif result == "destroy":
-                        # Delete the item from the database
                         await self.bot.pool.execute("DELETE FROM user_items WHERE item_id = $1", item_id)
 
-                    # 4. Log the enhancement attempt itself
-                    await self.bot.pool.execute("""
-                        INSERT INTO enhancement_logs (user_id, guild_id, item_id, old_level, new_level, result, cost)
-                        VALUES ($1, $2, $3, $4, $5, $6, $7)
-                    """, user_id, guild_id, item_id, current_level, new_level, result, cost)
+                    # 3. Log enhancement
+                    await self.bot.pool.execute(
+                        "INSERT INTO enhancement_logs (user_id, guild_id, item_id, old_level, new_level, result, cost) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+                        user_id, guild_id, item_id, current_level, new_level, result, cost)
 
             except Exception as e:
                 self.logger.error(f"Enhancement database transaction failed for user {user_id}: {e}", exc_info=True)
-                # This message is sent to the user if the transaction fails
                 await interaction.followup.send(f"⚠️ **강화 오류!** 데이터베이스 처리 중 문제가 발생했습니다. 변경사항이 적용되지 않았습니다.",
                                                 ephemeral=True)
                 return
-            # --- END: DATABASE TRANSACTION FIX ---
 
-            # Create result embed
+            # Create and send result embed
             rarity_info = self.item_rarities[template['rarity']]
             embed = discord.Embed(title=result_text, color=result_color, timestamp=datetime.now(timezone.utc))
-
-            item_display = f"{template['emoji']} **{template['name']}**"
-            level_change_display = f"{current_level} → **{new_level if result != 'destroy' else '파괴'}**"
-
-            embed.add_field(name="아이템", value=item_display, inline=True)
+            embed.add_field(name="아이템", value=f"{template['emoji']} **{template['name']}**", inline=True)
             embed.add_field(name="등급", value=rarity_info['name'], inline=True)
-            embed.add_field(name="레벨 변화", value=level_change_display, inline=True)
+            embed.add_field(name="레벨 변화", value=f"{current_level} → **{new_level if result != 'destroy' else '파괴'}**",
+                            inline=True)
 
             if result == "success":
                 embed.add_field(name="🎉 성공!", value="강화 레벨이 상승했습니다!", inline=False)
@@ -898,133 +722,88 @@ class EnhancementCog(commands.Cog):
                 embed.add_field(name="💔 실패", value=f"연속 실패: {new_fail_streak}회", inline=False)
                 if new_fail_streak >= 2:
                     embed.add_field(name="✨ 다음 강화 보장!", value="다음 강화는 100% 성공합니다!", inline=False)
-            else:  # destroy
+            else:
                 embed.add_field(name="💥 파괴", value="아이템이 파괴되었습니다!", inline=False)
 
-            # Get refreshed coin balance
             refreshed_coins = await coins_cog.get_user_coins(user_id, guild_id)
             embed.add_field(name="💰 소모 코인", value=f"{cost:,} 코인", inline=True)
             embed.add_field(name="💳 남은 코인", value=f"{refreshed_coins:,} 코인", inline=True)
-
             embed.set_footer(text=f"강화 확률: 성공 {rates[0]}% | 실패 {rates[1]}% | 파괴 {rates[2]}%")
-
             await interaction.followup.send(embed=embed, ephemeral=True)
 
-            # Post result to show-off channel if it's not a destroy
             if result != 'destroy':
                 showoff_channel = self.bot.get_channel(self.showoff_channel_id)
                 if showoff_channel:
                     public_embed = embed.copy()
                     public_embed.add_field(name="플레이어", value=interaction.user.mention, inline=True)
-
                     updated_item_row = await self.bot.pool.fetchrow("SELECT * FROM user_items WHERE item_id = $1",
                                                                     item_id)
-
                     view = EnhancementResultView(self.bot, user_id, guild_id, dict(updated_item_row), template)
                     await showoff_channel.send(embed=public_embed, view=view)
 
             self.logger.info(
                 f"사용자 {user_id}가 {template['name']} 강화: {current_level}→{new_level if result != 'destroy' else '파괴'} ({result})",
-                extra={'guild_id': guild_id}
-            )
+                extra={'guild_id': guild_id})
 
         except Exception as e:
             self.logger.error(f"강화 처리 중 심각한 오류 발생: {e}", extra={'guild_id': guild_id}, exc_info=True)
             await interaction.followup.send(f"❌ 강화 처리 중 예측하지 못한 오류가 발생했습니다: {e}", ephemeral=True)
 
+    # --- END OF DATABASE TRANSACTION FIX ---
+
+    # ... (all other functions like equip_item, unequip_item, character_sheet, etc. remain the same) ...
     async def equip_item(self, interaction: discord.Interaction, item_id: str):
         """Equip an item"""
         await interaction.response.defer(ephemeral=True)
-
         user_id = interaction.user.id
         guild_id = interaction.guild.id
-
         try:
-            # Get item info
-            query = """
-                SELECT ui.item_id, ui.template_id, ui.enhancement_level, ui.is_equipped
-                FROM user_items ui
-                WHERE ui.item_id = $1 AND ui.user_id = $2 AND ui.guild_id = $3
-            """
-            item_row = await self.bot.pool.fetchrow(query, item_id, user_id, guild_id)
-
+            item_row = await self.bot.pool.fetchrow(
+                "SELECT ui.item_id, ui.template_id, ui.enhancement_level, ui.is_equipped FROM user_items ui WHERE ui.item_id = $1 AND ui.user_id = $2 AND ui.guild_id = $3",
+                item_id, user_id, guild_id)
             if not item_row:
                 await interaction.followup.send("❌ 아이템을 찾을 수 없습니다.", ephemeral=True)
                 return
-
             if item_row['is_equipped']:
                 await interaction.followup.send("❌ 이미 장착된 아이템입니다.", ephemeral=True)
                 return
-
             template = self.get_item_template(item_row['template_id'])
             if not template:
                 await interaction.followup.send("❌ 아이템 정보를 불러올 수 없습니다.", ephemeral=True)
                 return
-
-            # Check class requirement
             character = await self.get_user_character(user_id, guild_id)
             if not character:
                 await interaction.followup.send("❌ 캐릭터를 먼저 생성해주세요.", ephemeral=True)
                 return
-
             if template.get('class_req') and template['class_req'] != character['class']:
-                await interaction.followup.send(
-                    f"❌ 이 아이템은 {template['class_req']} 전용입니다. (현재: {character['class']})",
-                    ephemeral=True
-                )
+                await interaction.followup.send(f"❌ 이 아이템은 {template['class_req']} 전용입니다. (현재: {character['class']})",
+                                                ephemeral=True)
                 return
-
             slot_type = template['slot_type']
-
-            # Unequip existing item in the same slot
-            await self.bot.pool.execute("""
-                UPDATE user_items 
-                SET is_equipped = FALSE, equipped_slot = NULL
-                FROM user_equipment ue
-                WHERE user_items.item_id = ue.item_id 
-                AND ue.user_id = $1 AND ue.guild_id = $2 AND ue.slot_name = $3
-            """, user_id, guild_id, slot_type)
-
-            await self.bot.pool.execute("""
-                DELETE FROM user_equipment 
-                WHERE user_id = $1 AND guild_id = $2 AND slot_name = $3
-            """, user_id, guild_id, slot_type)
-
-            # Equip new item
-            await self.bot.pool.execute("""
-                UPDATE user_items 
-                SET is_equipped = TRUE, equipped_slot = $1
-                WHERE item_id = $2
-            """, slot_type, item_id)
-
-            await self.bot.pool.execute("""
-                INSERT INTO user_equipment (user_id, guild_id, slot_name, item_id)
-                VALUES ($1, $2, $3, $4)
-                ON CONFLICT (user_id, guild_id, slot_name)
-                DO UPDATE SET item_id = EXCLUDED.item_id, equipped_at = CURRENT_TIMESTAMP
-            """, user_id, guild_id, slot_type, item_id)
-
+            await self.bot.pool.execute(
+                "UPDATE user_items SET is_equipped = FALSE, equipped_slot = NULL FROM user_equipment ue WHERE user_items.item_id = ue.item_id AND ue.user_id = $1 AND ue.guild_id = $2 AND ue.slot_name = $3",
+                user_id, guild_id, slot_type)
+            await self.bot.pool.execute(
+                "DELETE FROM user_equipment WHERE user_id = $1 AND guild_id = $2 AND slot_name = $3", user_id, guild_id,
+                slot_type)
+            await self.bot.pool.execute(
+                "UPDATE user_items SET is_equipped = TRUE, equipped_slot = $1 WHERE item_id = $2", slot_type, item_id)
+            await self.bot.pool.execute(
+                "INSERT INTO user_equipment (user_id, guild_id, slot_name, item_id) VALUES ($1, $2, $3, $4) ON CONFLICT (user_id, guild_id, slot_name) DO UPDATE SET item_id = EXCLUDED.item_id, equipped_at = CURRENT_TIMESTAMP",
+                user_id, guild_id, slot_type, item_id)
             rarity_info = self.item_rarities[template['rarity']]
-            embed = discord.Embed(
-                title="✅ 장착 완료!",
-                color=discord.Color.green(),
-                timestamp=datetime.now(timezone.utc)
-            )
-
+            embed = discord.Embed(title="✅ 장착 완료!", color=discord.Color.green(), timestamp=datetime.now(timezone.utc))
             enhancement_text = f"+{item_row['enhancement_level']}" if item_row['enhancement_level'] > 0 else ""
             item_display = f"{template['emoji']} **{template['name']}** {enhancement_text}"
-
             embed.add_field(name="장착된 아이템", value=item_display, inline=False)
             embed.add_field(name="장착 슬롯", value=slot_type, inline=True)
             embed.add_field(name="등급", value=rarity_info['name'], inline=True)
-
             showoff_channel = self.bot.get_channel(self.showoff_channel_id)
             if showoff_channel:
                 embed.add_field(name="플레이어", value=interaction.user.mention, inline=True)
                 await showoff_channel.send(embed=embed)
             else:
                 await interaction.followup.send(embed=embed, ephemeral=True)
-
         except Exception as e:
             self.logger.error(f"장착 오류: {e}", extra={'guild_id': guild_id})
             await interaction.followup.send(f"❌ 장착 중 오류가 발생했습니다: {e}", ephemeral=True)
@@ -1032,64 +811,40 @@ class EnhancementCog(commands.Cog):
     async def unequip_item(self, interaction: discord.Interaction, item_id: str):
         """Unequip an item"""
         await interaction.response.defer(ephemeral=True)
-
         user_id = interaction.user.id
         guild_id = interaction.guild.id
-
         try:
-            # Get item info
-            query = """
-                SELECT ui.item_id, ui.template_id, ui.enhancement_level, ui.is_equipped, ui.equipped_slot
-                FROM user_items ui
-                WHERE ui.item_id = $1 AND ui.user_id = $2 AND ui.guild_id = $3
-            """
-            item_row = await self.bot.pool.fetchrow(query, item_id, user_id, guild_id)
-
+            item_row = await self.bot.pool.fetchrow(
+                "SELECT ui.item_id, ui.template_id, ui.enhancement_level, ui.is_equipped, ui.equipped_slot FROM user_items ui WHERE ui.item_id = $1 AND ui.user_id = $2 AND ui.guild_id = $3",
+                item_id, user_id, guild_id)
             if not item_row:
                 await interaction.followup.send("❌ 아이템을 찾을 수 없습니다.", ephemeral=True)
                 return
-
             if not item_row['is_equipped']:
                 await interaction.followup.send("❌ 장착되지 않은 아이템입니다.", ephemeral=True)
                 return
-
             template = self.get_item_template(item_row['template_id'])
             if not template:
                 await interaction.followup.send("❌ 아이템 정보를 불러올 수 없습니다.", ephemeral=True)
                 return
-
-            # Unequip item
-            await self.bot.pool.execute("""
-                UPDATE user_items 
-                SET is_equipped = FALSE, equipped_slot = NULL
-                WHERE item_id = $1
-            """, item_id)
-
-            await self.bot.pool.execute("""
-                DELETE FROM user_equipment 
-                WHERE user_id = $1 AND guild_id = $2 AND slot_name = $3
-            """, user_id, guild_id, item_row['equipped_slot'])
-
+            await self.bot.pool.execute(
+                "UPDATE user_items SET is_equipped = FALSE, equipped_slot = NULL WHERE item_id = $1", item_id)
+            await self.bot.pool.execute(
+                "DELETE FROM user_equipment WHERE user_id = $1 AND guild_id = $2 AND slot_name = $3", user_id, guild_id,
+                item_row['equipped_slot'])
             rarity_info = self.item_rarities[template['rarity']]
-            embed = discord.Embed(
-                title="⚪ 장착 해제 완료!",
-                color=discord.Color.orange(),
-                timestamp=datetime.now(timezone.utc)
-            )
-
+            embed = discord.Embed(title="⚪ 장착 해제 완료!", color=discord.Color.orange(),
+                                  timestamp=datetime.now(timezone.utc))
             enhancement_text = f"+{item_row['enhancement_level']}" if item_row['enhancement_level'] > 0 else ""
             item_display = f"{template['emoji']} **{template['name']}** {enhancement_text}"
-
             embed.add_field(name="해제된 아이템", value=item_display, inline=False)
             embed.add_field(name="해제된 슬롯", value=item_row['equipped_slot'], inline=True)
-
             showoff_channel = self.bot.get_channel(self.showoff_channel_id)
             if showoff_channel:
                 embed.add_field(name="플레이어", value=interaction.user.mention, inline=True)
                 await showoff_channel.send(embed=embed)
             else:
                 await interaction.followup.send(embed=embed, ephemeral=True)
-
         except Exception as e:
             self.logger.error(f"장착 해제 오류: {e}", extra={'guild_id': guild_id})
             await interaction.followup.send(f"❌ 장착 해제 중 오류가 발생했습니다: {e}", ephemeral=True)
@@ -1097,51 +852,31 @@ class EnhancementCog(commands.Cog):
     async def show_market_sell_confirmation(self, interaction: discord.Interaction, item_id: str):
         """Show automatic price calculation and confirmation"""
         await interaction.response.defer(ephemeral=True)
-
         user_id = interaction.user.id
         guild_id = interaction.guild.id
-
         try:
-            # Get item info
-            query = """
-                SELECT ui.item_id, ui.template_id, ui.enhancement_level, ui.is_equipped
-                FROM user_items ui
-                WHERE ui.item_id = $1 AND ui.user_id = $2 AND ui.guild_id = $3
-            """
-            item_row = await self.bot.pool.fetchrow(query, item_id, user_id, guild_id)
-
+            item_row = await self.bot.pool.fetchrow(
+                "SELECT ui.item_id, ui.template_id, ui.enhancement_level, ui.is_equipped FROM user_items ui WHERE ui.item_id = $1 AND ui.user_id = $2 AND ui.guild_id = $3",
+                item_id, user_id, guild_id)
             if not item_row:
                 await interaction.followup.send("❌ 아이템을 찾을 수 없습니다.", ephemeral=True)
                 return
-
             template = self.get_item_template(item_row['template_id'])
             if not template:
                 await interaction.followup.send("❌ 아이템 정보를 불러올 수 없습니다.", ephemeral=True)
                 return
-
-            # Calculate automatic price
             calculated_price = self.calculate_market_price(template, item_row['enhancement_level'])
-
             rarity_info = self.item_rarities[template['rarity']]
-            embed = discord.Embed(
-                title="🏪 마켓 판매 확인",
-                color=rarity_info['color'],
-                timestamp=datetime.now(timezone.utc)
-            )
-
+            embed = discord.Embed(title="🏪 마켓 판매 확인", color=rarity_info['color'], timestamp=datetime.now(timezone.utc))
             enhancement_text = f"+{item_row['enhancement_level']}" if item_row['enhancement_level'] > 0 else ""
             item_display = f"{template['emoji']} **{template['name']}** {enhancement_text}"
-
             embed.add_field(name="판매할 아이템", value=item_display, inline=False)
             embed.add_field(name="등급", value=rarity_info['name'], inline=True)
             embed.add_field(name="강화 레벨", value=f"+{item_row['enhancement_level']}", inline=True)
             embed.add_field(name="💰 자동 계산된 가격", value=f"{calculated_price:,} 코인", inline=True)
-
             embed.set_footer(text="가격은 아이템의 등급, 강화 레벨, 기본 능력치를 바탕으로 자동 계산됩니다.")
-
             view = MarketSellConfirmView(self.bot, item_id, calculated_price, template, item_row['enhancement_level'])
             await interaction.followup.send(embed=embed, view=view, ephemeral=True)
-
         except Exception as e:
             self.logger.error(f"마켓 가격 계산 오류: {e}", extra={'guild_id': guild_id})
             await interaction.followup.send(f"❌ 가격 계산 중 오류가 발생했습니다: {e}", ephemeral=True)
@@ -1149,76 +884,42 @@ class EnhancementCog(commands.Cog):
     async def list_item_on_market(self, interaction: discord.Interaction, item_id: str, price: int):
         """List item on marketplace"""
         await interaction.response.defer(ephemeral=True)
-
         user_id = interaction.user.id
         guild_id = interaction.guild.id
-
         try:
-            # Check if item exists and is owned by user
-            query = """
-                SELECT ui.item_id, ui.template_id, ui.enhancement_level, ui.is_equipped
-                FROM user_items ui
-                WHERE ui.item_id = $1 AND ui.user_id = $2 AND ui.guild_id = $3
-            """
-            item_row = await self.bot.pool.fetchrow(query, item_id, user_id, guild_id)
-
+            item_row = await self.bot.pool.fetchrow(
+                "SELECT ui.item_id, ui.template_id, ui.enhancement_level, ui.is_equipped FROM user_items ui WHERE ui.item_id = $1 AND ui.user_id = $2 AND ui.guild_id = $3",
+                item_id, user_id, guild_id)
             if not item_row:
                 await interaction.followup.send("❌ 아이템을 찾을 수 없습니다.", ephemeral=True)
                 return
-
             if item_row['is_equipped']:
                 await interaction.followup.send("❌ 장착된 아이템은 판매할 수 없습니다. 먼저 장착을 해제해주세요.", ephemeral=True)
                 return
-
             template = self.get_item_template(item_row['template_id'])
             if not template:
                 await interaction.followup.send("❌ 아이템 정보를 불러올 수 없습니다.", ephemeral=True)
                 return
-
-            # Create marketplace entry
             market_id = str(uuid.uuid4())[:8]
-
-            await self.bot.pool.execute("""
-                INSERT INTO marketplace (market_id, seller_id, guild_id, item_id, template_id, enhancement_level, price)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
-            """, market_id, user_id, guild_id, item_id, item_row['template_id'], item_row['enhancement_level'], price)
-
-            # Remove item from user's inventory
-            await self.bot.pool.execute("""
-                UPDATE user_items 
-                SET user_id = -1  -- Mark as marketplace item
-                WHERE item_id = $1
-            """, item_id)
-
+            await self.bot.pool.execute(
+                "INSERT INTO marketplace (market_id, seller_id, guild_id, item_id, template_id, enhancement_level, price) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+                market_id, user_id, guild_id, item_id, item_row['template_id'], item_row['enhancement_level'], price)
+            await self.bot.pool.execute("UPDATE user_items SET user_id = -1 WHERE item_id = $1", item_id)
             rarity_info = self.item_rarities[template['rarity']]
-            embed = discord.Embed(
-                title="🏪 마켓 등록 완료!",
-                color=discord.Color.gold(),
-                timestamp=datetime.now(timezone.utc)
-            )
-
+            embed = discord.Embed(title="🏪 마켓 등록 완료!", color=discord.Color.gold(), timestamp=datetime.now(timezone.utc))
             enhancement_text = f"+{item_row['enhancement_level']}" if item_row['enhancement_level'] > 0 else ""
             item_display = f"{template['emoji']} **{template['name']}** {enhancement_text}"
-
             embed.add_field(name="등록된 아이템", value=item_display, inline=False)
             embed.add_field(name="판매 가격", value=f"{price:,} 코인", inline=True)
             embed.add_field(name="등급", value=rarity_info['name'], inline=True)
-
             embed.set_footer(text="다른 플레이어들이 구매할 수 있습니다!")
-
-            # Send confirmation to user
             await interaction.followup.send("마켓 등록이 완료되었습니다! 자랑 채널에 게시되었습니다.", ephemeral=True)
-
-            # Post to show-off channel
             showoff_channel = self.bot.get_channel(self.showoff_channel_id)
             if showoff_channel:
                 embed.add_field(name="판매자", value=interaction.user.mention, inline=True)
                 embed.title = "🏪 새로운 아이템이 마켓에 등록되었습니다!"
                 await showoff_channel.send(embed=embed)
-
-            # Update marketplace message
             await self.create_marketplace_message()
-
         except Exception as e:
             self.logger.error(f"마켓 등록 오류: {e}", extra={'guild_id': guild_id})
             await interaction.followup.send(f"❌ 마켓 등록 중 오류가 발생했습니다: {e}", ephemeral=True)
@@ -1226,120 +927,70 @@ class EnhancementCog(commands.Cog):
     async def handle_market_purchase(self, interaction: discord.Interaction, market_id: str):
         """Handle marketplace item purchase"""
         await interaction.response.defer(ephemeral=True)
-
         user_id = interaction.user.id
         guild_id = interaction.guild.id
-
         try:
-            # Get marketplace item info
-            query = """
-                SELECT m.market_id, m.seller_id, m.item_id, m.template_id, 
-                       m.enhancement_level, m.price, m.guild_id
-                FROM marketplace m
-                WHERE m.market_id = $1
-            """
-            market_entry = await self.bot.pool.fetchrow(query, market_id)
-
+            market_entry = await self.bot.pool.fetchrow(
+                "SELECT m.market_id, m.seller_id, m.item_id, m.template_id, m.enhancement_level, m.price, m.guild_id FROM marketplace m WHERE m.market_id = $1",
+                market_id)
             if not market_entry:
                 await interaction.followup.send("❌ 해당 아이템이 이미 판매되었거나 존재하지 않습니다.", ephemeral=True)
                 return
-
             if market_entry['seller_id'] == user_id:
                 await interaction.followup.send("❌ 자신이 판매한 아이템은 구매할 수 없습니다.", ephemeral=True)
                 return
-
             template = self.get_item_template(market_entry['template_id'])
             if not template:
                 await interaction.followup.send("❌ 아이템 정보를 불러올 수 없습니다.", ephemeral=True)
                 return
-
             price = market_entry['price']
-
-            # Check coins
             coins_cog = self.bot.get_cog('CoinsCog')
             if not coins_cog:
                 await interaction.followup.send("❌ 코인 시스템을 사용할 수 없습니다.", ephemeral=True)
                 return
-
             current_coins = await coins_cog.get_user_coins(user_id, guild_id)
             if current_coins < price:
-                await interaction.followup.send(
-                    f"❌ 코인이 부족합니다!\n필요: {price:,} 코인\n보유: {current_coins:,} 코인",
-                    ephemeral=True
-                )
+                await interaction.followup.send(f"❌ 코인이 부족합니다!\n필요: {price:,} 코인\n보유: {current_coins:,} 코인",
+                                                ephemeral=True)
                 return
-
-            # Process transaction
-            # Deduct coins from buyer
             if not await coins_cog.remove_coins(user_id, guild_id, price, "market_purchase",
                                                 f"마켓 구매: {template['name']}"):
                 await interaction.followup.send("❌ 코인 차감 중 오류가 발생했습니다.", ephemeral=True)
                 return
-
-            # Add coins to seller (90% - 10% market fee)
             seller_amount = int(price * 0.9)
             await coins_cog.add_coins(market_entry['seller_id'], guild_id, seller_amount, "market_sale",
                                       f"마켓 판매: {template['name']}")
-
-            # Transfer item to buyer
-            await self.bot.pool.execute("""
-                UPDATE user_items 
-                SET user_id = $1, is_equipped = FALSE, equipped_slot = NULL
-                WHERE item_id = $2
-            """, user_id, market_entry['item_id'])
-
-            # Remove from marketplace
-            await self.bot.pool.execute("""
-                DELETE FROM marketplace WHERE market_id = $1
-            """, market_id)
-
-            # Success message
+            await self.bot.pool.execute(
+                "UPDATE user_items SET user_id = $1, is_equipped = FALSE, equipped_slot = NULL WHERE item_id = $2",
+                user_id, market_entry['item_id'])
+            await self.bot.pool.execute("DELETE FROM marketplace WHERE market_id = $1", market_id)
             rarity_info = self.item_rarities[template['rarity']]
-            embed = discord.Embed(
-                title="🛒 구매 완료!",
-                color=discord.Color.green(),
-                timestamp=datetime.now(timezone.utc)
-            )
-
+            embed = discord.Embed(title="🛒 구매 완료!", color=discord.Color.green(), timestamp=datetime.now(timezone.utc))
             enhancement_text = f"+{market_entry['enhancement_level']}" if market_entry['enhancement_level'] > 0 else ""
             item_display = f"{template['emoji']} **{template['name']}** {enhancement_text}"
-
             embed.add_field(name="구매한 아이템", value=item_display, inline=False)
             embed.add_field(name="💰 지불 금액", value=f"{price:,} 코인", inline=True)
             embed.add_field(name="💳 남은 코인", value=f"{current_coins - price:,} 코인", inline=True)
             embed.add_field(name="등급", value=rarity_info['name'], inline=True)
-
             embed.set_footer(text="아이템이 인벤토리에 추가되었습니다!")
-
-            # Send confirmation to user
             await interaction.followup.send("구매가 완료되었습니다! 자랑 채널에 게시되었습니다.", ephemeral=True)
-
-            # Post to show-off channel
             showoff_channel = self.bot.get_channel(self.showoff_channel_id)
             if showoff_channel:
                 embed.add_field(name="구매자", value=interaction.user.mention, inline=True)
                 embed.title = "🛒 마켓에서 아이템 구매!"
                 await showoff_channel.send(embed=embed)
-
-            # Notify seller via DM
             try:
                 seller = self.bot.get_user(market_entry['seller_id'])
                 if seller:
-                    seller_embed = discord.Embed(
-                        title="💰 아이템 판매 완료!",
-                        description=f"{item_display}이(가) {price:,} 코인에 판매되었습니다!",
-                        color=discord.Color.gold()
-                    )
+                    seller_embed = discord.Embed(title="💰 아이템 판매 완료!",
+                                                 description=f"{item_display}이(가) {price:,} 코인에 판매되었습니다!",
+                                                 color=discord.Color.gold())
                     seller_embed.add_field(name="수수료 차감 후 수익", value=f"{seller_amount:,} 코인", inline=True)
                     await seller.send(embed=seller_embed)
             except:
-                pass  # Ignore if can't send DM
-
-            # Update marketplace message
+                pass
             await self.create_marketplace_message()
-
             self.logger.info(f"마켓 거래 완료: {user_id}가 {template['name']}을 {price:,} 코인에 구매", extra={'guild_id': guild_id})
-
         except Exception as e:
             self.logger.error(f"마켓 구매 오류: {e}", extra={'guild_id': guild_id})
             await interaction.followup.send(f"❌ 구매 중 오류가 발생했습니다: {e}", ephemeral=True)
@@ -1347,22 +998,12 @@ class EnhancementCog(commands.Cog):
     async def get_equipped_items(self, user_id: int, guild_id: int) -> Dict[str, Dict]:
         """장착된 아이템 조회"""
         try:
-            query = """
-                SELECT ue.slot_name, ui.template_id, ui.enhancement_level, ui.item_id
-                FROM user_equipment ue
-                JOIN user_items ui ON ue.item_id = ui.item_id
-                WHERE ue.user_id = $1 AND ue.guild_id = $2
-            """
+            query = "SELECT ue.slot_name, ui.template_id, ui.enhancement_level, ui.item_id FROM user_equipment ue JOIN user_items ui ON ue.item_id = ui.item_id WHERE ue.user_id = $1 AND ue.guild_id = $2"
             rows = await self.bot.pool.fetch(query, user_id, guild_id)
-
             equipped = {}
             for row in rows:
-                equipped[row['slot_name']] = {
-                    'template_id': row['template_id'],
-                    'enhancement_level': row['enhancement_level'],
-                    'item_id': row['item_id']
-                }
-
+                equipped[row['slot_name']] = {'template_id': row['template_id'],
+                                              'enhancement_level': row['enhancement_level'], 'item_id': row['item_id']}
             return equipped
         except Exception as e:
             self.logger.error(f"장착 아이템 조회 오류: {e}", extra={'guild_id': guild_id})
@@ -1373,20 +1014,15 @@ class EnhancementCog(commands.Cog):
         try:
             equipped_items = await self.get_equipped_items(user_id, guild_id)
             total_stats = {"str": 0, "dex": 0, "int": 0, "luk": 0, "att": 0, "m_att": 0}
-
             for slot, item_data in equipped_items.items():
                 template = self.get_item_template(item_data['template_id'])
                 if template:
                     enhancement_level = item_data['enhancement_level']
-
-                    # Base stats with enhancement bonus (10% per level)
                     enhancement_multiplier = 1 + (enhancement_level * 0.1)
-
                     for stat, value in template['base_stats'].items():
                         if value > 0:
                             enhanced_value = int(value * enhancement_multiplier)
                             total_stats[stat] += enhanced_value
-
             return total_stats
         except Exception as e:
             self.logger.error(f"능력치 계산 오류: {e}", extra={'guild_id': guild_id})
@@ -1395,29 +1031,16 @@ class EnhancementCog(commands.Cog):
     async def show_inventory(self, interaction: discord.Interaction):
         """인벤토리 표시"""
         await interaction.response.defer(ephemeral=True)
-
         user_id = interaction.user.id
         guild_id = interaction.guild.id
-
         try:
-            query = """
-                SELECT item_id, template_id, enhancement_level, is_equipped, created_at
-                FROM user_items
-                WHERE user_id = $1 AND guild_id = $2
-                ORDER BY created_at DESC
-                LIMIT 20
-            """
-            items = await self.bot.pool.fetch(query, user_id, guild_id)
-
+            items = await self.bot.pool.fetch(
+                "SELECT item_id, template_id, enhancement_level, is_equipped, created_at FROM user_items WHERE user_id = $1 AND guild_id = $2 ORDER BY created_at DESC LIMIT 20",
+                user_id, guild_id)
             if not items:
                 await interaction.followup.send("🎒 인벤토리가 비어있습니다.", ephemeral=True)
                 return
-
-            embed = discord.Embed(
-                title="🎒 인벤토리",
-                color=discord.Color.blue()
-            )
-
+            embed = discord.Embed(title="🎒 인벤토리", color=discord.Color.blue())
             items_text = ""
             for item_row in items:
                 template = self.get_item_template(item_row['template_id'])
@@ -1425,15 +1048,11 @@ class EnhancementCog(commands.Cog):
                     rarity_info = self.item_rarities[template['rarity']]
                     enhancement = f"+{item_row['enhancement_level']}" if item_row['enhancement_level'] > 0 else ""
                     equipped = "🔒" if item_row['is_equipped'] else ""
-
                     items_text += f"{template['emoji']} **{template['name']}** {enhancement} {equipped}\n"
                     items_text += f"   {rarity_info['name']} | {template['slot_type']} | ID: `{item_row['item_id']}`\n\n"
-
             embed.description = items_text
             embed.set_footer(text=f"총 {len(items)}개 아이템 (최근 20개만 표시)")
-
             await interaction.followup.send(embed=embed, ephemeral=True)
-
         except Exception as e:
             await interaction.followup.send(f"❌ 인벤토리 조회 중 오류가 발생했습니다: {e}", ephemeral=True)
             self.logger.error(f"인벤토리 조회 오류: {e}", extra={'guild_id': guild_id})
@@ -1441,25 +1060,15 @@ class EnhancementCog(commands.Cog):
     async def show_equipment_manager(self, interaction: discord.Interaction):
         """장비 관리 화면 표시"""
         await interaction.response.defer(ephemeral=True)
-
         user_id = interaction.user.id
         guild_id = interaction.guild.id
-
         try:
-            # Get unequipped items by slot type
-            query = """
-                SELECT ui.item_id, ui.template_id, ui.enhancement_level, ui.is_equipped
-                FROM user_items ui
-                WHERE ui.user_id = $1 AND ui.guild_id = $2 AND ui.is_equipped = FALSE
-                ORDER BY ui.created_at DESC
-            """
-            items = await self.bot.pool.fetch(query, user_id, guild_id)
-
+            items = await self.bot.pool.fetch(
+                "SELECT ui.item_id, ui.template_id, ui.enhancement_level, ui.is_equipped FROM user_items ui WHERE ui.user_id = $1 AND ui.guild_id = $2 AND ui.is_equipped = FALSE ORDER BY ui.created_at DESC",
+                user_id, guild_id)
             if not items:
                 await interaction.followup.send("📦 장착 가능한 아이템이 없습니다.", ephemeral=True)
                 return
-
-            # Group items by slot type
             items_by_slot = {}
             for item_row in items:
                 template = self.get_item_template(item_row['template_id'])
@@ -1468,23 +1077,11 @@ class EnhancementCog(commands.Cog):
                     if slot_type not in items_by_slot:
                         items_by_slot[slot_type] = []
                     items_by_slot[slot_type].append((item_row, template))
-
-            embed = discord.Embed(
-                title="⚔️ 장비 관리",
-                description="장착할 슬롯을 선택해주세요.",
-                color=discord.Color.blue()
-            )
-
+            embed = discord.Embed(title="⚔️ 장비 관리", description="장착할 슬롯을 선택해주세요.", color=discord.Color.blue())
             for slot_type, items_list in items_by_slot.items():
-                embed.add_field(
-                    name=f"{slot_type}",
-                    value=f"{len(items_list)}개 아이템",
-                    inline=True
-                )
-
+                embed.add_field(name=f"{slot_type}", value=f"{len(items_list)}개 아이템", inline=True)
             view = EquipmentSelectView(self.bot, user_id, guild_id, items_by_slot)
             await interaction.followup.send(embed=embed, view=view, ephemeral=True)
-
         except Exception as e:
             await interaction.followup.send(f"❌ 장비 관리 화면 로드 중 오류가 발생했습니다: {e}", ephemeral=True)
             self.logger.error(f"장비 관리 오류: {e}", extra={'guild_id': guild_id})
@@ -1492,99 +1089,64 @@ class EnhancementCog(commands.Cog):
     async def show_slot_items(self, interaction: discord.Interaction, slot_type: str, items: List):
         """특정 슬롯의 아이템들 표시"""
         await interaction.response.defer(ephemeral=True)
-
-        embed = discord.Embed(
-            title=f"📦 {slot_type} 아이템",
-            description="장착할 아이템을 선택해주세요.",
-            color=discord.Color.blue()
-        )
-
+        embed = discord.Embed(title=f"📦 {slot_type} 아이템", description="장착할 아이템을 선택해주세요.", color=discord.Color.blue())
         items_text = ""
-        for item_row, template in items[:10]:  # Show up to 10 items
+        for item_row, template in items[:10]:
             rarity_info = self.item_rarities[template['rarity']]
             enhancement = f"+{item_row['enhancement_level']}" if item_row['enhancement_level'] > 0 else ""
-
             items_text += f"{template['emoji']} **{template['name']}** {enhancement}\n"
             items_text += f"   {rarity_info['name']} | ID: `{item_row['item_id']}`\n\n"
-
         embed.description = items_text
-
         view = SlotItemsView(self.bot, interaction.user.id, interaction.guild.id, slot_type, items)
         await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
     async def show_item_management(self, interaction: discord.Interaction, item_id: str):
         """개별 아이템 관리 화면"""
         await interaction.response.defer(ephemeral=True)
-
         user_id = interaction.user.id
         guild_id = interaction.guild.id
-
         try:
-            # Get item info
-            query = """
-                SELECT item_id, template_id, enhancement_level, is_equipped, equipped_slot, fail_streak
-                FROM user_items
-                WHERE item_id = $1 AND user_id = $2 AND guild_id = $3
-            """
-            item_row = await self.bot.pool.fetchrow(query, item_id, user_id, guild_id)
-
+            item_row = await self.bot.pool.fetchrow(
+                "SELECT item_id, template_id, enhancement_level, is_equipped, equipped_slot, fail_streak FROM user_items WHERE item_id = $1 AND user_id = $2 AND guild_id = $3",
+                item_id, user_id, guild_id)
             if not item_row:
                 await interaction.followup.send("❌ 아이템을 찾을 수 없습니다.", ephemeral=True)
                 return
-
             template = self.get_item_template(item_row['template_id'])
             if not template:
                 await interaction.followup.send("❌ 아이템 정보를 불러올 수 없습니다.", ephemeral=True)
                 return
-
             rarity_info = self.item_rarities[template['rarity']]
-            embed = discord.Embed(
-                title=f"{template['emoji']} {template['name']}",
-                color=rarity_info['color']
-            )
-
+            embed = discord.Embed(title=f"{template['emoji']} {template['name']}", color=rarity_info['color'])
             enhancement_text = f"+{item_row['enhancement_level']}" if item_row['enhancement_level'] > 0 else "강화 안됨"
             embed.add_field(name="강화", value=enhancement_text, inline=True)
             embed.add_field(name="등급", value=rarity_info['name'], inline=True)
             embed.add_field(name="종류", value=template['slot_type'], inline=True)
-
             if template.get('class_req'):
                 embed.add_field(name="직업 제한", value=template['class_req'], inline=True)
-
-            # Calculate current stats with enhancement
             enhanced_stats = template['base_stats'].copy()
             enhancement_multiplier = 1 + (item_row['enhancement_level'] * 0.1)
-
             stats_text = ""
             for stat, value in enhanced_stats.items():
                 if value > 0:
                     enhanced_value = int(value * enhancement_multiplier)
                     stats_text += f"**{stat.upper()}**: {enhanced_value}\n"
-
             if stats_text:
                 embed.add_field(name="📊 현재 능력치", value=stats_text, inline=False)
-
-            # Enhancement info
             if item_row['enhancement_level'] < 24:
                 current_level = item_row['enhancement_level']
                 rates = self.starforce_rates.get(current_level, (30, 67, 3))
                 cost = self.enhancement_costs.get(current_level, 1000)
                 fail_streak = item_row['fail_streak'] or 0
-
                 if fail_streak >= 2:
                     embed.add_field(name="⚡ 다음 강화", value="🎯 **100% 성공 보장!**", inline=False)
                 else:
-                    embed.add_field(
-                        name="⚡ 다음 강화 정보",
-                        value=f"비용: {cost:,} 코인\n성공: {rates[0]}% | 실패: {rates[1]}% | 파괴: {rates[2]}%\n연속실패: {fail_streak}회",
-                        inline=False
-                    )
-
+                    embed.add_field(name="⚡ 다음 강화 정보",
+                                    value=f"비용: {cost:,} 코인\n성공: {rates[0]}% | 실패: {rates[1]}% | 파괴: {rates[2]}%\n연속실패: {fail_streak}회",
+                                    inline=False)
             embed.add_field(name="상태", value="🔒 장착중" if item_row['is_equipped'] else "📦 보관중", inline=True)
-
             view = ItemManagementView(self.bot, user_id, guild_id, item_row, template)
             await interaction.followup.send(embed=embed, view=view, ephemeral=True)
-
         except Exception as e:
             await interaction.followup.send(f"❌ 아이템 관리 화면 로드 중 오류가 발생했습니다: {e}", ephemeral=True)
             self.logger.error(f"아이템 관리 오류: {e}", extra={'guild_id': guild_id})
@@ -1592,73 +1154,46 @@ class EnhancementCog(commands.Cog):
     @app_commands.command(name="직업선택", description="캐릭터 직업을 선택하거나 변경합니다. (월 1회 제한)")
     @app_commands.describe(character_class="선택할 직업")
     @app_commands.choices(character_class=[
-        app_commands.Choice(name="⚔️ 전사", value="전사"),
-        app_commands.Choice(name="🔮 법사", value="법사"),
-        app_commands.Choice(name="🗡️ 도적", value="도적"),
-        app_commands.Choice(name="🏹 궁수", value="궁수"),
+        app_commands.Choice(name="⚔️ 전사", value="전사"), app_commands.Choice(name="🔮 법사", value="법사"),
+        app_commands.Choice(name="🗡️ 도적", value="도적"), app_commands.Choice(name="🏹 궁수", value="궁수"),
         app_commands.Choice(name="🏴‍☠️ 해적", value="해적")
     ])
     async def select_class(self, interaction: discord.Interaction, character_class: str):
         guild_id = interaction.guild.id
-
         if not config.is_feature_enabled(guild_id, 'casino_games'):
             await interaction.response.send_message("❌ 이 서버에서는 강화 시스템이 비활성화되어 있습니다.", ephemeral=True)
             return
-
         await interaction.response.defer(ephemeral=True)
-
         user_id = interaction.user.id
         current_character = await self.get_user_character(user_id, guild_id)
-
-        # Check if user can change class (monthly limit)
         if current_character:
             last_change = current_character['last_change']
             now = datetime.now(timezone.utc)
             time_diff = now - last_change.replace(tzinfo=timezone.utc)
-
             if time_diff.days < 30:
                 days_remaining = 30 - time_diff.days
                 await interaction.followup.send(
-                    f"❌ 직업 변경은 월 1회만 가능합니다.\n"
-                    f"다음 변경 가능일: {days_remaining}일 후\n"
-                    f"현재 직업: {self.character_classes[current_character['class']]['emoji']} {current_character['class']}",
-                    ephemeral=True
-                )
+                    f"❌ 직업 변경은 월 1회만 가능합니다.\n다음 변경 가능일: {days_remaining}일 후\n현재 직업: {self.character_classes[current_character['class']]['emoji']} {current_character['class']}",
+                    ephemeral=True)
                 return
-
         try:
-            # Update or create character
-            await self.bot.pool.execute("""
-                INSERT INTO user_characters (user_id, guild_id, character_class, last_class_change)
-                VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
-                ON CONFLICT (user_id, guild_id)
-                DO UPDATE SET 
-                    character_class = EXCLUDED.character_class,
-                    last_class_change = EXCLUDED.last_class_change
-            """, user_id, guild_id, character_class)
-
+            await self.bot.pool.execute(
+                "INSERT INTO user_characters (user_id, guild_id, character_class, last_class_change) VALUES ($1, $2, $3, CURRENT_TIMESTAMP) ON CONFLICT (user_id, guild_id) DO UPDATE SET character_class = EXCLUDED.character_class, last_class_change = EXCLUDED.last_class_change",
+                user_id, guild_id, character_class)
             class_info = self.character_classes[character_class]
-            embed = discord.Embed(
-                title="✅ 직업 선택 완료!",
-                description=f"{class_info['emoji']} **{class_info['name']}**으로 전직했습니다!",
-                color=discord.Color.green()
-            )
+            embed = discord.Embed(title="✅ 직업 선택 완료!",
+                                  description=f"{class_info['emoji']} **{class_info['name']}**으로 전직했습니다!",
+                                  color=discord.Color.green())
             embed.add_field(name="직업 설명", value=class_info['description'], inline=False)
             embed.add_field(name="주요 능력치", value=" / ".join(class_info['primary_stats']), inline=True)
             embed.add_field(name="다음 변경 가능", value="30일 후", inline=True)
-
-            # Send confirmation to user
             await interaction.followup.send("직업 선택이 완료되었습니다! 자랑 채널에 게시되었습니다.", ephemeral=True)
-
-            # Post to show-off channel
             showoff_channel = self.bot.get_channel(self.showoff_channel_id)
             if showoff_channel:
                 embed.add_field(name="플레이어", value=interaction.user.mention, inline=True)
                 embed.title = f"🎯 새로운 {character_class}이(가) 탄생했습니다!"
                 await showoff_channel.send(embed=embed)
-
             self.logger.info(f"사용자 {user_id}가 {character_class}로 전직했습니다.", extra={'guild_id': guild_id})
-
         except Exception as e:
             await interaction.followup.send(f"❌ 직업 선택 중 오류가 발생했습니다: {e}", ephemeral=True)
             self.logger.error(f"직업 선택 오류: {e}", extra={'guild_id': guild_id})
@@ -1667,57 +1202,37 @@ class EnhancementCog(commands.Cog):
     @app_commands.describe(user="확인할 사용자 (비어두면 본인)")
     async def character_sheet(self, interaction: discord.Interaction, user: discord.Member = None):
         guild_id = interaction.guild.id
-
         if not config.is_feature_enabled(guild_id, 'casino_games'):
             await interaction.response.send_message("❌ 이 서버에서는 강화 시스템이 비활성화되어 있습니다.", ephemeral=True)
             return
-
         await interaction.response.defer(ephemeral=True)
-
         target_user = user or interaction.user
         character_data = await self.get_user_character(target_user.id, guild_id)
-
         if not character_data:
-            embed = discord.Embed(
-                title="❗ 캐릭터 미생성",
-                description="`/직업선택` 명령어로 먼저 캐릭터를 생성해주세요!",
-                color=discord.Color.red()
-            )
+            embed = discord.Embed(title="❗ 캐릭터 미생성", description="`/직업선택` 명령어로 먼저 캐릭터를 생성해주세요!",
+                                  color=discord.Color.red())
             await interaction.followup.send(embed=embed, ephemeral=True)
             return
-
-        # Get equipped items and stats
         equipped_items = await self.get_equipped_items(target_user.id, guild_id)
         total_stats = await self.calculate_total_stats(target_user.id, guild_id)
         combat_power = self.calculate_combat_power(total_stats, character_data['class'])
-
         class_info = self.character_classes[character_data['class']]
-        embed = discord.Embed(
-            title=f"{class_info['emoji']} {target_user.display_name}의 캐릭터",
-            color=discord.Color.blue()
-        )
-
+        embed = discord.Embed(title=f"{class_info['emoji']} {target_user.display_name}의 캐릭터",
+                              color=discord.Color.blue())
         embed.add_field(name="직업", value=f"{class_info['emoji']} {class_info['name']}", inline=True)
         embed.add_field(name="⚔️ 전투력", value=f"**{combat_power:,}**", inline=True)
         embed.add_field(name="생성일", value=character_data['created_at'].strftime("%Y-%m-%d"), inline=True)
-
-        # Total stats
         stats_text = ""
         for stat, value in total_stats.items():
             if value > 0:
                 stats_text += f"**{stat.upper()}**: {value:,}\n"
-
         if stats_text:
             embed.add_field(name="📊 총 능력치", value=stats_text, inline=False)
-
-        # Equipment display
         equipment_text = ""
         slot_emojis = {
-            "무기": "⚔️", "보조무기": "🛡️", "모자": "👑", "상의": "👕",
-            "하의": "👖", "신발": "👟", "장갑": "🧤", "망토": "🦹",
-            "목걸이": "📿", "귀걸이": "💎", "반지": "💍", "벨트": "⚡"
+            "무기": "⚔️", "보조무기": "🛡️", "모자": "👑", "상의": "👕", "하의": "👖", "신발": "👟",
+            "장갑": "🧤", "망토": "🦹", "목걸이": "📿", "귀걸이": "💎", "반지": "💍", "벨트": "⚡"
         }
-
         for slot in self.equipment_slots:
             slot_emoji = slot_emojis.get(slot, "📦")
             if slot in equipped_items:
@@ -1728,10 +1243,7 @@ class EnhancementCog(commands.Cog):
                     equipment_text += f"{slot_emoji} **{slot}**: {template['emoji']} {template['name']} {enhancement}\n"
             else:
                 equipment_text += f"{slot_emoji} **{slot}**: -\n"
-
         embed.add_field(name="⚔️ 장착 장비", value=equipment_text or "장착된 장비가 없습니다.", inline=False)
-
-        # Only show management buttons if it's the user's own character
         if target_user.id == interaction.user.id:
             view = CharacterView(self.bot, interaction.user.id, guild_id, character_data, equipped_items)
             await interaction.followup.send(embed=embed, view=view, ephemeral=True)
@@ -1742,32 +1254,22 @@ class EnhancementCog(commands.Cog):
     @app_commands.describe(item_id="확인할 아이템 ID")
     async def item_info(self, interaction: discord.Interaction, item_id: str):
         guild_id = interaction.guild.id
-
         if not config.is_feature_enabled(guild_id, 'casino_games'):
             await interaction.response.send_message("❌ 이 서버에서는 강화 시스템이 비활성화되어 있습니다.", ephemeral=True)
             return
-
         await interaction.response.defer(ephemeral=True)
-
         try:
-            query = """
-                SELECT template_id, enhancement_level, is_equipped, created_at, fail_streak
-                FROM user_items
-                WHERE item_id = $1 AND user_id = $2 AND guild_id = $3
-            """
-            item_row = await self.bot.pool.fetchrow(query, item_id, interaction.user.id, guild_id)
-
+            item_row = await self.bot.pool.fetchrow(
+                "SELECT template_id, enhancement_level, is_equipped, created_at, fail_streak FROM user_items WHERE item_id = $1 AND user_id = $2 AND guild_id = $3",
+                item_id, interaction.user.id, guild_id)
             if not item_row:
                 await interaction.followup.send("❌ 해당 ID의 아이템을 찾을 수 없습니다.", ephemeral=True)
                 return
-
             template = self.get_item_template(item_row['template_id'])
             if not template:
                 await interaction.followup.send("❌ 아이템 정보를 불러올 수 없습니다.", ephemeral=True)
                 return
-
             await self.show_item_management(interaction, item_id)
-
         except Exception as e:
             await interaction.followup.send(f"❌ 아이템 정보 조회 중 오류가 발생했습니다: {e}", ephemeral=True)
             self.logger.error(f"아이템 정보 조회 오류: {e}", extra={'guild_id': guild_id})
@@ -1808,7 +1310,6 @@ class EnhancementResultView(discord.ui.View):
         if interaction.user.id != self.user_id:
             await interaction.response.send_message("다른 사용자의 아이템을 강화할 수 없습니다.", ephemeral=True)
             return
-
         try:
             await self.enhancement_cog.handle_enhancement(interaction, self.item_row['item_id'])
         except Exception as e:
@@ -1819,7 +1320,6 @@ class EnhancementResultView(discord.ui.View):
         if interaction.user.id != self.user_id:
             await interaction.response.send_message("다른 사용자의 아이템을 장착할 수 없습니다.", ephemeral=True)
             return
-
         try:
             await self.enhancement_cog.equip_item(interaction, self.item_row['item_id'])
         except Exception as e:
@@ -1830,7 +1330,6 @@ class EnhancementResultView(discord.ui.View):
         if interaction.user.id != self.user_id:
             await interaction.response.send_message("다른 사용자의 아이템을 판매할 수 없습니다.", ephemeral=True)
             return
-
         try:
             await self.enhancement_cog.show_market_sell_confirmation(interaction, self.item_row['item_id'])
         except Exception as e:
@@ -1841,13 +1340,11 @@ class EnhancementResultView(discord.ui.View):
         for child in self.children:
             if isinstance(child, discord.ui.Button):
                 child.disabled = True
-
-        # Try to edit the message to reflect the change, but don't fail if the message is gone
         try:
             if hasattr(self, 'message') and self.message:
                 await self.message.edit(view=self)
         except discord.NotFound:
-            pass  # Message was deleted
+            pass
 
 
 async def setup(bot):
