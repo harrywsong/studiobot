@@ -616,15 +616,17 @@ class EnhancementCog(commands.Cog):
         }
         rarity_multiplier = rarity_multipliers.get(template.get('rarity'), 0.2)
 
-        if enhancement_level <= 15:
+        # Change: start exponential growth from +10 instead of +16
+        if enhancement_level <= 9:
             enhancement_multiplier = 1.0
         else:
-            enhancement_multiplier = 1.15 ** (enhancement_level - 15)
+            enhancement_multiplier = 1.15 ** (enhancement_level - 10)
 
         final_price = int(base_price * rarity_multiplier * enhancement_multiplier)
 
         min_price = 5 + enhancement_level
         return max(final_price, min_price)
+
 
     def calculate_combat_power(self, stats: Dict[str, int], character_class: str, slot_type: str = None) -> int:
         """Balanced combat power calculation"""
