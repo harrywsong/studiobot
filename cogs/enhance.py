@@ -61,13 +61,14 @@ class EnhancementView(discord.ui.View):
         await interaction.response.defer()
         await self.enhancement_cog.show_detailed_item_info(interaction, self.item_row['item_id'])
 
-    @discord.ui.button(label="💰 마켓 판매", style=discord.ButtonStyle.secondary)
-    async def sell_to_market(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(label="🏪 상점 판매", style=discord.ButtonStyle.secondary)
+    async def sell_to_vendor(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Changed from sell_to_market to sell_to_vendor"""
         if interaction.user.id != self.user_id:
             await interaction.response.send_message("다른 사용자의 아이템을 판매할 수 없습니다.", ephemeral=True)
             return
         await interaction.response.defer()
-        await self.enhancement_cog.show_market_sell_confirmation(interaction, self.item_row['item_id'])
+        await self.enhancement_cog.show_vendor_sell_confirmation(interaction, self.item_row['item_id'])
 
     @discord.ui.button(label="⬅️ 뒤로 가기", style=discord.ButtonStyle.secondary)
     async def go_back(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -77,22 +78,22 @@ class EnhancementView(discord.ui.View):
         await self.enhancement_cog.show_item_management(interaction, self.item_row['item_id'])
         self.stop()
 
-class MarketSellConfirmView(discord.ui.View):
-    """Confirmation view for automatic market pricing"""
 
-    def __init__(self, bot, item_id: str, calculated_price: int, template: dict, enhancement_level: int):
+class VendorSellConfirmView(discord.ui.View):
+    """Confirmation view for vendor selling"""
+
+    def __init__(self, bot, item_id: str, sell_price: int, template: dict):
         super().__init__(timeout=300)
         self.bot = bot
         self.item_id = item_id
-        self.calculated_price = calculated_price
+        self.sell_price = sell_price
         self.template = template
-        self.enhancement_level = enhancement_level
 
     @discord.ui.button(label="✅ 판매 확인", style=discord.ButtonStyle.success)
     async def confirm_sell(self, interaction: discord.Interaction, button: discord.ui.Button):
         enhancement_cog = self.bot.get_cog('EnhancementCog')
         if enhancement_cog:
-            await enhancement_cog.list_item_on_market(interaction, self.item_id, self.calculated_price)
+            await enhancement_cog.sell_to_vendor(interaction, self.item_id, self.sell_price)
 
     @discord.ui.button(label="❌ 취소", style=discord.ButtonStyle.danger)
     async def cancel_sell(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -217,11 +218,11 @@ class ItemManagementView(discord.ui.View):
         equip_button.callback = self.toggle_equip
         self.add_item(equip_button)
 
-        # Market sell button
-        market_button = discord.ui.Button(label="💰 마켓 판매", style=discord.ButtonStyle.secondary,
-                                          custom_id="market_sell")
-        market_button.callback = self.market_sell
-        self.add_item(market_button)
+        # Vendor sell button (changed from market sell)
+        vendor_button = discord.ui.Button(label="🏪 상점 판매", style=discord.ButtonStyle.secondary,
+                                          custom_id="vendor_sell")
+        vendor_button.callback = self.vendor_sell
+        self.add_item(vendor_button)
 
         # Back button
         back_button = discord.ui.Button(label="⬅️ 뒤로 가기", style=discord.ButtonStyle.secondary)
@@ -244,11 +245,12 @@ class ItemManagementView(discord.ui.View):
         await interaction.response.defer()
         await self.enhancement_cog.handle_enhancement(interaction, self.item_row['item_id'])
 
-    async def market_sell(self, interaction: discord.Interaction):
+    async def vendor_sell(self, interaction: discord.Interaction):
+        """Changed from market_sell to vendor_sell"""
         if interaction.user.id != self.user_id:
             await interaction.response.send_message("다른 사용자의 아이템을 판매할 수 없습니다.", ephemeral=True)
             return
-        await self.enhancement_cog.show_market_sell_confirmation(interaction, self.item_row['item_id'])
+        await self.enhancement_cog.show_vendor_sell_confirmation(interaction, self.item_row['item_id'])
 
     async def go_back(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id:
@@ -256,74 +258,6 @@ class ItemManagementView(discord.ui.View):
             return
         await self.enhancement_cog.show_inventory(interaction)
         self.stop()
-
-
-class MarketplaceView(discord.ui.View):
-    """Paginated marketplace with dropdown selection"""
-
-    def __init__(self, bot, market_items: List, page: int = 0, items_per_page: int = 10):
-        super().__init__(timeout=300)
-        self.bot = bot
-        self.market_items = market_items
-        self.page = page
-        self.items_per_page = items_per_page
-        self.enhancement_cog = bot.get_cog("EnhancementCog")
-        self.refresh_view()
-
-    def refresh_view(self):
-        self.clear_items()
-        start = self.page * self.items_per_page
-        end = start + self.items_per_page
-        current_items = self.market_items[start:end]
-
-        # Dropdown
-        options = []
-        for entry, template in current_items:
-            enh = f"+{entry['enhancement_level']}" if entry['enhancement_level'] > 0 else ""
-            label = f"{template['emoji']} {template['name'][:20]} {enh}"
-            desc = f"{template['slot_type']} | {entry['price']:,} 코인"
-            options.append(discord.SelectOption(label=label, description=desc, value=entry['market_id']))
-        if options:
-            select = discord.ui.Select(placeholder="구매할 아이템을 선택하세요", options=options, custom_id="market_select")
-            select.callback = self.select_callback
-            self.add_item(select)
-
-        # Navigation
-        if self.page > 0:
-            prev_btn = discord.ui.Button(label="⬅ 이전", style=discord.ButtonStyle.secondary, custom_id="prev_page")
-            prev_btn.callback = self.prev_page
-            self.add_item(prev_btn)
-
-        max_page = (len(self.market_items) - 1) // self.items_per_page
-        if self.page < max_page:
-            next_btn = discord.ui.Button(label="➡ 다음", style=discord.ButtonStyle.secondary, custom_id="next_page")
-            next_btn.callback = self.next_page
-            self.add_item(next_btn)
-
-        # Back button
-        back_button = discord.ui.Button(label="⬅️ 뒤로 가기", style=discord.ButtonStyle.secondary)
-        back_button.callback = self.go_back
-        self.add_item(back_button)
-
-    async def select_callback(self, interaction: discord.Interaction):
-        market_id = interaction.data["values"][0]
-        await self.enhancement_cog.handle_market_purchase(interaction, market_id)
-
-    async def prev_page(self, interaction: discord.Interaction):
-        self.page = max(0, self.page - 1)
-        self.refresh_view()
-        await interaction.response.edit_message(view=self)
-
-    async def next_page(self, interaction: discord.Interaction):
-        max_page = (len(self.market_items) - 1) // self.items_per_page
-        self.page = min(max_page, self.page + 1)
-        self.refresh_view()
-        await interaction.response.edit_message(view=self)
-
-    async def go_back(self, interaction: discord.Interaction):
-        await self.enhancement_cog.show_inventory(interaction)
-        self.stop()
-
 
 class CharacterView(discord.ui.View):
     """Enhanced character sheet view"""
@@ -475,7 +409,6 @@ class EnhancementCog(commands.Cog):
         self.item_pool = self.load_item_pool()
         self.last_enhancement_message: Dict[str, discord.Message] = {}
         self.active_enhancement_messages = {}
-        self.marketplace_message: Optional[discord.Message] = None
 
 
         self.character_classes = {
@@ -542,7 +475,6 @@ class EnhancementCog(commands.Cog):
         }
 
         self.fail_streaks = {}
-        self.marketplace_channel_id = 1421286971623477422
         self.showoff_channel_id = 1421290649277435904
         self.bot.loop.create_task(self.setup_system())
 
@@ -652,17 +584,24 @@ class EnhancementCog(commands.Cog):
         base = rarity_prices.get(rarity, 100)
         return int(base * (tier + 1) * 1.5)
 
-    def calculate_market_price(self, template: Dict, enhancement_level: int) -> int:
-        """Calculate automatic market price based on item stats and enhancement"""
-        base_price = template['base_price']
-        enhancement_multiplier = 1 + (enhancement_level * 0.15)
-        rarity_market_multipliers = {
-            "일반": 1.0, "고급": 1.5, "희귀": 2.2, "영웅": 3.5,
-            "고유": 5.5, "전설": 8.0, "신화": 12.0
+    def calculate_vendor_sell_price(self, template: Dict, enhancement_level: int) -> int:
+        """Calculate fair system vendor sell price"""
+        base_price = template.get('base_price', 100)
+
+        # Much more conservative rarity multipliers
+        rarity_multipliers = {
+            "일반": 0.3, "고급": 0.5, "희귀": 0.7, "영웅": 1.0,
+            "고유": 1.4, "전설": 2.0, "신화": 2.8
         }
-        rarity_multiplier = rarity_market_multipliers.get(template['rarity'], 1.0)
+
+        # Enhancement adds modest value (5% per level instead of 15%)
+        enhancement_multiplier = 1 + (enhancement_level * 0.05)
+
+        rarity_multiplier = rarity_multipliers.get(template['rarity'], 0.3)
         final_price = int(base_price * enhancement_multiplier * rarity_multiplier)
-        min_price = 5 + (enhancement_level * 10)
+
+        # Reasonable minimum price
+        min_price = 3 + (enhancement_level * 2)
         return max(final_price, min_price)
 
     def calculate_combat_power(self, stats: Dict[str, int], character_class: str) -> int:
@@ -703,7 +642,6 @@ class EnhancementCog(commands.Cog):
         """시스템 초기화"""
         await self.bot.wait_until_ready()
         await self.setup_database()
-        await self.setup_marketplace_message()
         for guild in self.bot.guilds:
             await self.post_or_update_leaderboard(guild)
 
@@ -743,13 +681,24 @@ class EnhancementCog(commands.Cog):
                     result VARCHAR(20) NOT NULL, cost INTEGER NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
-            # Marketplace table
+            # Dungeon progress table (NEW)
             await self.bot.pool.execute("""
-                CREATE TABLE IF NOT EXISTS marketplace (
-                    market_id VARCHAR(50) PRIMARY KEY, seller_id BIGINT NOT NULL, guild_id BIGINT NOT NULL,
-                    item_id VARCHAR(50) NOT NULL, template_id INTEGER NOT NULL, enhancement_level INTEGER NOT NULL,
-                    price INTEGER NOT NULL, listed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (item_id) REFERENCES user_items(item_id) ON DELETE CASCADE
+                CREATE TABLE IF NOT EXISTS dungeon_progress (
+                    user_id BIGINT, guild_id BIGINT, dungeon_name VARCHAR(50),
+                    completions INTEGER DEFAULT 0, best_time INTEGER DEFAULT 0,
+                    last_attempt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (user_id, guild_id, dungeon_name)
+                )
+            """)
+
+            # Arena stats table (NEW)
+            await self.bot.pool.execute("""
+                CREATE TABLE IF NOT EXISTS arena_stats (
+                    user_id BIGINT, guild_id BIGINT, tier VARCHAR(20) DEFAULT '브론즈',
+                    wins INTEGER DEFAULT 0, losses INTEGER DEFAULT 0,
+                    current_streak INTEGER DEFAULT 0, best_streak INTEGER DEFAULT 0,
+                    last_battle TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (user_id, guild_id)
                 )
             """)
             # Create indexes
@@ -757,100 +706,12 @@ class EnhancementCog(commands.Cog):
                 "CREATE INDEX IF NOT EXISTS idx_user_items_user_guild ON user_items(user_id, guild_id);")
             await self.bot.pool.execute(
                 "CREATE INDEX IF NOT EXISTS idx_user_equipment_user_guild ON user_equipment(user_id, guild_id);")
-            await self.bot.pool.execute(
-                "CREATE INDEX IF NOT EXISTS idx_marketplace_guild ON marketplace(guild_id, listed_at DESC);")
             self.logger.info("강화 시스템 데이터베이스가 준비되었습니다.")
         except Exception as e:
             self.logger.error(f"데이터베이스 설정 실패: {e}")
 
-    async def setup_marketplace_message(self):
-        """Ensure marketplace message exists on startup"""
-        try:
-            channel = self.bot.get_channel(self.marketplace_channel_id)
-            if not channel:
-                self.logger.error(f"Marketplace channel {self.marketplace_channel_id} not found")
-                return
 
-            # Delete old marketplace messages (cleanup only once)
-            async for message in channel.history(limit=20):
-                if message.author == self.bot.user:
-                    try:
-                        await message.delete()
-                        await asyncio.sleep(0.5)
-                    except:
-                        pass
 
-            await self.create_marketplace_message()
-
-        except Exception as e:
-            self.logger.error(f"Marketplace setup error: {e}")
-
-    async def create_marketplace_message(self):
-        """Create or update marketplace message without duplicates"""
-        try:
-            channel = self.bot.get_channel(self.marketplace_channel_id)
-            if not channel:
-                return
-
-            market_items = await self.get_marketplace_items()
-            embed = discord.Embed(
-                title="🏪 아이템 마켓플레이스",
-                description="다른 플레이어들이 판매하는 아이템을 구매해보세요!",
-                color=discord.Color.gold(),
-                timestamp=datetime.now(timezone.utc)
-            )
-
-            if not market_items:
-                embed.add_field(
-                    name="📦 현재 판매중인 아이템이 없습니다",
-                    value="다른 플레이어들이 아이템을 올릴 때까지 기다려주세요!",
-                    inline=False
-                )
-                view = None
-            else:
-                items_text = ""
-                for i, (entry, template) in enumerate(market_items[:10], start=1):
-                    rarity_info = self.item_rarities[template['rarity']]
-                    enh = f"+{entry['enhancement_level']}" if entry['enhancement_level'] > 0 else ""
-                    items_text += (
-                        f"**{i}.** {template['emoji']} **{template['name']}** {enh}\n"
-                        f"   {rarity_info['name']} | {template['slot_type']} | 💰 **{entry['price']:,}** 코인\n"
-                        f"   판매자: <@{entry['seller_id']}> | ID: `{entry['market_id']}`\n\n"
-                    )
-
-                embed.add_field(name="🛒 판매중인 아이템", value=items_text, inline=False)
-                embed.set_footer(
-                    text="드롭다운으로 아이템을 구매하세요! (10분마다 자동 갱신)\n"
-                         "❌ 판매 취소: /마켓제거 <market_id>"
-                )
-                view = MarketplaceView(self.bot, market_items)
-
-            # --- Reuse or create message ---
-            if self.marketplace_message:
-                try:
-                    await self.marketplace_message.edit(embed=embed, view=view)
-                except discord.NotFound:
-                    self.marketplace_message = await channel.send(embed=embed, view=view)
-            else:
-                self.marketplace_message = await channel.send(embed=embed, view=view)
-
-        except Exception as e:
-            self.logger.error(f"Marketplace message creation error: {e}")
-
-    async def get_marketplace_items(self) -> List[Tuple]:
-        """Get current marketplace items"""
-        try:
-            query = "SELECT m.market_id, m.seller_id, m.template_id, m.enhancement_level, m.price, m.listed_at, m.guild_id FROM marketplace m ORDER BY m.listed_at DESC LIMIT 20"
-            rows = await self.bot.pool.fetch(query)
-            items = []
-            for row in rows:
-                template = self.get_item_template(row['template_id'])
-                if template:
-                    items.append((row, template))
-            return items
-        except Exception as e:
-            self.logger.error(f"Error getting marketplace items: {e}")
-            return []
 
     async def get_user_character(self, user_id: int, guild_id: int) -> Optional[Dict]:
         """사용자 캐릭터 정보 조회"""
@@ -1156,155 +1017,92 @@ class EnhancementCog(commands.Cog):
             self.logger.error(f"장착 해제 오류: {e}", extra={'guild_id': guild_id})
             await interaction.followup.send(f"❌ 장착 해제 중 오류가 발생했습니다: {e}", ephemeral=True)
 
-    async def show_market_sell_confirmation(self, interaction: discord.Interaction, item_id: str):
-        """Show automatic price calculation and confirmation"""
+    async def show_vendor_sell_confirmation(self, interaction: discord.Interaction, item_id: str):
+        """Show system vendor sell confirmation"""
         await interaction.response.defer(ephemeral=True)
         user_id = interaction.user.id
         guild_id = interaction.guild.id
-        try:
-            item_row = await self.bot.pool.fetchrow(
-                "SELECT ui.item_id, ui.template_id, ui.enhancement_level, ui.is_equipped FROM user_items ui WHERE ui.item_id = $1 AND ui.user_id = $2 AND ui.guild_id = $3",
-                item_id, user_id, guild_id)
-            if not item_row:
-                await interaction.followup.send("❌ 아이템을 찾을 수 없습니다.", ephemeral=True)
-                return
-            template = self.get_item_template(item_row['template_id'])
-            if not template:
-                await interaction.followup.send("❌ 아이템 정보를 불러올 수 없습니다.", ephemeral=True)
-                return
-            calculated_price = self.calculate_market_price(template, item_row['enhancement_level'])
-            rarity_info = self.item_rarities[template['rarity']]
-            embed = discord.Embed(title="🏪 마켓 판매 확인", color=rarity_info['color'], timestamp=datetime.now(timezone.utc))
-            enhancement_text = f"+{item_row['enhancement_level']}" if item_row['enhancement_level'] > 0 else ""
-            item_display = f"{template['emoji']} **{template['name']}** {enhancement_text}"
-            embed.add_field(name="판매할 아이템", value=item_display, inline=False)
-            embed.add_field(name="등급", value=rarity_info['name'], inline=True)
-            embed.add_field(name="강화 레벨", value=f"+{item_row['enhancement_level']}", inline=True)
-            embed.add_field(name="💰 자동 계산된 가격", value=f"{calculated_price:,} 코인", inline=True)
-            embed.set_footer(text="가격은 아이템의 등급, 강화 레벨, 기본 능력치를 바탕으로 자동 계산됩니다.")
-            view = MarketSellConfirmView(self.bot, item_id, calculated_price, template, item_row['enhancement_level'])
-            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
-        except Exception as e:
-            self.logger.error(f"마켓 가격 계산 오류: {e}", extra={'guild_id': guild_id})
-            await interaction.followup.send(f"❌ 가격 계산 중 오류가 발생했습니다: {e}", ephemeral=True)
 
-    async def list_item_on_market(self, interaction: discord.Interaction, item_id: str, price: int):
-        """List item on marketplace"""
-        await interaction.response.defer(ephemeral=True)
-        user_id = interaction.user.id
-        guild_id = interaction.guild.id
         try:
             item_row = await self.bot.pool.fetchrow(
-                "SELECT ui.item_id, ui.template_id, ui.enhancement_level, ui.is_equipped FROM user_items ui WHERE ui.item_id = $1 AND ui.user_id = $2 AND ui.guild_id = $3",
+                "SELECT item_id, template_id, enhancement_level, is_equipped FROM user_items WHERE item_id = $1 AND user_id = $2 AND guild_id = $3",
                 item_id, user_id, guild_id)
+
             if not item_row:
-                await interaction.followup.send("❌ 아이템을 찾을 수 없습니다.", ephemeral=True)
+                await interaction.followup.send("아이템을 찾을 수 없습니다.", ephemeral=True)
                 return
+
             if item_row['is_equipped']:
-                await interaction.followup.send("❌ 장착된 아이템은 판매할 수 없습니다. 먼저 장착을 해제해주세요.", ephemeral=True)
+                await interaction.followup.send("장착된 아이템은 판매할 수 없습니다.", ephemeral=True)
                 return
+
             template = self.get_item_template(item_row['template_id'])
             if not template:
-                await interaction.followup.send("❌ 아이템 정보를 불러올 수 없습니다.", ephemeral=True)
+                await interaction.followup.send("아이템 정보를 불러올 수 없습니다.", ephemeral=True)
                 return
-            market_id = str(uuid.uuid4())[:8]
-            await self.bot.pool.execute(
-                "INSERT INTO marketplace (market_id, seller_id, guild_id, item_id, template_id, enhancement_level, price) VALUES ($1, $2, $3, $4, $5, $6, $7)",
-                market_id, user_id, guild_id, item_id, item_row['template_id'], item_row['enhancement_level'], price)
-            await self.bot.pool.execute("UPDATE user_items SET user_id = -1 WHERE item_id = $1", item_id)
+
+            sell_price = self.calculate_vendor_sell_price(template, item_row['enhancement_level'])
             rarity_info = self.item_rarities[template['rarity']]
-            embed = discord.Embed(title="🏪 마켓 등록 완료!", color=discord.Color.gold(), timestamp=datetime.now(timezone.utc))
+
+            embed = discord.Embed(
+                title="🏪 상점 판매 확인",
+                color=rarity_info['color']
+            )
+
             enhancement_text = f"+{item_row['enhancement_level']}" if item_row['enhancement_level'] > 0 else ""
             item_display = f"{template['emoji']} **{template['name']}** {enhancement_text}"
-            embed.add_field(name="등록된 아이템", value=item_display, inline=False)
-            embed.add_field(name="판매 가격", value=f"{price:,} 코인", inline=True)
+
+            embed.add_field(name="판매할 아이템", value=item_display, inline=False)
+            embed.add_field(name="💰 상점 판매가", value=f"{sell_price:,} 코인", inline=True)
             embed.add_field(name="등급", value=rarity_info['name'], inline=True)
-            embed.set_footer(text="다른 플레이어들이 구매할 수 있습니다!")
-            await interaction.followup.send("마켓 등록이 완료되었습니다! 자랑 채널에 게시되었습니다.", ephemeral=True)
-            showoff_channel = self.bot.get_channel(self.showoff_channel_id)
-            if showoff_channel:
-                embed.add_field(name="판매자", value=interaction.user.mention, inline=True)
-                embed.title = "🏪 새로운 아이템이 마켓에 등록되었습니다!"
-                await showoff_channel.send(embed=embed)
-            await self.create_marketplace_message()
-            await self.post_or_update_leaderboard(interaction.guild)
+            embed.set_footer(text="상점 NPC가 공정한 가격으로 구매해드립니다!")
+
+            view = VendorSellConfirmView(self.bot, item_id, sell_price, template)
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
         except Exception as e:
-            self.logger.error(f"마켓 등록 오류: {e}", extra={'guild_id': guild_id})
-            await interaction.followup.send(f"❌ 마켓 등록 중 오류가 발생했습니다: {e}", ephemeral=True)
+            await interaction.followup.send(f"오류가 발생했습니다: {e}", ephemeral=True)
 
-    async def handle_market_purchase(self, interaction: discord.Interaction, market_id: str):
-        """Handle marketplace item purchase"""
+    async def sell_to_vendor(self, interaction: discord.Interaction, item_id: str, sell_price: int):
+        """Sell item to system vendor"""
         await interaction.response.defer(ephemeral=True)
         user_id = interaction.user.id
         guild_id = interaction.guild.id
+
         try:
-            market_entry = await self.bot.pool.fetchrow(
-                "SELECT m.market_id, m.seller_id, m.item_id, m.template_id, m.enhancement_level, m.price, m.guild_id FROM marketplace m WHERE m.market_id = $1",
-                market_id)
-            if not market_entry:
-                await interaction.followup.send("❌ 해당 아이템이 이미 판매되었거나 존재하지 않습니다.", ephemeral=True)
+            # Verify item still exists and belongs to user
+            item_row = await self.bot.pool.fetchrow(
+                "SELECT template_id, enhancement_level FROM user_items WHERE item_id = $1 AND user_id = $2 AND guild_id = $3",
+                item_id, user_id, guild_id)
+
+            if not item_row:
+                await interaction.followup.send("아이템을 찾을 수 없습니다.", ephemeral=True)
                 return
-            if market_entry['seller_id'] == user_id:
-                await interaction.followup.send("❌ 자신이 판매한 아이템은 구매할 수 없습니다.", ephemeral=True)
-                return
-            template = self.get_item_template(market_entry['template_id'])
-            if not template:
-                await interaction.followup.send("❌ 아이템 정보를 불러올 수 없습니다.", ephemeral=True)
-                return
-            price = market_entry['price']
+
+            template = self.get_item_template(item_row['template_id'])
+
+            # Remove item from database
+            await self.bot.pool.execute("DELETE FROM user_items WHERE item_id = $1", item_id)
+
+            # Add coins to user
             coins_cog = self.bot.get_cog('CoinsCog')
-            if not coins_cog:
-                await interaction.followup.send("❌ 코인 시스템을 사용할 수 없습니다.", ephemeral=True)
-                return
-            current_coins = await coins_cog.get_user_coins(user_id, guild_id)
-            if current_coins < price:
-                await interaction.followup.send(f"❌ 코인이 부족합니다!\n필요: {price:,} 코인\n보유: {current_coins:,} 코인",
-                                                ephemeral=True)
-                return
-            if not await coins_cog.remove_coins(user_id, guild_id, price, "market_purchase",
-                                                f"마켓 구매: {template['name']}"):
-                await interaction.followup.send("❌ 코인 차감 중 오류가 발생했습니다.", ephemeral=True)
-                return
-            seller_amount = int(price * 0.9)
-            await coins_cog.add_coins(market_entry['seller_id'], guild_id, seller_amount, "market_sale",
-                                      f"마켓 판매: {template['name']}")
-            await self.bot.pool.execute(
-                "UPDATE user_items SET user_id = $1, is_equipped = FALSE, equipped_slot = NULL WHERE item_id = $2",
-                user_id, market_entry['item_id'])
-            await self.bot.pool.execute("DELETE FROM marketplace WHERE market_id = $1", market_id)
-            rarity_info = self.item_rarities[template['rarity']]
-            embed = discord.Embed(title="🛒 구매 완료!", color=discord.Color.green(), timestamp=datetime.now(timezone.utc))
-            enhancement_text = f"+{market_entry['enhancement_level']}" if market_entry['enhancement_level'] > 0 else ""
+            if coins_cog:
+                await coins_cog.add_coins(user_id, guild_id, sell_price, "vendor_sale", f"상점 판매: {template['name']}")
+
+            # Show success message
+            embed = discord.Embed(title="💰 판매 완료!", color=discord.Color.green())
+            enhancement_text = f"+{item_row['enhancement_level']}" if item_row['enhancement_level'] > 0 else ""
             item_display = f"{template['emoji']} **{template['name']}** {enhancement_text}"
-            embed.add_field(name="구매한 아이템", value=item_display, inline=False)
-            embed.add_field(name="💰 지불 금액", value=f"{price:,} 코인", inline=True)
-            embed.add_field(name="💳 남은 코인", value=f"{current_coins - price:,} 코인", inline=True)
-            embed.add_field(name="등급", value=rarity_info['name'], inline=True)
-            embed.set_footer(text="아이템이 인벤토리에 추가되었습니다!")
-            await interaction.followup.send("구매가 완료되었습니다! 자랑 채널에 게시되었습니다.", ephemeral=True)
-            showoff_channel = self.bot.get_channel(self.showoff_channel_id)
-            if showoff_channel:
-                embed.add_field(name="구매자", value=interaction.user.mention, inline=True)
-                embed.title = "🛒 마켓에서 아이템 구매!"
-                await showoff_channel.send(embed=embed)
-            try:
-                seller = self.bot.get_user(market_entry['seller_id'])
-                if seller:
-                    seller_embed = discord.Embed(title="💰 아이템 판매 완료!",
-                                                 description=f"{item_display}이(가) {price:,} 코인에 판매되었습니다!",
-                                                 color=discord.Color.gold())
-                    seller_embed.add_field(name="수수료 차감 후 수익", value=f"{seller_amount:,} 코인", inline=True)
-                    await seller.send(embed=seller_embed)
-            except:
-                pass
-            await self.create_marketplace_message()
-            self.logger.info(f"마켓 거래 완료: {user_id}가 {template['name']}을 {price:,} 코인에 구매", extra={'guild_id': guild_id})
-            await self.post_or_update_leaderboard(interaction.guild)
+
+            embed.add_field(name="판매된 아이템", value=item_display, inline=False)
+            embed.add_field(name="💰 획득 코인", value=f"{sell_price:,} 코인", inline=True)
+            embed.set_footer(text="상점 NPC와의 거래가 완료되었습니다!")
+
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
         except Exception as e:
-            self.logger.error(f"마켓 구매 오류: {e}", extra={'guild_id': guild_id})
-            await interaction.followup.send(f"❌ 구매 중 오류가 발생했습니다: {e}", ephemeral=True)
+            await interaction.followup.send(f"판매 중 오류가 발생했습니다: {e}", ephemeral=True)
+
 
     async def get_equipped_items(self, user_id: int, guild_id: int) -> Dict[str, Dict]:
         """장착된 아이템 조회"""
@@ -1320,44 +1118,6 @@ class EnhancementCog(commands.Cog):
             self.logger.error(f"장착 아이템 조회 오류: {e}", extra={'guild_id': guild_id})
             return {}
 
-    async def remove_item_from_market(self, interaction: discord.Interaction, market_id: str):
-        """Allow a seller to remove their item from the marketplace"""
-        await interaction.response.defer(ephemeral=True)
-        user_id = interaction.user.id
-        guild_id = interaction.guild.id
-        try:
-            market_entry = await self.bot.pool.fetchrow(
-                "SELECT * FROM marketplace WHERE market_id = $1 AND guild_id = $2",
-                market_id, guild_id
-            )
-            if not market_entry:
-                await interaction.followup.send("❌ 해당 아이템이 마켓에 없습니다.", ephemeral=True)
-                return
-            if market_entry["seller_id"] != user_id:
-                await interaction.followup.send("❌ 자신이 등록한 아이템만 제거할 수 있습니다.", ephemeral=True)
-                return
-
-            # Return item to seller
-            await self.bot.pool.execute(
-                "UPDATE user_items SET user_id = $1 WHERE item_id = $2",
-                user_id, market_entry["item_id"]
-            )
-            await self.bot.pool.execute("DELETE FROM marketplace WHERE market_id = $1", market_id)
-
-            template = self.get_item_template(market_entry['template_id'])
-            embed = discord.Embed(
-                title="🗑️ 마켓 아이템 제거 완료",
-                description=f"{template['emoji']} **{template['name']}** 을(를) 마켓에서 제거했습니다.",
-                color=discord.Color.orange()
-            )
-            await interaction.followup.send(embed=embed, ephemeral=True)
-
-            # Refresh marketplace message
-            await self.create_marketplace_message()
-
-        except Exception as e:
-            self.logger.error(f"마켓 아이템 제거 오류: {e}", extra={'guild_id': guild_id})
-            await interaction.followup.send(f"❌ 아이템 제거 중 오류 발생: {e}", ephemeral=True)
 
     async def calculate_total_stats(self, user_id: int, guild_id: int) -> Dict[str, int]:
         """총 능력치 계산"""
@@ -1614,11 +1374,6 @@ class EnhancementCog(commands.Cog):
         else:
             await interaction.followup.send(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="마켓제거", description="자신이 올린 아이템을 마켓에서 제거합니다.")
-    async def market_remove(self, interaction: discord.Interaction, market_id: str):
-        """Slash command to remove your own item from the marketplace"""
-        await self.remove_item_from_market(interaction, market_id)
-
     @app_commands.command(name="아이템정보", description="특정 아이템의 상세 정보를 확인합니다.")
     @app_commands.describe(item_id="확인할 아이템 ID")
     async def item_info(self, interaction: discord.Interaction, item_id: str):
@@ -1643,23 +1398,10 @@ class EnhancementCog(commands.Cog):
             await interaction.followup.send(f"❌ 아이템 정보 조회 중 오류가 발생했습니다: {e}", ephemeral=True)
             self.logger.error(f"아이템 정보 조회 오류: {e}", extra={'guild_id': guild_id})
 
-    @tasks.loop(minutes=10)
-    async def update_marketplace(self):
-        """Update marketplace message every 10 minutes"""
-        try:
-            await self.create_marketplace_message()
-        except Exception as e:
-            self.logger.error(f"Marketplace update error: {e}")
-
-    @update_marketplace.before_loop
-    async def before_marketplace_update(self):
-        await self.bot.wait_until_ready()
-
     @commands.Cog.listener()
     async def on_ready(self):
-        """Setup when bot is ready"""
-        if not self.update_marketplace.is_running():
-            self.update_marketplace.start()
+        """Setup when bot is ready - removed marketplace tasks"""
+        pass  # No marketplace tasks needed anymore
 
 
 class EnhancementResultView(discord.ui.View):
@@ -1700,15 +1442,14 @@ class EnhancementResultView(discord.ui.View):
         except Exception as e:
             await interaction.response.send_message(f"오류가 발생했습니다: {e}", ephemeral=True)
 
-    @discord.ui.button(label="💰 마켓 판매", style=discord.ButtonStyle.secondary)
-    async def sell_item(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(label="🏪 상점 판매", style=discord.ButtonStyle.secondary)
+    async def sell_to_vendor(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Changed from sell_to_market to sell_to_vendor"""
         if interaction.user.id != self.user_id:
             await interaction.response.send_message("다른 사용자의 아이템을 판매할 수 없습니다.", ephemeral=True)
             return
-        try:
-            await self.enhancement_cog.show_market_sell_confirmation(interaction, self.item_row['item_id'])
-        except Exception as e:
-            await interaction.response.send_message(f"오류가 발생했습니다: {e}", ephemeral=True)
+        await interaction.response.defer()
+        await self.enhancement_cog.show_vendor_sell_confirmation(interaction, self.item_row['item_id'])
 
     @discord.ui.button(label="⬅️ 뒤로 가기", style=discord.ButtonStyle.secondary)
     async def go_back(self, interaction: discord.Interaction, button: discord.ui.Button):
