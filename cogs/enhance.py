@@ -26,6 +26,19 @@ class EnhancementView(discord.ui.View):
         self.item_row = item_row
         self.enhancement_cog = bot.get_cog('EnhancementCog')
 
+    async def on_timeout(self) -> None:
+        # Disable all buttons when the view times out
+        for child in self.children:
+            if isinstance(child, discord.ui.Button):
+                child.disabled = True
+
+        # Try to edit the message to reflect the change, but don't fail if the message is gone
+        try:
+            if hasattr(self, 'message') and self.message:
+                await self.message.edit(view=self)
+        except discord.NotFound:
+            pass  # Message was deleted
+
     @discord.ui.button(label="⭐ 강화하기", style=discord.ButtonStyle.primary, emoji="⚡")
     async def enhance_item(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.user_id:
@@ -220,9 +233,21 @@ class ItemManagementView(discord.ui.View):
 
         await self.enhancement_cog.show_market_sell_confirmation(interaction, self.item_row['item_id'])
 
+    async def on_timeout(self) -> None:
+        # Disable all buttons when the view times out
+        for child in self.children:
+            if isinstance(child, discord.ui.Button):
+                child.disabled = True
 
-class MarketplaceView(discord.ui.View):
-    """Marketplace viewing and purchasing interface"""
+        # Try to edit the message to reflect the change, but don't fail if the message is gone
+        try:
+            if hasattr(self, 'message') and self.message:
+                await self.message.edit(view=self)
+        except discord.NotFound:
+            pass  # Message was deleted
+
+    class MarketplaceView(discord.ui.View):
+        """Marketplace viewing and purchasing interface"""
 
     def __init__(self, bot, market_items: List):
         super().__init__(timeout=None)
@@ -284,9 +309,14 @@ class CharacterView(discord.ui.View):
 
 
 class EnhancementCog(commands.Cog):
+
     def __init__(self, bot):
         self.bot = bot
-        self.logger = get_logger("강화 시스템")
+        self.logger = get_logger(__name__)
+        self.db = self.bot.db
+
+        # Load item pool from JSON file instead of generating it every time
+        self.item_pool = self.load_item_pool()
 
         # Character classes
         self.character_classes = {
@@ -338,10 +368,6 @@ class EnhancementCog(commands.Cog):
 
         # Fail streak tracking for guaranteed success
         self.fail_streaks = {}  # user_id: consecutive_fails
-
-        # Massive item pool (300+ items)
-        self.item_pool = self.generate_item_pool()
-
         # Marketplace channel ID
         self.marketplace_channel_id = 1421286971623477422
         # Show-off channel ID for enhancement results and sales
@@ -349,185 +375,32 @@ class EnhancementCog(commands.Cog):
 
         self.bot.loop.create_task(self.setup_system())
 
-    def generate_item_pool(self) -> List[Dict]:
-        """Generate a massive pool of 300+ items with varied stats"""
-        items = []
+    def load_item_pool(self) -> List[Dict]:
+        """Load the massive item pool from a static JSON file."""
+        # Assumes item_templates.json is in the same directory as this cog file
+        file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'item_templates.json')
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                items = json.load(f)
+                # Ensure 'id' is int if needed elsewhere
+                for item in items:
+                     # Item IDs might be stored as strings in JSON keys, ensure proper type conversion
+                     if 'id' in item and isinstance(item['id'], str):
+                         item['id'] = int(item['id'])
+                self.logger.info(f"Loaded {len(items)} items from item_templates.json.")
+                return items
+        except FileNotFoundError:
+            self.logger.error(f"FATAL: item_templates.json not found at {file_path}. The item pool is empty.")
+            return []
+        except Exception as e:
+            self.logger.error(f"Error loading item_templates.json: {e}")
+            return []
 
-        # Weapon categories
-        weapon_types = {
-            "무기": {
-                "전사": ["대검", "도끼", "둔기", "창", "검"],
-                "법사": ["스태프", "완드", "마도서"],
-                "도적": ["단검", "클로", "단검"],
-                "궁수": ["활", "석궁", "투척무기"],
-                "해적": ["건", "너클", "총"]
-            }
-        }
 
-        # Armor types
-        armor_types = {
-            "모자": ["모자", "헬름", "바이저", "밴드", "캡"],
-            "상의": ["갑옷", "로브", "셔츠", "조끼", "재킷"],
-            "하의": ["바지", "스커트", "레깅스", "쇼츠"],
-            "신발": ["부츠", "신발", "샌들", "슬리퍼"],
-            "장갑": ["장갑", "글러브", "미트"],
-            "망토": ["망토", "케이프", "클로크"]
-        }
 
-        # Accessories
-        accessory_types = {
-            "목걸이": ["목걸이", "펜던트", "체인", "초커"],
-            "귀걸이": ["귀걸이", "이어링", "후프"],
-            "반지": ["반지", "링", "밴드"],
-            "벨트": ["벨트", "허리띠", "체인벨트"]
-        }
 
-        item_id = 1
 
-        # Generate weapons (80 items)
-        for class_name, weapons in weapon_types["무기"].items():
-            for weapon in weapons:
-                for tier in range(5):  # 5 tiers per weapon
-                    for rarity in self.item_rarities.keys():
-                        name = f"{weapon} Lv.{tier * 10 + 10}"
-                        items.append({
-                            "id": item_id,
-                            "name": name,
-                            "slot_type": "무기",
-                            "class_req": class_name,
-                            "rarity": rarity,
-                            "emoji": self.get_weapon_emoji(weapon),
-                            "base_stats": self.generate_weapon_stats(class_name, tier, rarity),
-                            "base_price": self.calculate_base_price(rarity, tier)
-                        })
-                        item_id += 1
 
-        # Generate armor pieces (144 items)
-        for slot, armor_list in armor_types.items():
-            for armor in armor_list:
-                for tier in range(4):
-                    for rarity in ["일반", "고급", "희귀", "영웅", "고유", "전설", "신화"]:
-                        name = f"{armor} Lv.{tier * 15 + 15}"
-                        items.append({
-                            "id": item_id,
-                            "name": name,
-                            "slot_type": slot,
-                            "class_req": None,  # Any class can wear
-                            "rarity": rarity,
-                            "emoji": self.get_armor_emoji(slot),
-                            "base_stats": self.generate_armor_stats(slot, tier, rarity),
-                            "base_price": self.calculate_base_price(rarity, tier)
-                        })
-                        item_id += 1
-
-        # Generate accessories (84 items)
-        for slot, acc_list in accessory_types.items():
-            for acc in acc_list:
-                for tier in range(3):
-                    for rarity in ["일반", "고급", "희귀", "영웅", "고유", "전설", "신화"]:
-                        name = f"{acc} Lv.{tier * 20 + 20}"
-                        items.append({
-                            "id": item_id,
-                            "name": name,
-                            "slot_type": slot,
-                            "class_req": None,
-                            "rarity": rarity,
-                            "emoji": self.get_accessory_emoji(slot),
-                            "base_stats": self.generate_accessory_stats(tier, rarity),
-                            "base_price": self.calculate_base_price(rarity, tier)
-                        })
-                        item_id += 1
-
-        return items
-
-    def get_weapon_emoji(self, weapon: str) -> str:
-        emoji_map = {
-            "대검": "⚔️", "도끼": "🪓", "둔기": "🔨", "창": "🔱", "검": "⚔️",
-            "스태프": "🔮", "완드": "🪄", "마도서": "📖",
-            "단검": "🗡️", "클로": "🗡️",
-            "활": "🏹", "석궁": "🏹", "투척무기": "🔪",
-            "건": "🔫", "너클": "👊", "총": "🔫"
-        }
-        return emoji_map.get(weapon, "⚔️")
-
-    def get_armor_emoji(self, slot: str) -> str:
-        emoji_map = {
-            "모자": "👑", "상의": "👕", "하의": "👖",
-            "신발": "👟", "장갑": "🧤", "망토": "🦹"
-        }
-        return emoji_map.get(slot, "🛡️")
-
-    def get_accessory_emoji(self, slot: str) -> str:
-        emoji_map = {
-            "목걸이": "📿", "귀걸이": "💎", "반지": "💍", "벨트": "⚡"
-        }
-        return emoji_map.get(slot, "💎")
-
-    def generate_weapon_stats(self, class_name: str, tier: int, rarity: str) -> Dict[str, int]:
-        """Generate weapon stats based on class and tier"""
-        base_multiplier = (tier + 1) * self.get_rarity_multiplier(rarity)
-
-        stats = {"str": 0, "dex": 0, "int": 0, "luk": 0, "att": 0, "m_att": 0}
-
-        if class_name == "전사":
-            stats["str"] = random.randint(int(10 * base_multiplier), int(20 * base_multiplier))
-            stats["att"] = random.randint(int(15 * base_multiplier), int(30 * base_multiplier))
-        elif class_name == "법사":
-            stats["int"] = random.randint(int(10 * base_multiplier), int(20 * base_multiplier))
-            stats["m_att"] = random.randint(int(15 * base_multiplier), int(30 * base_multiplier))
-        elif class_name in ["도적", "궁수"]:
-            stats["dex"] = random.randint(int(10 * base_multiplier), int(20 * base_multiplier))
-            stats["att"] = random.randint(int(12 * base_multiplier), int(25 * base_multiplier))
-        elif class_name == "해적":
-            stats["str"] = random.randint(int(5 * base_multiplier), int(15 * base_multiplier))
-            stats["dex"] = random.randint(int(5 * base_multiplier), int(15 * base_multiplier))
-            stats["att"] = random.randint(int(10 * base_multiplier), int(25 * base_multiplier))
-
-        # Add random secondary stats
-        if random.random() < 0.3:
-            secondary_stats = ["str", "dex", "int", "luk"]
-            chosen_stat = random.choice(secondary_stats)
-            stats[chosen_stat] += random.randint(1, int(5 * base_multiplier))
-
-        return stats
-
-    def generate_armor_stats(self, slot: str, tier: int, rarity: str) -> Dict[str, int]:
-        """Generate armor stats"""
-        base_multiplier = (tier + 1) * self.get_rarity_multiplier(rarity)
-        stats = {"str": 0, "dex": 0, "int": 0, "luk": 0, "att": 0, "m_att": 0}
-
-        # Random stat distribution for armor
-        stat_pool = random.randint(int(5 * base_multiplier), int(15 * base_multiplier))
-        stat_names = ["str", "dex", "int", "luk"]
-
-        for _ in range(random.randint(1, 3)):  # 1-3 different stats
-            if stat_pool <= 0:
-                break
-            stat = random.choice(stat_names)
-            value = random.randint(1, min(stat_pool, int(8 * base_multiplier)))
-            stats[stat] += value
-            stat_pool -= value
-
-        return stats
-
-    def generate_accessory_stats(self, tier: int, rarity: str) -> Dict[str, int]:
-        """Generate accessory stats (usually higher and more varied)"""
-        base_multiplier = (tier + 1) * self.get_rarity_multiplier(rarity)
-        stats = {"str": 0, "dex": 0, "int": 0, "luk": 0, "att": 0, "m_att": 0}
-
-        # Accessories have more diverse stats
-        stat_pool = random.randint(int(8 * base_multiplier), int(20 * base_multiplier))
-        all_stats = ["str", "dex", "int", "luk", "att", "m_att"]
-
-        for _ in range(random.randint(2, 4)):  # 2-4 different stats
-            if stat_pool <= 0:
-                break
-            stat = random.choice(all_stats)
-            value = random.randint(1, min(stat_pool, int(10 * base_multiplier)))
-            stats[stat] += value
-            stat_pool -= value
-
-        return stats
 
     async def show_detailed_item_info(self, interaction: discord.Interaction, item_id: str):
         """Show detailed item information"""
@@ -605,14 +478,27 @@ class EnhancementCog(commands.Cog):
         return max(1, int(power))
 
     def get_random_item(self) -> Dict[str, Any]:
-        """Get a random item based on rarity weights"""
-        # Create weighted list
-        weighted_items = []
-        for item in self.item_pool:
-            weight = self.item_rarities[item['rarity']]['weight']
-            weighted_items.extend([item] * int(weight * 10))  # Multiply by 10 for more precision
+        """Get a random item based on rarity weights using random.choices."""
 
-        return random.choice(weighted_items).copy()
+        items = self.item_pool
+        # Ensure item pool is not empty
+        if not items:
+            return None
+
+        # Map item rarity to its weight
+        rarity_weights = {
+            r: data['weight'] for r, data in self.item_rarities.items()
+        }
+
+        # Get the weight for each item in the pool
+        weights = [rarity_weights.get(item['rarity'], 0) for item in items]
+
+        # Use random.choices for efficient weighted random selection
+        # k=1 returns a list, so we take the first element [0]
+        chosen_item = random.choices(items, weights=weights, k=1)[0]
+
+        # Return a copy to prevent modifying the template in the item pool
+        return chosen_item.copy()
 
     async def setup_system(self):
         """시스템 초기화"""
@@ -894,12 +780,7 @@ class EnhancementCog(commands.Cog):
                 )
                 return
 
-            # Deduct coins
-            if not await coins_cog.remove_coins(user_id, guild_id, cost, "enhancement", f"강화 시도: {template['name']}"):
-                await interaction.followup.send("❌ 코인 차감 중 오류가 발생했습니다.", ephemeral=True)
-                return
-
-            # Get rates for display (needed for footer)
+                # Get rates for display (needed for footer)
             rates = self.starforce_rates.get(current_level, (30, 67, 3))
 
             # Calculate enhancement result
@@ -913,9 +794,7 @@ class EnhancementCog(commands.Cog):
             else:
                 # Normal rates
                 success_rate, fail_rate, destroy_rate = rates
-
                 roll = random.randint(1, 100)
-
                 if roll <= success_rate:
                     result = "success"
                     new_level = current_level + 1
@@ -939,18 +818,34 @@ class EnhancementCog(commands.Cog):
                     result_text = "💥 **아이템 파괴!**"
                     result_color = discord.Color.dark_red()
 
-            # Update item in database
-            await self.bot.pool.execute("""
-                UPDATE user_items 
-                SET enhancement_level = $1, fail_streak = $2, last_enhanced = CURRENT_TIMESTAMP
-                WHERE item_id = $3
-            """, new_level, new_fail_streak, item_id)
+            # --- ATOMIC TRANSACTION START: Deduct coins, update item, and log enhancement ---
+            conn = self.bot.pool
+            try:
+                async with conn.transaction():
+                    # 1. Deduct coins (raw SQL for atomicity)
+                    await conn.execute(
+                        "UPDATE user_coins SET coins = coins - $1 WHERE user_id = $2 AND guild_id = $3", cost,
+                        user_id, guild_id)
 
-            # Log enhancement attempt
-            await self.bot.pool.execute("""
-                INSERT INTO enhancement_logs (user_id, guild_id, item_id, old_level, new_level, result, cost)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
-            """, user_id, guild_id, item_id, current_level, new_level, result, cost)
+                    # 2. Update item in database
+                    await conn.execute("""
+                        UPDATE user_items SET enhancement_level = $1, fail_streak = $2, last_enhanced = CURRENT_TIMESTAMP
+                        WHERE item_id = $3
+                    """, new_level, new_fail_streak, item_id)
+
+                    # 3. Log enhancement attempt
+                    await conn.execute("""
+                        INSERT INTO enhancement_logs (user_id, guild_id, item_id, old_level, new_level, result, cost)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    """, user_id, guild_id, item_id, current_level, new_level, result, cost)
+
+            except Exception as e:
+                # If any operation above fails, the transaction is automatically rolled back.
+                self.logger.error(f"Enhancement transaction failed for user {user_id}: {e}")
+                await interaction.followup.send(
+                    f"⚠️ **강화 오류!** 데이터베이스 트랜잭션 실패. 비용이 환불되었거나 아이템 상태가 변경되지 않았습니다. ({e})", ephemeral=True)
+                return
+            # --- ATOMIC TRANSACTION END ---
 
             # Create result embed with visual effects
             rarity_info = self.item_rarities[template['rarity']]
@@ -1910,8 +1805,8 @@ class EnhancementResultView(discord.ui.View):
         self.template = template
         self.enhancement_cog = bot.get_cog('EnhancementCog')
 
-    @discord.ui.button(label="⚡ 강화하기", style=discord.ButtonStyle.primary, emoji="⭐")
-    async def enhance_again(self, interaction: discord.Interaction, button: discord.ui.Button):
+    @discord.ui.button(label="⭐ 강화하기", style=discord.ButtonStyle.primary)
+    async def enhance_item(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.user_id:
             await interaction.response.send_message("다른 사용자의 아이템을 강화할 수 없습니다.", ephemeral=True)
             return
@@ -1942,6 +1837,23 @@ class EnhancementResultView(discord.ui.View):
             await self.enhancement_cog.show_market_sell_confirmation(interaction, self.item_row['item_id'])
         except Exception as e:
             await interaction.response.send_message(f"오류가 발생했습니다: {e}", ephemeral=True)
+
+    async def on_timeout(self) -> None:
+        # Disable all buttons when the view times out
+        for child in self.children:
+            if isinstance(child, discord.ui.Button):
+                child.disabled = True
+
+        # Try to edit the message to reflect the change, but don't fail if the message is gone
+        try:
+            if hasattr(self, 'message') and self.message:
+                await self.message.edit(view=self)
+        except discord.NotFound:
+            pass  # Message was deleted
+
+
+class MarketplaceView(discord.ui.View):
+    """Marketplace viewing and purchasing interface"""
 
 async def setup(bot):
     await bot.add_cog(EnhancementCog(bot))
