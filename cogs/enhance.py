@@ -26,6 +26,8 @@ class EnhancementView(discord.ui.View):
         self.item_data = item_data
         self.item_row = item_row
         self.enhancement_cog = bot.get_cog('EnhancementCog')
+        self.message = None # <--- ADD THIS LINE
+
 
     async def on_timeout(self) -> None:
         # Disable all buttons when the view times out
