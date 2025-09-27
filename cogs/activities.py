@@ -1128,15 +1128,9 @@ class ActivitiesCog(commands.Cog):
     # ARENA SYSTEM WITH BALANCED REWARDS
     @app_commands.command(name="아레나", description="다른 플레이어와 전투를 펼치세요!")
     async def arena(self, interaction: discord.Interaction):
-        try:
-            guild_id = interaction.guild.id
-            if not config.is_feature_enabled(guild_id, 'casino_games'):
-                await interaction.response.send_message("⚠️ 이 서버에서는 활동 시스템이 비활성화되어 있습니다.", ephemeral=True)
-                return
-        except Exception as e:
-            self.logger.error(f"Arena command error: {e}")
-            if not interaction.response.is_done():
-                await interaction.response.send_message("아레나 시스템에 오류가 발생했습니다.", ephemeral=True)
+        guild_id = interaction.guild.id
+        if not config.is_feature_enabled(guild_id, 'casino_games'):
+            await interaction.response.send_message("⚠️ 이 서버에서는 활동 시스템이 비활성화되어 있습니다.", ephemeral=True)
             return
 
         if not self.check_channel(interaction, ARENA_CHANNEL_ID):
