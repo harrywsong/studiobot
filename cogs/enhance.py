@@ -836,9 +836,11 @@ class EnhancementCog(commands.Cog):
                 view.message = None  # will be set after sending
 
             # Send new message with buttons
-            msg = await interaction.followup.send(embed=embed, view=view)
             if view:
+                msg = await interaction.followup.send(embed=embed, view=view)
                 view.message = msg
+            else:
+                msg = await interaction.followup.send(embed=embed)
 
             # Save the latest message for cleanup next time
             self.last_enhancement_message[item_id] = msg
