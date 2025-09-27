@@ -241,6 +241,7 @@ class ItemManagementView(discord.ui.View):
             await interaction.response.send_message("다른 사용자의 아이템을 강화할 수 없습니다.", ephemeral=True)
             return
 
+        await interaction.response.defer()
         await self.enhancement_cog.handle_enhancement(interaction, self.item_row['item_id'])
 
     async def market_sell(self, interaction: discord.Interaction):
@@ -1360,10 +1361,14 @@ class EnhancementResultView(discord.ui.View):
         if interaction.user.id != self.user_id:
             await interaction.response.send_message("다른 사용자의 아이템을 강화할 수 없습니다.", ephemeral=True)
             return
+
+        await interaction.response.defer()
+
         try:
             await self.enhancement_cog.handle_enhancement(interaction, self.item_row['item_id'])
         except Exception as e:
-            await interaction.response.send_message(f"오류가 발생했습니다: {e}", ephemeral=True)
+            # Since we've deferred, we must use followup to send the error message
+            await interaction.followup.send(f"오류가 발생했습니다: {e}", ephemeral=True)
 
     @discord.ui.button(label="🔹 장착하기", style=discord.ButtonStyle.success)
     async def equip_item(self, interaction: discord.Interaction, button: discord.ui.Button):
