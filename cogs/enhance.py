@@ -624,8 +624,6 @@ class EnhancementCog(commands.Cog):
                 return item
         return None
 
-    # Replace the transaction section in handle_enhancement method (around lines 400-450)
-
     async def handle_enhancement(self, interaction: discord.Interaction, item_id: str):
         """Handle item enhancement with MapleStory-style rates"""
         await interaction.response.defer(ephemeral=True)
@@ -684,16 +682,20 @@ class EnhancementCog(commands.Cog):
                 else:
                     result, new_level, new_fail_streak, result_text, result_color = "destroy", -1, 0, "💥 **아이템 파괴!**", discord.Color.dark_red()
 
-            # NOW do everything in one atomic transaction
+            # FIRST: Deduct coins OUTSIDE of transaction using coins cog's own transaction handling
+            description = f"강화: {template['name']}"
+            coin_removal_success = await coins_cog.remove_coins(user_id, guild_id, cost, "enhancement", description)
+            if not coin_removal_success:
+                # Double-check coins again in case of race condition
+                current_coins_recheck = await coins_cog.get_user_coins(user_id, guild_id)
+                await interaction.followup.send(
+                    f"⚠ 코인 차감에 실패했습니다.\n현재 잔액: {current_coins_recheck:,} 코인\n필요: {cost:,} 코인", ephemeral=True)
+                return
+
+            # SECOND: Update item information in separate transaction
             try:
                 async with self.bot.pool.transaction():
-                    # 1. Deduct coins
-                    description = f"강화: {template['name']}"
-                    if not await coins_cog.remove_coins(user_id, guild_id, cost, "enhancement", description):
-                        # This should not happen since we checked above, but just in case
-                        raise Exception("코인 차감 실패")
-
-                    # 2. Update item based on result
+                    # Update item based on result
                     if result in ["success", "fail"]:
                         await self.bot.pool.execute(
                             "UPDATE user_items SET enhancement_level = $1, fail_streak = $2, last_enhanced = CURRENT_TIMESTAMP WHERE item_id = $3",
@@ -701,14 +703,18 @@ class EnhancementCog(commands.Cog):
                     elif result == "destroy":
                         await self.bot.pool.execute("DELETE FROM user_items WHERE item_id = $1", item_id)
 
-                    # 3. Log enhancement
+                    # Log enhancement
                     await self.bot.pool.execute(
                         "INSERT INTO enhancement_logs (user_id, guild_id, item_id, old_level, new_level, result, cost) VALUES ($1, $2, $3, $4, $5, $6, $7)",
                         user_id, guild_id, item_id, current_level, new_level, result, cost)
 
             except Exception as e:
-                self.logger.error(f"Enhancement transaction failed for user {user_id}: {e}", exc_info=True)
-                await interaction.followup.send("⚠️ **강화 오류!** 데이터베이스 처리 중 문제가 발생했습니다. 다시 시도해주세요.",
+                self.logger.error(f"Enhancement item update transaction failed for user {user_id}: {e}", exc_info=True)
+
+                # If item update fails, refund the coins
+                await coins_cog.add_coins(user_id, guild_id, cost, "enhancement_refund", "강화 실패로 인한 환불")
+
+                await interaction.followup.send("⚠️ **강화 오류!** 아이템 정보 업데이트 중 문제가 발생했습니다. 코인이 환불되었습니다.",
                                                 ephemeral=True)
                 return
 
@@ -743,8 +749,11 @@ class EnhancementCog(commands.Cog):
                     public_embed.add_field(name="플레이어", value=interaction.user.mention, inline=True)
                     updated_item_row = await self.bot.pool.fetchrow("SELECT * FROM user_items WHERE item_id = $1",
                                                                     item_id)
-                    view = EnhancementResultView(self.bot, user_id, guild_id, dict(updated_item_row), template)
-                    await showoff_channel.send(embed=public_embed, view=view)
+                    if updated_item_row:  # Only create view if item still exists
+                        view = EnhancementResultView(self.bot, user_id, guild_id, dict(updated_item_row), template)
+                        await showoff_channel.send(embed=public_embed, view=view)
+                    else:
+                        await showoff_channel.send(embed=public_embed)
 
             self.logger.info(
                 f"사용자 {user_id}가 {template['name']} 강화: {current_level}→{new_level if result != 'destroy' else '파괴'} ({result})",
