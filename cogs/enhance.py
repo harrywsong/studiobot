@@ -727,6 +727,14 @@ class EnhancementCog(commands.Cog):
                 )
                 return
 
+            # --- NEW: delete previous enhancement message for this item ---
+            if item_id in self.last_enhancement_message:
+                try:
+                    old_msg = self.last_enhancement_message[item_id]
+                    await old_msg.delete()
+                except discord.NotFound:
+                    pass  # already gone
+
             # Calculate enhancement result
             fail_streak = item_row['fail_streak'] or 0
             rates = self.starforce_rates.get(current_level, (30, 67, 3))
@@ -744,17 +752,14 @@ class EnhancementCog(commands.Cog):
                         "success", current_level + 1, 0, "✅ **강화 성공!**", discord.Color.green()
                     )
                 elif roll <= success_rate + fail_rate:
-
-                    levels_that_drop = [16, 17, 18, 19, 21, 23, 24]
-
+                    levels_that_drop = [16, 17, 18, 19, 21, 22, 23, 24]
                     if current_level in levels_that_drop:
-                        new_level_on_fail = current_level - 1  # Level drops by 1
+                        new_level_on_fail = current_level - 1
                     else:
-                        new_level_on_fail = current_level  # Level holds (0-15, 20, 22)
-
+                        new_level_on_fail = current_level
                     result, new_level, new_fail_streak, result_text, result_color = (
                         "fail", new_level_on_fail, fail_streak + 1, "⚠ **강화 실패**", discord.Color.red()
-                )
+                    )
                 else:
                     result, new_level, new_fail_streak, result_text, result_color = (
                         "destroy", -1, 0, "💥 **아이템 파괴!**", discord.Color.dark_red()
@@ -823,26 +828,9 @@ class EnhancementCog(commands.Cog):
             embed.add_field(name="💳 남은 코인", value=f"{refreshed_coins:,} 코인", inline=True)
             embed.set_footer(text=f"강화 확률: 성공 {rates[0]}% | 실패 {rates[1]}% | 파괴 {rates[2]}%")
 
-            # Determine if we should post to the showoff channel
-            showoff_channel = self.bot.get_channel(self.showoff_channel_id)
-
-            # Case 1: Post a public message to the showoff channel
-            if showoff_channel and result != 'destroy':
-                public_embed = embed.copy()
-                public_embed.add_field(name="플레이어", value=interaction.user.mention, inline=True)
-
-                # Try to find the item to attach action buttons
-                view = None
-                updated_item_row = await self.bot.pool.fetchrow("SELECT * FROM user_items WHERE item_id = $1", item_id)
-                if updated_item_row:
-                    view = EnhancementResultView(self.bot, user_id, guild_id, dict(updated_item_row), template)
-
-                await showoff_channel.send(embed=public_embed, view=view)
-
-
-            # Case 2: No showoff channel or item was destroyed, so just reply normally
-            else:
-                await interaction.followup.send(embed=embed)
+            # Send new message
+            msg = await interaction.followup.send(embed=embed)
+            self.last_enhancement_message[item_id] = msg  # store the latest message
 
             self.logger.info(
                 f"사용자 {user_id}가 {template['name']} 강화: {current_level}→{new_level if result != 'destroy' else '파괴'} ({result})",
