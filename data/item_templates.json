@@ -37840,5 +37840,3785 @@
       "m_att": 47
     },
     "base_price": 54000
+  },
+  {
+    "id": 2227,
+    "name": "(일반) 낡은 방패",
+    "slot_type": "보조무기",
+    "class_req": "전사",
+    "rarity": "일반",
+    "emoji": "🛡️",
+    "base_stats": {
+      "str": 5,
+      "dex": 0,
+      "int": 0,
+      "luk": 0,
+      "att": 0,
+      "m_att": 0,
+      "def": 20
+    },
+    "base_price": 200
+  },
+  {
+    "id": 2228,
+    "name": "(고급) 낡은 방패",
+    "slot_type": "보조무기",
+    "class_req": "전사",
+    "rarity": "고급",
+    "emoji": "🛡️",
+    "base_stats": {
+      "str": 7,
+      "dex": 0,
+      "int": 0,
+      "luk": 0,
+      "att": 0,
+      "m_att": 0,
+      "def": 30
+    },
+    "base_price": 400
+  },
+  {
+    "id": 2229,
+    "name": "(희귀) 낡은 방패",
+    "slot_type": "보조무기",
+    "class_req": "전사",
+    "rarity": "희귀",
+    "emoji": "🛡️",
+    "base_stats": {
+      "str": 10,
+      "dex": 0,
+      "int": 0,
+      "luk": 0,
+      "att": 0,
+      "m_att": 0,
+      "def": 40
+    },
+    "base_price": 600
+  },
+  {
+    "id": 2230,
+    "name": "(영웅) 낡은 방패",
+    "slot_type": "보조무기",
+    "class_req": "전사",
+    "rarity": "영웅",
+    "emoji": "🛡️",
+    "base_stats": {
+      "str": 15,
+      "dex": 0,
+      "int": 0,
+      "luk": 0,
+      "att": 0,
+      "m_att": 0,
+      "def": 60
+    },
+    "base_price": 1000
+  },
+  {
+    "id": 2231,
+    "name": "(고유) 낡은 방패",
+    "slot_type": "보조무기",
+    "class_req": "전사",
+    "rarity": "고유",
+    "emoji": "🛡️",
+    "base_stats": {
+      "str": 20,
+      "dex": 0,
+      "int": 0,
+      "luk": 0,
+      "att": 0,
+      "m_att": 0,
+      "def": 80
+    },
+    "base_price": 1600
+  },
+  {
+    "id": 2232,
+    "name": "(전설) 낡은 방패",
+    "slot_type": "보조무기",
+    "class_req": "전사",
+    "rarity": "전설",
+    "emoji": "🛡️",
+    "base_stats": {
+      "str": 30,
+      "dex": 0,
+      "int": 0,
+      "luk": 0,
+      "att": 0,
+      "m_att": 0,
+      "def": 120
+    },
+    "base_price": 3000
+  },
+  {
+    "id": 2233,
+    "name": "(신화) 낡은 방패",
+    "slot_type": "보조무기",
+    "class_req": "전사",
+    "rarity": "신화",
+    "emoji": "🛡️",
+    "base_stats": {
+      "str": 50,
+      "dex": 0,
+      "int": 0,
+      "luk": 0,
+      "att": 0,
+      "m_att": 0,
+      "def": 200
+    },
+    "base_price": 6000
+  },
+  {
+    "id": 2234,
+    "name": "(일반) 강철 방패",
+    "slot_type": "보조무기",
+    "class_req": "전사",
+    "rarity": "일반",
+    "emoji": "🛡️",
+    "base_stats": {
+      "str": 5,
+      "dex": 0,
+      "int": 0,
+      "luk": 0,
+      "att": 0,
+      "m_att": 0,
+      "def": 20
+    },
+    "base_price": 200
+  },
+  {
+    "id": 2235,
+    "name": "(고급) 강철 방패",
+    "slot_type": "보조무기",
+    "class_req": "전사",
+    "rarity": "고급",
+    "emoji": "🛡️",
+    "base_stats": {
+      "str": 7,
+      "dex": 0,
+      "int": 0,
+      "luk": 0,
+      "att": 0,
+      "m_att": 0,
+      "def": 30
+    },
+    "base_price": 400
+  },
+  {
+    "id": 2236,
+    "name": "(희귀) 강철 방패",
+    "slot_type": "보조무기",
+    "class_req": "전사",
+    "rarity": "희귀",
+    "emoji": "🛡️",
+    "base_stats": {
+      "str": 10,
+      "dex": 0,
+      "int": 0,
+      "luk": 0,
+      "att": 0,
+      "m_att": 0,
+      "def": 40
+    },
+    "base_price": 600
+  },
+  {
+    "id": 2237,
+    "name": "(영웅) 강철 방패",
+    "slot_type": "보조무기",
+    "class_req": "전사",
+    "rarity": "영웅",
+    "emoji": "🛡️",
+    "base_stats": {
+      "str": 15,
+      "dex": 0,
+      "int": 0,
+      "luk": 0,
+      "att": 0,
+      "m_att": 0,
+      "def": 60
+    },
+    "base_price": 1000
+  },
+  {
+    "id": 2238,
+    "name": "(고유) 강철 방패",
+    "slot_type": "보조무기",
+    "class_req": "전사",
+    "rarity": "고유",
+    "emoji": "🛡️",
+    "base_stats": {
+      "str": 20,
+      "dex": 0,
+      "int": 0,
+      "luk": 0,
+      "att": 0,
+      "m_att": 0,
+      "def": 80
+    },
+    "base_price": 1600
+  },
+  {
+    "id": 2239,
+    "name": "(전설) 강철 방패",
+    "slot_type": "보조무기",
+    "class_req": "전사",
+    "rarity": "전설",
+    "emoji": "🛡️",
+    "base_stats": {
+      "str": 30,
+      "dex": 0,
+      "int": 0,
+      "luk": 0,
+      "att": 0,
+      "m_att": 0,
+      "def": 120
+    },
+    "base_price": 3000
+  },
+  {
+    "id": 2240,
+    "name": "(신화) 강철 방패",
+    "slot_type": "보조무기",
+    "class_req": "전사",
+    "rarity": "신화",
+    "emoji": "🛡️",
+    "base_stats": {
+      "str": 50,
+      "dex": 0,
+      "int": 0,
+      "luk": 0,
+      "att": 0,
+      "m_att": 0,
+      "def": 200
+    },
+    "base_price": 6000
+  },
+  {
+    "id": 2241,
+    "name": "(일반) 미스릴 방패",
+    "slot_type": "보조무기",
+    "class_req": "전사",
+    "rarity": "일반",
+    "emoji": "🛡️",
+    "base_stats": {
+      "str": 5,
+      "dex": 0,
+      "int": 0,
+      "luk": 0,
+      "att": 0,
+      "m_att": 0,
+      "def": 20
+    },
+    "base_price": 200
+  },
+  {
+    "id": 2242,
+    "name": "(고급) 미스릴 방패",
+    "slot_type": "보조무기",
+    "class_req": "전사",
+    "rarity": "고급",
+    "emoji": "🛡️",
+    "base_stats": {
+      "str": 7,
+      "dex": 0,
+      "int": 0,
+      "luk": 0,
+      "att": 0,
+      "m_att": 0,
+      "def": 30
+    },
+    "base_price": 400
+  },
+  {
+    "id": 2243,
+    "name": "(희귀) 미스릴 방패",
+    "slot_type": "보조무기",
+    "class_req": "전사",
+    "rarity": "희귀",
+    "emoji": "🛡️",
+    "base_stats": {
+      "str": 10,
+      "dex": 0,
+      "int": 0,
+      "luk": 0,
+      "att": 0,
+      "m_att": 0,
+      "def": 40
+    },
+    "base_price": 600
+  },
+  {
+    "id": 2244,
+    "name": "(영웅) 미스릴 방패",
+    "slot_type": "보조무기",
+    "class_req": "전사",
+    "rarity": "영웅",
+    "emoji": "🛡️",
+    "base_stats": {
+      "str": 15,
+      "dex": 0,
+      "int": 0,
+      "luk": 0,
+      "att": 0,
+      "m_att": 0,
+      "def": 60
+    },
+    "base_price": 1000
+  },
+  {
+    "id": 2245,
+    "name": "(고유) 미스릴 방패",
+    "slot_type": "보조무기",
+    "class_req": "전사",
+    "rarity": "고유",
+    "emoji": "🛡️",
+    "base_stats": {
+      "str": 20,
+      "dex": 0,
+      "int": 0,
+      "luk": 0,
+      "att": 0,
+      "m_att": 0,
+      "def": 80
+    },
+    "base_price": 1600
+  },
+  {
+    "id": 2246,
+    "name": "(전설) 미스릴 방패",
+    "slot_type": "보조무기",
+    "class_req": "전사",
+    "rarity": "전설",
+    "emoji": "🛡️",
+    "base_stats": {
+      "str": 30,
+      "dex": 0,
+      "int": 0,
+      "luk": 0,
+      "att": 0,
+      "m_att": 0,
+      "def": 120
+    },
+    "base_price": 3000
+  },
+  {
+    "id": 2247,
+    "name": "(신화) 미스릴 방패",
+    "slot_type": "보조무기",
+    "class_req": "전사",
+    "rarity": "신화",
+    "emoji": "🛡️",
+    "base_stats": {
+      "str": 50,
+      "dex": 0,
+      "int": 0,
+      "luk": 0,
+      "att": 0,
+      "m_att": 0,
+      "def": 200
+    },
+    "base_price": 6000
+  },
+  {
+    "id": 2248,
+    "name": "(일반) 오리할콘 방패",
+    "slot_type": "보조무기",
+    "class_req": "전사",
+    "rarity": "일반",
+    "emoji": "🛡️",
+    "base_stats": {
+      "str": 5,
+      "dex": 0,
+      "int": 0,
+      "luk": 0,
+      "att": 0,
+      "m_att": 0,
+      "def": 20
+    },
+    "base_price": 200
+  },
+  {
+    "id": 2249,
+    "name": "(고급) 오리할콘 방패",
+    "slot_type": "보조무기",
+    "class_req": "전사",
+    "rarity": "고급",
+    "emoji": "🛡️",
+    "base_stats": {
+      "str": 7,
+      "dex": 0,
+      "int": 0,
+      "luk": 0,
+      "att": 0,
+      "m_att": 0,
+      "def": 30
+    },
+    "base_price": 400
+  },
+  {
+    "id": 2250,
+    "name": "(희귀) 오리할콘 방패",
+    "slot_type": "보조무기",
+    "class_req": "전사",
+    "rarity": "희귀",
+    "emoji": "🛡️",
+    "base_stats": {
+      "str": 10,
+      "dex": 0,
+      "int": 0,
+      "luk": 0,
+      "att": 0,
+      "m_att": 0,
+      "def": 40
+    },
+    "base_price": 600
+  },
+  {
+    "id": 2251,
+    "name": "(영웅) 오리할콘 방패",
+    "slot_type": "보조무기",
+    "class_req": "전사",
+    "rarity": "영웅",
+    "emoji": "🛡️",
+    "base_stats": {
+      "str": 15,
+      "dex": 0,
+      "int": 0,
+      "luk": 0,
+      "att": 0,
+      "m_att": 0,
+      "def": 60
+    },
+    "base_price": 1000
+  },
+  {
+    "id": 2252,
+    "name": "(고유) 오리할콘 방패",
+    "slot_type": "보조무기",
+    "class_req": "전사",
+    "rarity": "고유",
+    "emoji": "🛡️",
+    "base_stats": {
+      "str": 20,
+      "dex": 0,
+      "int": 0,
+      "luk": 0,
+      "att": 0,
+      "m_att": 0,
+      "def": 80
+    },
+    "base_price": 1600
+  },
+  {
+    "id": 2253,
+    "name": "(전설) 오리할콘 방패",
+    "slot_type": "보조무기",
+    "class_req": "전사",
+    "rarity": "전설",
+    "emoji": "🛡️",
+    "base_stats": {
+      "str": 30,
+      "dex": 0,
+      "int": 0,
+      "luk": 0,
+      "att": 0,
+      "m_att": 0,
+      "def": 120
+    },
+    "base_price": 3000
+  },
+  {
+    "id": 2254,
+    "name": "(신화) 오리할콘 방패",
+    "slot_type": "보조무기",
+    "class_req": "전사",
+    "rarity": "신화",
+    "emoji": "🛡️",
+    "base_stats": {
+      "str": 50,
+      "dex": 0,
+      "int": 0,
+      "luk": 0,
+      "att": 0,
+      "m_att": 0,
+      "def": 200
+    },
+    "base_price": 6000
+  },
+  {
+    "id": 2255,
+    "name": "(일반) 전설의 방패",
+    "slot_type": "보조무기",
+    "class_req": "전사",
+    "rarity": "일반",
+    "emoji": "🛡️",
+    "base_stats": {
+      "str": 5,
+      "dex": 0,
+      "int": 0,
+      "luk": 0,
+      "att": 0,
+      "m_att": 0,
+      "def": 20
+    },
+    "base_price": 200
+  },
+  {
+    "id": 2256,
+    "name": "(고급) 전설의 방패",
+    "slot_type": "보조무기",
+    "class_req": "전사",
+    "rarity": "고급",
+    "emoji": "🛡️",
+    "base_stats": {
+      "str": 7,
+      "dex": 0,
+      "int": 0,
+      "luk": 0,
+      "att": 0,
+      "m_att": 0,
+      "def": 30
+    },
+    "base_price": 400
+  },
+  {
+    "id": 2257,
+    "name": "(희귀) 전설의 방패",
+    "slot_type": "보조무기",
+    "class_req": "전사",
+    "rarity": "희귀",
+    "emoji": "🛡️",
+    "base_stats": {
+      "str": 10,
+      "dex": 0,
+      "int": 0,
+      "luk": 0,
+      "att": 0,
+      "m_att": 0,
+      "def": 40
+    },
+    "base_price": 600
+  },
+  {
+    "id": 2258,
+    "name": "(영웅) 전설의 방패",
+    "slot_type": "보조무기",
+    "class_req": "전사",
+    "rarity": "영웅",
+    "emoji": "🛡️",
+    "base_stats": {
+      "str": 15,
+      "dex": 0,
+      "int": 0,
+      "luk": 0,
+      "att": 0,
+      "m_att": 0,
+      "def": 60
+    },
+    "base_price": 1000
+  },
+  {
+    "id": 2259,
+    "name": "(고유) 전설의 방패",
+    "slot_type": "보조무기",
+    "class_req": "전사",
+    "rarity": "고유",
+    "emoji": "🛡️",
+    "base_stats": {
+      "str": 20,
+      "dex": 0,
+      "int": 0,
+      "luk": 0,
+      "att": 0,
+      "m_att": 0,
+      "def": 80
+    },
+    "base_price": 1600
+  },
+  {
+    "id": 2260,
+    "name": "(전설) 전설의 방패",
+    "slot_type": "보조무기",
+    "class_req": "전사",
+    "rarity": "전설",
+    "emoji": "🛡️",
+    "base_stats": {
+      "str": 30,
+      "dex": 0,
+      "int": 0,
+      "luk": 0,
+      "att": 0,
+      "m_att": 0,
+      "def": 120
+    },
+    "base_price": 3000
+  },
+  {
+    "id": 2261,
+    "name": "(신화) 전설의 방패",
+    "slot_type": "보조무기",
+    "class_req": "전사",
+    "rarity": "신화",
+    "emoji": "🛡️",
+    "base_stats": {
+      "str": 50,
+      "dex": 0,
+      "int": 0,
+      "luk": 0,
+      "att": 0,
+      "m_att": 0,
+      "def": 200
+    },
+    "base_price": 6000
+  },
+  {
+    "id": 2262,
+    "name": "(일반) 신화의 방패",
+    "slot_type": "보조무기",
+    "class_req": "전사",
+    "rarity": "일반",
+    "emoji": "🛡️",
+    "base_stats": {
+      "str": 5,
+      "dex": 0,
+      "int": 0,
+      "luk": 0,
+      "att": 0,
+      "m_att": 0,
+      "def": 20
+    },
+    "base_price": 200
+  },
+  {
+    "id": 2263,
+    "name": "(고급) 신화의 방패",
+    "slot_type": "보조무기",
+    "class_req": "전사",
+    "rarity": "고급",
+    "emoji": "🛡️",
+    "base_stats": {
+      "str": 7,
+      "dex": 0,
+      "int": 0,
+      "luk": 0,
+      "att": 0,
+      "m_att": 0,
+      "def": 30
+    },
+    "base_price": 400
+  },
+  {
+    "id": 2264,
+    "name": "(희귀) 신화의 방패",
+    "slot_type": "보조무기",
+    "class_req": "전사",
+    "rarity": "희귀",
+    "emoji": "🛡️",
+    "base_stats": {
+      "str": 10,
+      "dex": 0,
+      "int": 0,
+      "luk": 0,
+      "att": 0,
+      "m_att": 0,
+      "def": 40
+    },
+    "base_price": 600
+  },
+  {
+    "id": 2265,
+    "name": "(영웅) 신화의 방패",
+    "slot_type": "보조무기",
+    "class_req": "전사",
+    "rarity": "영웅",
+    "emoji": "🛡️",
+    "base_stats": {
+      "str": 15,
+      "dex": 0,
+      "int": 0,
+      "luk": 0,
+      "att": 0,
+      "m_att": 0,
+      "def": 60
+    },
+    "base_price": 1000
+  },
+  {
+    "id": 2266,
+    "name": "(고유) 신화의 방패",
+    "slot_type": "보조무기",
+    "class_req": "전사",
+    "rarity": "고유",
+    "emoji": "🛡️",
+    "base_stats": {
+      "str": 20,
+      "dex": 0,
+      "int": 0,
+      "luk": 0,
+      "att": 0,
+      "m_att": 0,
+      "def": 80
+    },
+    "base_price": 1600
+  },
+  {
+    "id": 2267,
+    "name": "(전설) 신화의 방패",
+    "slot_type": "보조무기",
+    "class_req": "전사",
+    "rarity": "전설",
+    "emoji": "🛡️",
+    "base_stats": {
+      "str": 30,
+      "dex": 0,
+      "int": 0,
+      "luk": 0,
+      "att": 0,
+      "m_att": 0,
+      "def": 120
+    },
+    "base_price": 3000
+  },
+  {
+    "id": 2268,
+    "name": "(신화) 신화의 방패",
+    "slot_type": "보조무기",
+    "class_req": "전사",
+    "rarity": "신화",
+    "emoji": "🛡️",
+    "base_stats": {
+      "str": 50,
+      "dex": 0,
+      "int": 0,
+      "luk": 0,
+      "att": 0,
+      "m_att": 0,
+      "def": 200
+    },
+    "base_price": 6000
+  },
+  {
+    "id": 2269,
+    "name": "(일반) 낡은 마도서",
+    "slot_type": "보조무기",
+    "class_req": "법사",
+    "rarity": "일반",
+    "emoji": "📖",
+    "base_stats": {
+      "str": 0,
+      "dex": 0,
+      "int": 10,
+      "luk": 0,
+      "att": 0,
+      "m_att": 15,
+      "def": 5
+    },
+    "base_price": 200
+  },
+  {
+    "id": 2270,
+    "name": "(고급) 낡은 마도서",
+    "slot_type": "보조무기",
+    "class_req": "법사",
+    "rarity": "고급",
+    "emoji": "📖",
+    "base_stats": {
+      "str": 0,
+      "dex": 0,
+      "int": 15,
+      "luk": 0,
+      "att": 0,
+      "m_att": 22,
+      "def": 7
+    },
+    "base_price": 400
+  },
+  {
+    "id": 2271,
+    "name": "(희귀) 낡은 마도서",
+    "slot_type": "보조무기",
+    "class_req": "법사",
+    "rarity": "희귀",
+    "emoji": "📖",
+    "base_stats": {
+      "str": 0,
+      "dex": 0,
+      "int": 20,
+      "luk": 0,
+      "att": 0,
+      "m_att": 30,
+      "def": 10
+    },
+    "base_price": 600
+  },
+  {
+    "id": 2272,
+    "name": "(영웅) 낡은 마도서",
+    "slot_type": "보조무기",
+    "class_req": "법사",
+    "rarity": "영웅",
+    "emoji": "📖",
+    "base_stats": {
+      "str": 0,
+      "dex": 0,
+      "int": 30,
+      "luk": 0,
+      "att": 0,
+      "m_att": 45,
+      "def": 15
+    },
+    "base_price": 1000
+  },
+  {
+    "id": 2273,
+    "name": "(고유) 낡은 마도서",
+    "slot_type": "보조무기",
+    "class_req": "법사",
+    "rarity": "고유",
+    "emoji": "📖",
+    "base_stats": {
+      "str": 0,
+      "dex": 0,
+      "int": 40,
+      "luk": 0,
+      "att": 0,
+      "m_att": 60,
+      "def": 20
+    },
+    "base_price": 1600
+  },
+  {
+    "id": 2274,
+    "name": "(전설) 낡은 마도서",
+    "slot_type": "보조무기",
+    "class_req": "법사",
+    "rarity": "전설",
+    "emoji": "📖",
+    "base_stats": {
+      "str": 0,
+      "dex": 0,
+      "int": 60,
+      "luk": 0,
+      "att": 0,
+      "m_att": 90,
+      "def": 30
+    },
+    "base_price": 3000
+  },
+  {
+    "id": 2275,
+    "name": "(신화) 낡은 마도서",
+    "slot_type": "보조무기",
+    "class_req": "법사",
+    "rarity": "신화",
+    "emoji": "📖",
+    "base_stats": {
+      "str": 0,
+      "dex": 0,
+      "int": 100,
+      "luk": 0,
+      "att": 0,
+      "m_att": 150,
+      "def": 50
+    },
+    "base_price": 6000
+  },
+  {
+    "id": 2276,
+    "name": "(일반) 고대의 마도서",
+    "slot_type": "보조무기",
+    "class_req": "법사",
+    "rarity": "일반",
+    "emoji": "📖",
+    "base_stats": {
+      "str": 0,
+      "dex": 0,
+      "int": 10,
+      "luk": 0,
+      "att": 0,
+      "m_att": 15,
+      "def": 5
+    },
+    "base_price": 200
+  },
+  {
+    "id": 2277,
+    "name": "(고급) 고대의 마도서",
+    "slot_type": "보조무기",
+    "class_req": "법사",
+    "rarity": "고급",
+    "emoji": "📖",
+    "base_stats": {
+      "str": 0,
+      "dex": 0,
+      "int": 15,
+      "luk": 0,
+      "att": 0,
+      "m_att": 22,
+      "def": 7
+    },
+    "base_price": 400
+  },
+  {
+    "id": 2278,
+    "name": "(희귀) 고대의 마도서",
+    "slot_type": "보조무기",
+    "class_req": "법사",
+    "rarity": "희귀",
+    "emoji": "📖",
+    "base_stats": {
+      "str": 0,
+      "dex": 0,
+      "int": 20,
+      "luk": 0,
+      "att": 0,
+      "m_att": 30,
+      "def": 10
+    },
+    "base_price": 600
+  },
+  {
+    "id": 2279,
+    "name": "(영웅) 고대의 마도서",
+    "slot_type": "보조무기",
+    "class_req": "법사",
+    "rarity": "영웅",
+    "emoji": "📖",
+    "base_stats": {
+      "str": 0,
+      "dex": 0,
+      "int": 30,
+      "luk": 0,
+      "att": 0,
+      "m_att": 45,
+      "def": 15
+    },
+    "base_price": 1000
+  },
+  {
+    "id": 2280,
+    "name": "(고유) 고대의 마도서",
+    "slot_type": "보조무기",
+    "class_req": "법사",
+    "rarity": "고유",
+    "emoji": "📖",
+    "base_stats": {
+      "str": 0,
+      "dex": 0,
+      "int": 40,
+      "luk": 0,
+      "att": 0,
+      "m_att": 60,
+      "def": 20
+    },
+    "base_price": 1600
+  },
+  {
+    "id": 2281,
+    "name": "(전설) 고대의 마도서",
+    "slot_type": "보조무기",
+    "class_req": "법사",
+    "rarity": "전설",
+    "emoji": "📖",
+    "base_stats": {
+      "str": 0,
+      "dex": 0,
+      "int": 60,
+      "luk": 0,
+      "att": 0,
+      "m_att": 90,
+      "def": 30
+    },
+    "base_price": 3000
+  },
+  {
+    "id": 2282,
+    "name": "(신화) 고대의 마도서",
+    "slot_type": "보조무기",
+    "class_req": "법사",
+    "rarity": "신화",
+    "emoji": "📖",
+    "base_stats": {
+      "str": 0,
+      "dex": 0,
+      "int": 100,
+      "luk": 0,
+      "att": 0,
+      "m_att": 150,
+      "def": 50
+    },
+    "base_price": 6000
+  },
+  {
+    "id": 2283,
+    "name": "(일반) 미스릴 마도서",
+    "slot_type": "보조무기",
+    "class_req": "법사",
+    "rarity": "일반",
+    "emoji": "📖",
+    "base_stats": {
+      "str": 0,
+      "dex": 0,
+      "int": 10,
+      "luk": 0,
+      "att": 0,
+      "m_att": 15,
+      "def": 5
+    },
+    "base_price": 200
+  },
+  {
+    "id": 2284,
+    "name": "(고급) 미스릴 마도서",
+    "slot_type": "보조무기",
+    "class_req": "법사",
+    "rarity": "고급",
+    "emoji": "📖",
+    "base_stats": {
+      "str": 0,
+      "dex": 0,
+      "int": 15,
+      "luk": 0,
+      "att": 0,
+      "m_att": 22,
+      "def": 7
+    },
+    "base_price": 400
+  },
+  {
+    "id": 2285,
+    "name": "(희귀) 미스릴 마도서",
+    "slot_type": "보조무기",
+    "class_req": "법사",
+    "rarity": "희귀",
+    "emoji": "📖",
+    "base_stats": {
+      "str": 0,
+      "dex": 0,
+      "int": 20,
+      "luk": 0,
+      "att": 0,
+      "m_att": 30,
+      "def": 10
+    },
+    "base_price": 600
+  },
+  {
+    "id": 2286,
+    "name": "(영웅) 미스릴 마도서",
+    "slot_type": "보조무기",
+    "class_req": "법사",
+    "rarity": "영웅",
+    "emoji": "📖",
+    "base_stats": {
+      "str": 0,
+      "dex": 0,
+      "int": 30,
+      "luk": 0,
+      "att": 0,
+      "m_att": 45,
+      "def": 15
+    },
+    "base_price": 1000
+  },
+  {
+    "id": 2287,
+    "name": "(고유) 미스릴 마도서",
+    "slot_type": "보조무기",
+    "class_req": "법사",
+    "rarity": "고유",
+    "emoji": "📖",
+    "base_stats": {
+      "str": 0,
+      "dex": 0,
+      "int": 40,
+      "luk": 0,
+      "att": 0,
+      "m_att": 60,
+      "def": 20
+    },
+    "base_price": 1600
+  },
+  {
+    "id": 2288,
+    "name": "(전설) 미스릴 마도서",
+    "slot_type": "보조무기",
+    "class_req": "법사",
+    "rarity": "전설",
+    "emoji": "📖",
+    "base_stats": {
+      "str": 0,
+      "dex": 0,
+      "int": 60,
+      "luk": 0,
+      "att": 0,
+      "m_att": 90,
+      "def": 30
+    },
+    "base_price": 3000
+  },
+  {
+    "id": 2289,
+    "name": "(신화) 미스릴 마도서",
+    "slot_type": "보조무기",
+    "class_req": "법사",
+    "rarity": "신화",
+    "emoji": "📖",
+    "base_stats": {
+      "str": 0,
+      "dex": 0,
+      "int": 100,
+      "luk": 0,
+      "att": 0,
+      "m_att": 150,
+      "def": 50
+    },
+    "base_price": 6000
+  },
+  {
+    "id": 2290,
+    "name": "(일반) 오리할콘 마도서",
+    "slot_type": "보조무기",
+    "class_req": "법사",
+    "rarity": "일반",
+    "emoji": "📖",
+    "base_stats": {
+      "str": 0,
+      "dex": 0,
+      "int": 10,
+      "luk": 0,
+      "att": 0,
+      "m_att": 15,
+      "def": 5
+    },
+    "base_price": 200
+  },
+  {
+    "id": 2291,
+    "name": "(고급) 오리할콘 마도서",
+    "slot_type": "보조무기",
+    "class_req": "법사",
+    "rarity": "고급",
+    "emoji": "📖",
+    "base_stats": {
+      "str": 0,
+      "dex": 0,
+      "int": 15,
+      "luk": 0,
+      "att": 0,
+      "m_att": 22,
+      "def": 7
+    },
+    "base_price": 400
+  },
+  {
+    "id": 2292,
+    "name": "(희귀) 오리할콘 마도서",
+    "slot_type": "보조무기",
+    "class_req": "법사",
+    "rarity": "희귀",
+    "emoji": "📖",
+    "base_stats": {
+      "str": 0,
+      "dex": 0,
+      "int": 20,
+      "luk": 0,
+      "att": 0,
+      "m_att": 30,
+      "def": 10
+    },
+    "base_price": 600
+  },
+  {
+    "id": 2293,
+    "name": "(영웅) 오리할콘 마도서",
+    "slot_type": "보조무기",
+    "class_req": "법사",
+    "rarity": "영웅",
+    "emoji": "📖",
+    "base_stats": {
+      "str": 0,
+      "dex": 0,
+      "int": 30,
+      "luk": 0,
+      "att": 0,
+      "m_att": 45,
+      "def": 15
+    },
+    "base_price": 1000
+  },
+  {
+    "id": 2294,
+    "name": "(고유) 오리할콘 마도서",
+    "slot_type": "보조무기",
+    "class_req": "법사",
+    "rarity": "고유",
+    "emoji": "📖",
+    "base_stats": {
+      "str": 0,
+      "dex": 0,
+      "int": 40,
+      "luk": 0,
+      "att": 0,
+      "m_att": 60,
+      "def": 20
+    },
+    "base_price": 1600
+  },
+  {
+    "id": 2295,
+    "name": "(전설) 오리할콘 마도서",
+    "slot_type": "보조무기",
+    "class_req": "법사",
+    "rarity": "전설",
+    "emoji": "📖",
+    "base_stats": {
+      "str": 0,
+      "dex": 0,
+      "int": 60,
+      "luk": 0,
+      "att": 0,
+      "m_att": 90,
+      "def": 30
+    },
+    "base_price": 3000
+  },
+  {
+    "id": 2296,
+    "name": "(신화) 오리할콘 마도서",
+    "slot_type": "보조무기",
+    "class_req": "법사",
+    "rarity": "신화",
+    "emoji": "📖",
+    "base_stats": {
+      "str": 0,
+      "dex": 0,
+      "int": 100,
+      "luk": 0,
+      "att": 0,
+      "m_att": 150,
+      "def": 50
+    },
+    "base_price": 6000
+  },
+  {
+    "id": 2297,
+    "name": "(일반) 전설의 마도서",
+    "slot_type": "보조무기",
+    "class_req": "법사",
+    "rarity": "일반",
+    "emoji": "📖",
+    "base_stats": {
+      "str": 0,
+      "dex": 0,
+      "int": 10,
+      "luk": 0,
+      "att": 0,
+      "m_att": 15,
+      "def": 5
+    },
+    "base_price": 200
+  },
+  {
+    "id": 2298,
+    "name": "(고급) 전설의 마도서",
+    "slot_type": "보조무기",
+    "class_req": "법사",
+    "rarity": "고급",
+    "emoji": "📖",
+    "base_stats": {
+      "str": 0,
+      "dex": 0,
+      "int": 15,
+      "luk": 0,
+      "att": 0,
+      "m_att": 22,
+      "def": 7
+    },
+    "base_price": 400
+  },
+  {
+    "id": 2299,
+    "name": "(희귀) 전설의 마도서",
+    "slot_type": "보조무기",
+    "class_req": "법사",
+    "rarity": "희귀",
+    "emoji": "📖",
+    "base_stats": {
+      "str": 0,
+      "dex": 0,
+      "int": 20,
+      "luk": 0,
+      "att": 0,
+      "m_att": 30,
+      "def": 10
+    },
+    "base_price": 600
+  },
+  {
+    "id": 2300,
+    "name": "(영웅) 전설의 마도서",
+    "slot_type": "보조무기",
+    "class_req": "법사",
+    "rarity": "영웅",
+    "emoji": "📖",
+    "base_stats": {
+      "str": 0,
+      "dex": 0,
+      "int": 30,
+      "luk": 0,
+      "att": 0,
+      "m_att": 45,
+      "def": 15
+    },
+    "base_price": 1000
+  },
+  {
+    "id": 2301,
+    "name": "(고유) 전설의 마도서",
+    "slot_type": "보조무기",
+    "class_req": "법사",
+    "rarity": "고유",
+    "emoji": "📖",
+    "base_stats": {
+      "str": 0,
+      "dex": 0,
+      "int": 40,
+      "luk": 0,
+      "att": 0,
+      "m_att": 60,
+      "def": 20
+    },
+    "base_price": 1600
+  },
+  {
+    "id": 2302,
+    "name": "(전설) 전설의 마도서",
+    "slot_type": "보조무기",
+    "class_req": "법사",
+    "rarity": "전설",
+    "emoji": "📖",
+    "base_stats": {
+      "str": 0,
+      "dex": 0,
+      "int": 60,
+      "luk": 0,
+      "att": 0,
+      "m_att": 90,
+      "def": 30
+    },
+    "base_price": 3000
+  },
+  {
+    "id": 2303,
+    "name": "(신화) 전설의 마도서",
+    "slot_type": "보조무기",
+    "class_req": "법사",
+    "rarity": "신화",
+    "emoji": "📖",
+    "base_stats": {
+      "str": 0,
+      "dex": 0,
+      "int": 100,
+      "luk": 0,
+      "att": 0,
+      "m_att": 150,
+      "def": 50
+    },
+    "base_price": 6000
+  },
+  {
+    "id": 2304,
+    "name": "(일반) 신화의 마도서",
+    "slot_type": "보조무기",
+    "class_req": "법사",
+    "rarity": "일반",
+    "emoji": "📖",
+    "base_stats": {
+      "str": 0,
+      "dex": 0,
+      "int": 10,
+      "luk": 0,
+      "att": 0,
+      "m_att": 15,
+      "def": 5
+    },
+    "base_price": 200
+  },
+  {
+    "id": 2305,
+    "name": "(고급) 신화의 마도서",
+    "slot_type": "보조무기",
+    "class_req": "법사",
+    "rarity": "고급",
+    "emoji": "📖",
+    "base_stats": {
+      "str": 0,
+      "dex": 0,
+      "int": 15,
+      "luk": 0,
+      "att": 0,
+      "m_att": 22,
+      "def": 7
+    },
+    "base_price": 400
+  },
+  {
+    "id": 2306,
+    "name": "(희귀) 신화의 마도서",
+    "slot_type": "보조무기",
+    "class_req": "법사",
+    "rarity": "희귀",
+    "emoji": "📖",
+    "base_stats": {
+      "str": 0,
+      "dex": 0,
+      "int": 20,
+      "luk": 0,
+      "att": 0,
+      "m_att": 30,
+      "def": 10
+    },
+    "base_price": 600
+  },
+  {
+    "id": 2307,
+    "name": "(영웅) 신화의 마도서",
+    "slot_type": "보조무기",
+    "class_req": "법사",
+    "rarity": "영웅",
+    "emoji": "📖",
+    "base_stats": {
+      "str": 0,
+      "dex": 0,
+      "int": 30,
+      "luk": 0,
+      "att": 0,
+      "m_att": 45,
+      "def": 15
+    },
+    "base_price": 1000
+  },
+  {
+    "id": 2308,
+    "name": "(고유) 신화의 마도서",
+    "slot_type": "보조무기",
+    "class_req": "법사",
+    "rarity": "고유",
+    "emoji": "📖",
+    "base_stats": {
+      "str": 0,
+      "dex": 0,
+      "int": 40,
+      "luk": 0,
+      "att": 0,
+      "m_att": 60,
+      "def": 20
+    },
+    "base_price": 1600
+  },
+  {
+    "id": 2309,
+    "name": "(전설) 신화의 마도서",
+    "slot_type": "보조무기",
+    "class_req": "법사",
+    "rarity": "전설",
+    "emoji": "📖",
+    "base_stats": {
+      "str": 0,
+      "dex": 0,
+      "int": 60,
+      "luk": 0,
+      "att": 0,
+      "m_att": 90,
+      "def": 30
+    },
+    "base_price": 3000
+  },
+  {
+    "id": 2310,
+    "name": "(신화) 신화의 마도서",
+    "slot_type": "보조무기",
+    "class_req": "법사",
+    "rarity": "신화",
+    "emoji": "📖",
+    "base_stats": {
+      "str": 0,
+      "dex": 0,
+      "int": 100,
+      "luk": 0,
+      "att": 0,
+      "m_att": 150,
+      "def": 50
+    },
+    "base_price": 6000
+  },
+  {
+    "id": 2311,
+    "name": "(일반) 낡은 보조단검",
+    "slot_type": "보조무기",
+    "class_req": "도적",
+    "rarity": "일반",
+    "emoji": "🔪",
+    "base_stats": {
+      "str": 0,
+      "dex": 5,
+      "int": 0,
+      "luk": 10,
+      "att": 12,
+      "m_att": 0,
+      "def": 3
+    },
+    "base_price": 200
+  },
+  {
+    "id": 2312,
+    "name": "(고급) 낡은 보조단검",
+    "slot_type": "보조무기",
+    "class_req": "도적",
+    "rarity": "고급",
+    "emoji": "🔪",
+    "base_stats": {
+      "str": 0,
+      "dex": 7,
+      "int": 0,
+      "luk": 15,
+      "att": 18,
+      "m_att": 0,
+      "def": 4
+    },
+    "base_price": 400
+  },
+  {
+    "id": 2313,
+    "name": "(희귀) 낡은 보조단검",
+    "slot_type": "보조무기",
+    "class_req": "도적",
+    "rarity": "희귀",
+    "emoji": "🔪",
+    "base_stats": {
+      "str": 0,
+      "dex": 10,
+      "int": 0,
+      "luk": 20,
+      "att": 24,
+      "m_att": 0,
+      "def": 6
+    },
+    "base_price": 600
+  },
+  {
+    "id": 2314,
+    "name": "(영웅) 낡은 보조단검",
+    "slot_type": "보조무기",
+    "class_req": "도적",
+    "rarity": "영웅",
+    "emoji": "🔪",
+    "base_stats": {
+      "str": 0,
+      "dex": 15,
+      "int": 0,
+      "luk": 30,
+      "att": 36,
+      "m_att": 0,
+      "def": 9
+    },
+    "base_price": 1000
+  },
+  {
+    "id": 2315,
+    "name": "(고유) 낡은 보조단검",
+    "slot_type": "보조무기",
+    "class_req": "도적",
+    "rarity": "고유",
+    "emoji": "🔪",
+    "base_stats": {
+      "str": 0,
+      "dex": 20,
+      "int": 0,
+      "luk": 40,
+      "att": 48,
+      "m_att": 0,
+      "def": 12
+    },
+    "base_price": 1600
+  },
+  {
+    "id": 2316,
+    "name": "(전설) 낡은 보조단검",
+    "slot_type": "보조무기",
+    "class_req": "도적",
+    "rarity": "전설",
+    "emoji": "🔪",
+    "base_stats": {
+      "str": 0,
+      "dex": 30,
+      "int": 0,
+      "luk": 60,
+      "att": 72,
+      "m_att": 0,
+      "def": 18
+    },
+    "base_price": 3000
+  },
+  {
+    "id": 2317,
+    "name": "(신화) 낡은 보조단검",
+    "slot_type": "보조무기",
+    "class_req": "도적",
+    "rarity": "신화",
+    "emoji": "🔪",
+    "base_stats": {
+      "str": 0,
+      "dex": 50,
+      "int": 0,
+      "luk": 100,
+      "att": 120,
+      "m_att": 0,
+      "def": 30
+    },
+    "base_price": 6000
+  },
+  {
+    "id": 2318,
+    "name": "(일반) 강철 보조단검",
+    "slot_type": "보조무기",
+    "class_req": "도적",
+    "rarity": "일반",
+    "emoji": "🔪",
+    "base_stats": {
+      "str": 0,
+      "dex": 5,
+      "int": 0,
+      "luk": 10,
+      "att": 12,
+      "m_att": 0,
+      "def": 3
+    },
+    "base_price": 200
+  },
+  {
+    "id": 2319,
+    "name": "(고급) 강철 보조단검",
+    "slot_type": "보조무기",
+    "class_req": "도적",
+    "rarity": "고급",
+    "emoji": "🔪",
+    "base_stats": {
+      "str": 0,
+      "dex": 7,
+      "int": 0,
+      "luk": 15,
+      "att": 18,
+      "m_att": 0,
+      "def": 4
+    },
+    "base_price": 400
+  },
+  {
+    "id": 2320,
+    "name": "(희귀) 강철 보조단검",
+    "slot_type": "보조무기",
+    "class_req": "도적",
+    "rarity": "희귀",
+    "emoji": "🔪",
+    "base_stats": {
+      "str": 0,
+      "dex": 10,
+      "int": 0,
+      "luk": 20,
+      "att": 24,
+      "m_att": 0,
+      "def": 6
+    },
+    "base_price": 600
+  },
+  {
+    "id": 2321,
+    "name": "(영웅) 강철 보조단검",
+    "slot_type": "보조무기",
+    "class_req": "도적",
+    "rarity": "영웅",
+    "emoji": "🔪",
+    "base_stats": {
+      "str": 0,
+      "dex": 15,
+      "int": 0,
+      "luk": 30,
+      "att": 36,
+      "m_att": 0,
+      "def": 9
+    },
+    "base_price": 1000
+  },
+  {
+    "id": 2322,
+    "name": "(고유) 강철 보조단검",
+    "slot_type": "보조무기",
+    "class_req": "도적",
+    "rarity": "고유",
+    "emoji": "🔪",
+    "base_stats": {
+      "str": 0,
+      "dex": 20,
+      "int": 0,
+      "luk": 40,
+      "att": 48,
+      "m_att": 0,
+      "def": 12
+    },
+    "base_price": 1600
+  },
+  {
+    "id": 2323,
+    "name": "(전설) 강철 보조단검",
+    "slot_type": "보조무기",
+    "class_req": "도적",
+    "rarity": "전설",
+    "emoji": "🔪",
+    "base_stats": {
+      "str": 0,
+      "dex": 30,
+      "int": 0,
+      "luk": 60,
+      "att": 72,
+      "m_att": 0,
+      "def": 18
+    },
+    "base_price": 3000
+  },
+  {
+    "id": 2324,
+    "name": "(신화) 강철 보조단검",
+    "slot_type": "보조무기",
+    "class_req": "도적",
+    "rarity": "신화",
+    "emoji": "🔪",
+    "base_stats": {
+      "str": 0,
+      "dex": 50,
+      "int": 0,
+      "luk": 100,
+      "att": 120,
+      "m_att": 0,
+      "def": 30
+    },
+    "base_price": 6000
+  },
+  {
+    "id": 2325,
+    "name": "(일반) 미스릴 보조단검",
+    "slot_type": "보조무기",
+    "class_req": "도적",
+    "rarity": "일반",
+    "emoji": "🔪",
+    "base_stats": {
+      "str": 0,
+      "dex": 5,
+      "int": 0,
+      "luk": 10,
+      "att": 12,
+      "m_att": 0,
+      "def": 3
+    },
+    "base_price": 200
+  },
+  {
+    "id": 2326,
+    "name": "(고급) 미스릴 보조단검",
+    "slot_type": "보조무기",
+    "class_req": "도적",
+    "rarity": "고급",
+    "emoji": "🔪",
+    "base_stats": {
+      "str": 0,
+      "dex": 7,
+      "int": 0,
+      "luk": 15,
+      "att": 18,
+      "m_att": 0,
+      "def": 4
+    },
+    "base_price": 400
+  },
+  {
+    "id": 2327,
+    "name": "(희귀) 미스릴 보조단검",
+    "slot_type": "보조무기",
+    "class_req": "도적",
+    "rarity": "희귀",
+    "emoji": "🔪",
+    "base_stats": {
+      "str": 0,
+      "dex": 10,
+      "int": 0,
+      "luk": 20,
+      "att": 24,
+      "m_att": 0,
+      "def": 6
+    },
+    "base_price": 600
+  },
+  {
+    "id": 2328,
+    "name": "(영웅) 미스릴 보조단검",
+    "slot_type": "보조무기",
+    "class_req": "도적",
+    "rarity": "영웅",
+    "emoji": "🔪",
+    "base_stats": {
+      "str": 0,
+      "dex": 15,
+      "int": 0,
+      "luk": 30,
+      "att": 36,
+      "m_att": 0,
+      "def": 9
+    },
+    "base_price": 1000
+  },
+  {
+    "id": 2329,
+    "name": "(고유) 미스릴 보조단검",
+    "slot_type": "보조무기",
+    "class_req": "도적",
+    "rarity": "고유",
+    "emoji": "🔪",
+    "base_stats": {
+      "str": 0,
+      "dex": 20,
+      "int": 0,
+      "luk": 40,
+      "att": 48,
+      "m_att": 0,
+      "def": 12
+    },
+    "base_price": 1600
+  },
+  {
+    "id": 2330,
+    "name": "(전설) 미스릴 보조단검",
+    "slot_type": "보조무기",
+    "class_req": "도적",
+    "rarity": "전설",
+    "emoji": "🔪",
+    "base_stats": {
+      "str": 0,
+      "dex": 30,
+      "int": 0,
+      "luk": 60,
+      "att": 72,
+      "m_att": 0,
+      "def": 18
+    },
+    "base_price": 3000
+  },
+  {
+    "id": 2331,
+    "name": "(신화) 미스릴 보조단검",
+    "slot_type": "보조무기",
+    "class_req": "도적",
+    "rarity": "신화",
+    "emoji": "🔪",
+    "base_stats": {
+      "str": 0,
+      "dex": 50,
+      "int": 0,
+      "luk": 100,
+      "att": 120,
+      "m_att": 0,
+      "def": 30
+    },
+    "base_price": 6000
+  },
+  {
+    "id": 2332,
+    "name": "(일반) 오리할콘 보조단검",
+    "slot_type": "보조무기",
+    "class_req": "도적",
+    "rarity": "일반",
+    "emoji": "🔪",
+    "base_stats": {
+      "str": 0,
+      "dex": 5,
+      "int": 0,
+      "luk": 10,
+      "att": 12,
+      "m_att": 0,
+      "def": 3
+    },
+    "base_price": 200
+  },
+  {
+    "id": 2333,
+    "name": "(고급) 오리할콘 보조단검",
+    "slot_type": "보조무기",
+    "class_req": "도적",
+    "rarity": "고급",
+    "emoji": "🔪",
+    "base_stats": {
+      "str": 0,
+      "dex": 7,
+      "int": 0,
+      "luk": 15,
+      "att": 18,
+      "m_att": 0,
+      "def": 4
+    },
+    "base_price": 400
+  },
+  {
+    "id": 2334,
+    "name": "(희귀) 오리할콘 보조단검",
+    "slot_type": "보조무기",
+    "class_req": "도적",
+    "rarity": "희귀",
+    "emoji": "🔪",
+    "base_stats": {
+      "str": 0,
+      "dex": 10,
+      "int": 0,
+      "luk": 20,
+      "att": 24,
+      "m_att": 0,
+      "def": 6
+    },
+    "base_price": 600
+  },
+  {
+    "id": 2335,
+    "name": "(영웅) 오리할콘 보조단검",
+    "slot_type": "보조무기",
+    "class_req": "도적",
+    "rarity": "영웅",
+    "emoji": "🔪",
+    "base_stats": {
+      "str": 0,
+      "dex": 15,
+      "int": 0,
+      "luk": 30,
+      "att": 36,
+      "m_att": 0,
+      "def": 9
+    },
+    "base_price": 1000
+  },
+  {
+    "id": 2336,
+    "name": "(고유) 오리할콘 보조단검",
+    "slot_type": "보조무기",
+    "class_req": "도적",
+    "rarity": "고유",
+    "emoji": "🔪",
+    "base_stats": {
+      "str": 0,
+      "dex": 20,
+      "int": 0,
+      "luk": 40,
+      "att": 48,
+      "m_att": 0,
+      "def": 12
+    },
+    "base_price": 1600
+  },
+  {
+    "id": 2337,
+    "name": "(전설) 오리할콘 보조단검",
+    "slot_type": "보조무기",
+    "class_req": "도적",
+    "rarity": "전설",
+    "emoji": "🔪",
+    "base_stats": {
+      "str": 0,
+      "dex": 30,
+      "int": 0,
+      "luk": 60,
+      "att": 72,
+      "m_att": 0,
+      "def": 18
+    },
+    "base_price": 3000
+  },
+  {
+    "id": 2338,
+    "name": "(신화) 오리할콘 보조단검",
+    "slot_type": "보조무기",
+    "class_req": "도적",
+    "rarity": "신화",
+    "emoji": "🔪",
+    "base_stats": {
+      "str": 0,
+      "dex": 50,
+      "int": 0,
+      "luk": 100,
+      "att": 120,
+      "m_att": 0,
+      "def": 30
+    },
+    "base_price": 6000
+  },
+  {
+    "id": 2339,
+    "name": "(일반) 전설의 보조단검",
+    "slot_type": "보조무기",
+    "class_req": "도적",
+    "rarity": "일반",
+    "emoji": "🔪",
+    "base_stats": {
+      "str": 0,
+      "dex": 5,
+      "int": 0,
+      "luk": 10,
+      "att": 12,
+      "m_att": 0,
+      "def": 3
+    },
+    "base_price": 200
+  },
+  {
+    "id": 2340,
+    "name": "(고급) 전설의 보조단검",
+    "slot_type": "보조무기",
+    "class_req": "도적",
+    "rarity": "고급",
+    "emoji": "🔪",
+    "base_stats": {
+      "str": 0,
+      "dex": 7,
+      "int": 0,
+      "luk": 15,
+      "att": 18,
+      "m_att": 0,
+      "def": 4
+    },
+    "base_price": 400
+  },
+  {
+    "id": 2341,
+    "name": "(희귀) 전설의 보조단검",
+    "slot_type": "보조무기",
+    "class_req": "도적",
+    "rarity": "희귀",
+    "emoji": "🔪",
+    "base_stats": {
+      "str": 0,
+      "dex": 10,
+      "int": 0,
+      "luk": 20,
+      "att": 24,
+      "m_att": 0,
+      "def": 6
+    },
+    "base_price": 600
+  },
+  {
+    "id": 2342,
+    "name": "(영웅) 전설의 보조단검",
+    "slot_type": "보조무기",
+    "class_req": "도적",
+    "rarity": "영웅",
+    "emoji": "🔪",
+    "base_stats": {
+      "str": 0,
+      "dex": 15,
+      "int": 0,
+      "luk": 30,
+      "att": 36,
+      "m_att": 0,
+      "def": 9
+    },
+    "base_price": 1000
+  },
+  {
+    "id": 2343,
+    "name": "(고유) 전설의 보조단검",
+    "slot_type": "보조무기",
+    "class_req": "도적",
+    "rarity": "고유",
+    "emoji": "🔪",
+    "base_stats": {
+      "str": 0,
+      "dex": 20,
+      "int": 0,
+      "luk": 40,
+      "att": 48,
+      "m_att": 0,
+      "def": 12
+    },
+    "base_price": 1600
+  },
+  {
+    "id": 2344,
+    "name": "(전설) 전설의 보조단검",
+    "slot_type": "보조무기",
+    "class_req": "도적",
+    "rarity": "전설",
+    "emoji": "🔪",
+    "base_stats": {
+      "str": 0,
+      "dex": 30,
+      "int": 0,
+      "luk": 60,
+      "att": 72,
+      "m_att": 0,
+      "def": 18
+    },
+    "base_price": 3000
+  },
+  {
+    "id": 2345,
+    "name": "(신화) 전설의 보조단검",
+    "slot_type": "보조무기",
+    "class_req": "도적",
+    "rarity": "신화",
+    "emoji": "🔪",
+    "base_stats": {
+      "str": 0,
+      "dex": 50,
+      "int": 0,
+      "luk": 100,
+      "att": 120,
+      "m_att": 0,
+      "def": 30
+    },
+    "base_price": 6000
+  },
+  {
+    "id": 2346,
+    "name": "(일반) 신화의 보조단검",
+    "slot_type": "보조무기",
+    "class_req": "도적",
+    "rarity": "일반",
+    "emoji": "🔪",
+    "base_stats": {
+      "str": 0,
+      "dex": 5,
+      "int": 0,
+      "luk": 10,
+      "att": 12,
+      "m_att": 0,
+      "def": 3
+    },
+    "base_price": 200
+  },
+  {
+    "id": 2347,
+    "name": "(고급) 신화의 보조단검",
+    "slot_type": "보조무기",
+    "class_req": "도적",
+    "rarity": "고급",
+    "emoji": "🔪",
+    "base_stats": {
+      "str": 0,
+      "dex": 7,
+      "int": 0,
+      "luk": 15,
+      "att": 18,
+      "m_att": 0,
+      "def": 4
+    },
+    "base_price": 400
+  },
+  {
+    "id": 2348,
+    "name": "(희귀) 신화의 보조단검",
+    "slot_type": "보조무기",
+    "class_req": "도적",
+    "rarity": "희귀",
+    "emoji": "🔪",
+    "base_stats": {
+      "str": 0,
+      "dex": 10,
+      "int": 0,
+      "luk": 20,
+      "att": 24,
+      "m_att": 0,
+      "def": 6
+    },
+    "base_price": 600
+  },
+  {
+    "id": 2349,
+    "name": "(영웅) 신화의 보조단검",
+    "slot_type": "보조무기",
+    "class_req": "도적",
+    "rarity": "영웅",
+    "emoji": "🔪",
+    "base_stats": {
+      "str": 0,
+      "dex": 15,
+      "int": 0,
+      "luk": 30,
+      "att": 36,
+      "m_att": 0,
+      "def": 9
+    },
+    "base_price": 1000
+  },
+  {
+    "id": 2350,
+    "name": "(고유) 신화의 보조단검",
+    "slot_type": "보조무기",
+    "class_req": "도적",
+    "rarity": "고유",
+    "emoji": "🔪",
+    "base_stats": {
+      "str": 0,
+      "dex": 20,
+      "int": 0,
+      "luk": 40,
+      "att": 48,
+      "m_att": 0,
+      "def": 12
+    },
+    "base_price": 1600
+  },
+  {
+    "id": 2351,
+    "name": "(전설) 신화의 보조단검",
+    "slot_type": "보조무기",
+    "class_req": "도적",
+    "rarity": "전설",
+    "emoji": "🔪",
+    "base_stats": {
+      "str": 0,
+      "dex": 30,
+      "int": 0,
+      "luk": 60,
+      "att": 72,
+      "m_att": 0,
+      "def": 18
+    },
+    "base_price": 3000
+  },
+  {
+    "id": 2352,
+    "name": "(신화) 신화의 보조단검",
+    "slot_type": "보조무기",
+    "class_req": "도적",
+    "rarity": "신화",
+    "emoji": "🔪",
+    "base_stats": {
+      "str": 0,
+      "dex": 50,
+      "int": 0,
+      "luk": 100,
+      "att": 120,
+      "m_att": 0,
+      "def": 30
+    },
+    "base_price": 6000
+  },
+  {
+    "id": 2353,
+    "name": "(일반) 낡은 화살통",
+    "slot_type": "보조무기",
+    "class_req": "궁수",
+    "rarity": "일반",
+    "emoji": "🎯",
+    "base_stats": {
+      "str": 0,
+      "dex": 12,
+      "int": 0,
+      "luk": 0,
+      "att": 10,
+      "m_att": 0,
+      "def": 4
+    },
+    "base_price": 200
+  },
+  {
+    "id": 2354,
+    "name": "(고급) 낡은 화살통",
+    "slot_type": "보조무기",
+    "class_req": "궁수",
+    "rarity": "고급",
+    "emoji": "🎯",
+    "base_stats": {
+      "str": 0,
+      "dex": 18,
+      "int": 0,
+      "luk": 0,
+      "att": 15,
+      "m_att": 0,
+      "def": 6
+    },
+    "base_price": 400
+  },
+  {
+    "id": 2355,
+    "name": "(희귀) 낡은 화살통",
+    "slot_type": "보조무기",
+    "class_req": "궁수",
+    "rarity": "희귀",
+    "emoji": "🎯",
+    "base_stats": {
+      "str": 0,
+      "dex": 24,
+      "int": 0,
+      "luk": 0,
+      "att": 20,
+      "m_att": 0,
+      "def": 8
+    },
+    "base_price": 600
+  },
+  {
+    "id": 2356,
+    "name": "(영웅) 낡은 화살통",
+    "slot_type": "보조무기",
+    "class_req": "궁수",
+    "rarity": "영웅",
+    "emoji": "🎯",
+    "base_stats": {
+      "str": 0,
+      "dex": 36,
+      "int": 0,
+      "luk": 0,
+      "att": 30,
+      "m_att": 0,
+      "def": 12
+    },
+    "base_price": 1000
+  },
+  {
+    "id": 2357,
+    "name": "(고유) 낡은 화살통",
+    "slot_type": "보조무기",
+    "class_req": "궁수",
+    "rarity": "고유",
+    "emoji": "🎯",
+    "base_stats": {
+      "str": 0,
+      "dex": 48,
+      "int": 0,
+      "luk": 0,
+      "att": 40,
+      "m_att": 0,
+      "def": 16
+    },
+    "base_price": 1600
+  },
+  {
+    "id": 2358,
+    "name": "(전설) 낡은 화살통",
+    "slot_type": "보조무기",
+    "class_req": "궁수",
+    "rarity": "전설",
+    "emoji": "🎯",
+    "base_stats": {
+      "str": 0,
+      "dex": 72,
+      "int": 0,
+      "luk": 0,
+      "att": 60,
+      "m_att": 0,
+      "def": 24
+    },
+    "base_price": 3000
+  },
+  {
+    "id": 2359,
+    "name": "(신화) 낡은 화살통",
+    "slot_type": "보조무기",
+    "class_req": "궁수",
+    "rarity": "신화",
+    "emoji": "🎯",
+    "base_stats": {
+      "str": 0,
+      "dex": 120,
+      "int": 0,
+      "luk": 0,
+      "att": 100,
+      "m_att": 0,
+      "def": 40
+    },
+    "base_price": 6000
+  },
+  {
+    "id": 2360,
+    "name": "(일반) 강철 화살통",
+    "slot_type": "보조무기",
+    "class_req": "궁수",
+    "rarity": "일반",
+    "emoji": "🎯",
+    "base_stats": {
+      "str": 0,
+      "dex": 12,
+      "int": 0,
+      "luk": 0,
+      "att": 10,
+      "m_att": 0,
+      "def": 4
+    },
+    "base_price": 200
+  },
+  {
+    "id": 2361,
+    "name": "(고급) 강철 화살통",
+    "slot_type": "보조무기",
+    "class_req": "궁수",
+    "rarity": "고급",
+    "emoji": "🎯",
+    "base_stats": {
+      "str": 0,
+      "dex": 18,
+      "int": 0,
+      "luk": 0,
+      "att": 15,
+      "m_att": 0,
+      "def": 6
+    },
+    "base_price": 400
+  },
+  {
+    "id": 2362,
+    "name": "(희귀) 강철 화살통",
+    "slot_type": "보조무기",
+    "class_req": "궁수",
+    "rarity": "희귀",
+    "emoji": "🎯",
+    "base_stats": {
+      "str": 0,
+      "dex": 24,
+      "int": 0,
+      "luk": 0,
+      "att": 20,
+      "m_att": 0,
+      "def": 8
+    },
+    "base_price": 600
+  },
+  {
+    "id": 2363,
+    "name": "(영웅) 강철 화살통",
+    "slot_type": "보조무기",
+    "class_req": "궁수",
+    "rarity": "영웅",
+    "emoji": "🎯",
+    "base_stats": {
+      "str": 0,
+      "dex": 36,
+      "int": 0,
+      "luk": 0,
+      "att": 30,
+      "m_att": 0,
+      "def": 12
+    },
+    "base_price": 1000
+  },
+  {
+    "id": 2364,
+    "name": "(고유) 강철 화살통",
+    "slot_type": "보조무기",
+    "class_req": "궁수",
+    "rarity": "고유",
+    "emoji": "🎯",
+    "base_stats": {
+      "str": 0,
+      "dex": 48,
+      "int": 0,
+      "luk": 0,
+      "att": 40,
+      "m_att": 0,
+      "def": 16
+    },
+    "base_price": 1600
+  },
+  {
+    "id": 2365,
+    "name": "(전설) 강철 화살통",
+    "slot_type": "보조무기",
+    "class_req": "궁수",
+    "rarity": "전설",
+    "emoji": "🎯",
+    "base_stats": {
+      "str": 0,
+      "dex": 72,
+      "int": 0,
+      "luk": 0,
+      "att": 60,
+      "m_att": 0,
+      "def": 24
+    },
+    "base_price": 3000
+  },
+  {
+    "id": 2366,
+    "name": "(신화) 강철 화살통",
+    "slot_type": "보조무기",
+    "class_req": "궁수",
+    "rarity": "신화",
+    "emoji": "🎯",
+    "base_stats": {
+      "str": 0,
+      "dex": 120,
+      "int": 0,
+      "luk": 0,
+      "att": 100,
+      "m_att": 0,
+      "def": 40
+    },
+    "base_price": 6000
+  },
+  {
+    "id": 2367,
+    "name": "(일반) 미스릴 화살통",
+    "slot_type": "보조무기",
+    "class_req": "궁수",
+    "rarity": "일반",
+    "emoji": "🎯",
+    "base_stats": {
+      "str": 0,
+      "dex": 12,
+      "int": 0,
+      "luk": 0,
+      "att": 10,
+      "m_att": 0,
+      "def": 4
+    },
+    "base_price": 200
+  },
+  {
+    "id": 2368,
+    "name": "(고급) 미스릴 화살통",
+    "slot_type": "보조무기",
+    "class_req": "궁수",
+    "rarity": "고급",
+    "emoji": "🎯",
+    "base_stats": {
+      "str": 0,
+      "dex": 18,
+      "int": 0,
+      "luk": 0,
+      "att": 15,
+      "m_att": 0,
+      "def": 6
+    },
+    "base_price": 400
+  },
+  {
+    "id": 2369,
+    "name": "(희귀) 미스릴 화살통",
+    "slot_type": "보조무기",
+    "class_req": "궁수",
+    "rarity": "희귀",
+    "emoji": "🎯",
+    "base_stats": {
+      "str": 0,
+      "dex": 24,
+      "int": 0,
+      "luk": 0,
+      "att": 20,
+      "m_att": 0,
+      "def": 8
+    },
+    "base_price": 600
+  },
+  {
+    "id": 2370,
+    "name": "(영웅) 미스릴 화살통",
+    "slot_type": "보조무기",
+    "class_req": "궁수",
+    "rarity": "영웅",
+    "emoji": "🎯",
+    "base_stats": {
+      "str": 0,
+      "dex": 36,
+      "int": 0,
+      "luk": 0,
+      "att": 30,
+      "m_att": 0,
+      "def": 12
+    },
+    "base_price": 1000
+  },
+  {
+    "id": 2371,
+    "name": "(고유) 미스릴 화살통",
+    "slot_type": "보조무기",
+    "class_req": "궁수",
+    "rarity": "고유",
+    "emoji": "🎯",
+    "base_stats": {
+      "str": 0,
+      "dex": 48,
+      "int": 0,
+      "luk": 0,
+      "att": 40,
+      "m_att": 0,
+      "def": 16
+    },
+    "base_price": 1600
+  },
+  {
+    "id": 2372,
+    "name": "(전설) 미스릴 화살통",
+    "slot_type": "보조무기",
+    "class_req": "궁수",
+    "rarity": "전설",
+    "emoji": "🎯",
+    "base_stats": {
+      "str": 0,
+      "dex": 72,
+      "int": 0,
+      "luk": 0,
+      "att": 60,
+      "m_att": 0,
+      "def": 24
+    },
+    "base_price": 3000
+  },
+  {
+    "id": 2373,
+    "name": "(신화) 미스릴 화살통",
+    "slot_type": "보조무기",
+    "class_req": "궁수",
+    "rarity": "신화",
+    "emoji": "🎯",
+    "base_stats": {
+      "str": 0,
+      "dex": 120,
+      "int": 0,
+      "luk": 0,
+      "att": 100,
+      "m_att": 0,
+      "def": 40
+    },
+    "base_price": 6000
+  },
+  {
+    "id": 2374,
+    "name": "(일반) 오리할콘 화살통",
+    "slot_type": "보조무기",
+    "class_req": "궁수",
+    "rarity": "일반",
+    "emoji": "🎯",
+    "base_stats": {
+      "str": 0,
+      "dex": 12,
+      "int": 0,
+      "luk": 0,
+      "att": 10,
+      "m_att": 0,
+      "def": 4
+    },
+    "base_price": 200
+  },
+  {
+    "id": 2375,
+    "name": "(고급) 오리할콘 화살통",
+    "slot_type": "보조무기",
+    "class_req": "궁수",
+    "rarity": "고급",
+    "emoji": "🎯",
+    "base_stats": {
+      "str": 0,
+      "dex": 18,
+      "int": 0,
+      "luk": 0,
+      "att": 15,
+      "m_att": 0,
+      "def": 6
+    },
+    "base_price": 400
+  },
+  {
+    "id": 2376,
+    "name": "(희귀) 오리할콘 화살통",
+    "slot_type": "보조무기",
+    "class_req": "궁수",
+    "rarity": "희귀",
+    "emoji": "🎯",
+    "base_stats": {
+      "str": 0,
+      "dex": 24,
+      "int": 0,
+      "luk": 0,
+      "att": 20,
+      "m_att": 0,
+      "def": 8
+    },
+    "base_price": 600
+  },
+  {
+    "id": 2377,
+    "name": "(영웅) 오리할콘 화살통",
+    "slot_type": "보조무기",
+    "class_req": "궁수",
+    "rarity": "영웅",
+    "emoji": "🎯",
+    "base_stats": {
+      "str": 0,
+      "dex": 36,
+      "int": 0,
+      "luk": 0,
+      "att": 30,
+      "m_att": 0,
+      "def": 12
+    },
+    "base_price": 1000
+  },
+  {
+    "id": 2378,
+    "name": "(고유) 오리할콘 화살통",
+    "slot_type": "보조무기",
+    "class_req": "궁수",
+    "rarity": "고유",
+    "emoji": "🎯",
+    "base_stats": {
+      "str": 0,
+      "dex": 48,
+      "int": 0,
+      "luk": 0,
+      "att": 40,
+      "m_att": 0,
+      "def": 16
+    },
+    "base_price": 1600
+  },
+  {
+    "id": 2379,
+    "name": "(전설) 오리할콘 화살통",
+    "slot_type": "보조무기",
+    "class_req": "궁수",
+    "rarity": "전설",
+    "emoji": "🎯",
+    "base_stats": {
+      "str": 0,
+      "dex": 72,
+      "int": 0,
+      "luk": 0,
+      "att": 60,
+      "m_att": 0,
+      "def": 24
+    },
+    "base_price": 3000
+  },
+  {
+    "id": 2380,
+    "name": "(신화) 오리할콘 화살통",
+    "slot_type": "보조무기",
+    "class_req": "궁수",
+    "rarity": "신화",
+    "emoji": "🎯",
+    "base_stats": {
+      "str": 0,
+      "dex": 120,
+      "int": 0,
+      "luk": 0,
+      "att": 100,
+      "m_att": 0,
+      "def": 40
+    },
+    "base_price": 6000
+  },
+  {
+    "id": 2381,
+    "name": "(일반) 전설의 화살통",
+    "slot_type": "보조무기",
+    "class_req": "궁수",
+    "rarity": "일반",
+    "emoji": "🎯",
+    "base_stats": {
+      "str": 0,
+      "dex": 12,
+      "int": 0,
+      "luk": 0,
+      "att": 10,
+      "m_att": 0,
+      "def": 4
+    },
+    "base_price": 200
+  },
+  {
+    "id": 2382,
+    "name": "(고급) 전설의 화살통",
+    "slot_type": "보조무기",
+    "class_req": "궁수",
+    "rarity": "고급",
+    "emoji": "🎯",
+    "base_stats": {
+      "str": 0,
+      "dex": 18,
+      "int": 0,
+      "luk": 0,
+      "att": 15,
+      "m_att": 0,
+      "def": 6
+    },
+    "base_price": 400
+  },
+  {
+    "id": 2383,
+    "name": "(희귀) 전설의 화살통",
+    "slot_type": "보조무기",
+    "class_req": "궁수",
+    "rarity": "희귀",
+    "emoji": "🎯",
+    "base_stats": {
+      "str": 0,
+      "dex": 24,
+      "int": 0,
+      "luk": 0,
+      "att": 20,
+      "m_att": 0,
+      "def": 8
+    },
+    "base_price": 600
+  },
+  {
+    "id": 2384,
+    "name": "(영웅) 전설의 화살통",
+    "slot_type": "보조무기",
+    "class_req": "궁수",
+    "rarity": "영웅",
+    "emoji": "🎯",
+    "base_stats": {
+      "str": 0,
+      "dex": 36,
+      "int": 0,
+      "luk": 0,
+      "att": 30,
+      "m_att": 0,
+      "def": 12
+    },
+    "base_price": 1000
+  },
+  {
+    "id": 2385,
+    "name": "(고유) 전설의 화살통",
+    "slot_type": "보조무기",
+    "class_req": "궁수",
+    "rarity": "고유",
+    "emoji": "🎯",
+    "base_stats": {
+      "str": 0,
+      "dex": 48,
+      "int": 0,
+      "luk": 0,
+      "att": 40,
+      "m_att": 0,
+      "def": 16
+    },
+    "base_price": 1600
+  },
+  {
+    "id": 2386,
+    "name": "(전설) 전설의 화살통",
+    "slot_type": "보조무기",
+    "class_req": "궁수",
+    "rarity": "전설",
+    "emoji": "🎯",
+    "base_stats": {
+      "str": 0,
+      "dex": 72,
+      "int": 0,
+      "luk": 0,
+      "att": 60,
+      "m_att": 0,
+      "def": 24
+    },
+    "base_price": 3000
+  },
+  {
+    "id": 2387,
+    "name": "(신화) 전설의 화살통",
+    "slot_type": "보조무기",
+    "class_req": "궁수",
+    "rarity": "신화",
+    "emoji": "🎯",
+    "base_stats": {
+      "str": 0,
+      "dex": 120,
+      "int": 0,
+      "luk": 0,
+      "att": 100,
+      "m_att": 0,
+      "def": 40
+    },
+    "base_price": 6000
+  },
+  {
+    "id": 2388,
+    "name": "(일반) 신화의 화살통",
+    "slot_type": "보조무기",
+    "class_req": "궁수",
+    "rarity": "일반",
+    "emoji": "🎯",
+    "base_stats": {
+      "str": 0,
+      "dex": 12,
+      "int": 0,
+      "luk": 0,
+      "att": 10,
+      "m_att": 0,
+      "def": 4
+    },
+    "base_price": 200
+  },
+  {
+    "id": 2389,
+    "name": "(고급) 신화의 화살통",
+    "slot_type": "보조무기",
+    "class_req": "궁수",
+    "rarity": "고급",
+    "emoji": "🎯",
+    "base_stats": {
+      "str": 0,
+      "dex": 18,
+      "int": 0,
+      "luk": 0,
+      "att": 15,
+      "m_att": 0,
+      "def": 6
+    },
+    "base_price": 400
+  },
+  {
+    "id": 2390,
+    "name": "(희귀) 신화의 화살통",
+    "slot_type": "보조무기",
+    "class_req": "궁수",
+    "rarity": "희귀",
+    "emoji": "🎯",
+    "base_stats": {
+      "str": 0,
+      "dex": 24,
+      "int": 0,
+      "luk": 0,
+      "att": 20,
+      "m_att": 0,
+      "def": 8
+    },
+    "base_price": 600
+  },
+  {
+    "id": 2391,
+    "name": "(영웅) 신화의 화살통",
+    "slot_type": "보조무기",
+    "class_req": "궁수",
+    "rarity": "영웅",
+    "emoji": "🎯",
+    "base_stats": {
+      "str": 0,
+      "dex": 36,
+      "int": 0,
+      "luk": 0,
+      "att": 30,
+      "m_att": 0,
+      "def": 12
+    },
+    "base_price": 1000
+  },
+  {
+    "id": 2392,
+    "name": "(고유) 신화의 화살통",
+    "slot_type": "보조무기",
+    "class_req": "궁수",
+    "rarity": "고유",
+    "emoji": "🎯",
+    "base_stats": {
+      "str": 0,
+      "dex": 48,
+      "int": 0,
+      "luk": 0,
+      "att": 40,
+      "m_att": 0,
+      "def": 16
+    },
+    "base_price": 1600
+  },
+  {
+    "id": 2393,
+    "name": "(전설) 신화의 화살통",
+    "slot_type": "보조무기",
+    "class_req": "궁수",
+    "rarity": "전설",
+    "emoji": "🎯",
+    "base_stats": {
+      "str": 0,
+      "dex": 72,
+      "int": 0,
+      "luk": 0,
+      "att": 60,
+      "m_att": 0,
+      "def": 24
+    },
+    "base_price": 3000
+  },
+  {
+    "id": 2394,
+    "name": "(신화) 신화의 화살통",
+    "slot_type": "보조무기",
+    "class_req": "궁수",
+    "rarity": "신화",
+    "emoji": "🎯",
+    "base_stats": {
+      "str": 0,
+      "dex": 120,
+      "int": 0,
+      "luk": 0,
+      "att": 100,
+      "m_att": 0,
+      "def": 40
+    },
+    "base_price": 6000
+  },
+  {
+    "id": 2395,
+    "name": "(일반) 낡은 탄환통",
+    "slot_type": "보조무기",
+    "class_req": "해적",
+    "rarity": "일반",
+    "emoji": "💣",
+    "base_stats": {
+      "str": 0,
+      "dex": 10,
+      "int": 0,
+      "luk": 6,
+      "att": 14,
+      "m_att": 0,
+      "def": 4
+    },
+    "base_price": 200
+  },
+  {
+    "id": 2396,
+    "name": "(고급) 낡은 탄환통",
+    "slot_type": "보조무기",
+    "class_req": "해적",
+    "rarity": "고급",
+    "emoji": "💣",
+    "base_stats": {
+      "str": 0,
+      "dex": 15,
+      "int": 0,
+      "luk": 9,
+      "att": 21,
+      "m_att": 0,
+      "def": 6
+    },
+    "base_price": 400
+  },
+  {
+    "id": 2397,
+    "name": "(희귀) 낡은 탄환통",
+    "slot_type": "보조무기",
+    "class_req": "해적",
+    "rarity": "희귀",
+    "emoji": "💣",
+    "base_stats": {
+      "str": 0,
+      "dex": 20,
+      "int": 0,
+      "luk": 12,
+      "att": 28,
+      "m_att": 0,
+      "def": 8
+    },
+    "base_price": 600
+  },
+  {
+    "id": 2398,
+    "name": "(영웅) 낡은 탄환통",
+    "slot_type": "보조무기",
+    "class_req": "해적",
+    "rarity": "영웅",
+    "emoji": "💣",
+    "base_stats": {
+      "str": 0,
+      "dex": 30,
+      "int": 0,
+      "luk": 18,
+      "att": 42,
+      "m_att": 0,
+      "def": 12
+    },
+    "base_price": 1000
+  },
+  {
+    "id": 2399,
+    "name": "(고유) 낡은 탄환통",
+    "slot_type": "보조무기",
+    "class_req": "해적",
+    "rarity": "고유",
+    "emoji": "💣",
+    "base_stats": {
+      "str": 0,
+      "dex": 40,
+      "int": 0,
+      "luk": 24,
+      "att": 56,
+      "m_att": 0,
+      "def": 16
+    },
+    "base_price": 1600
+  },
+  {
+    "id": 2400,
+    "name": "(전설) 낡은 탄환통",
+    "slot_type": "보조무기",
+    "class_req": "해적",
+    "rarity": "전설",
+    "emoji": "💣",
+    "base_stats": {
+      "str": 0,
+      "dex": 60,
+      "int": 0,
+      "luk": 36,
+      "att": 84,
+      "m_att": 0,
+      "def": 24
+    },
+    "base_price": 3000
+  },
+  {
+    "id": 2401,
+    "name": "(신화) 낡은 탄환통",
+    "slot_type": "보조무기",
+    "class_req": "해적",
+    "rarity": "신화",
+    "emoji": "💣",
+    "base_stats": {
+      "str": 0,
+      "dex": 100,
+      "int": 0,
+      "luk": 60,
+      "att": 140,
+      "m_att": 0,
+      "def": 40
+    },
+    "base_price": 6000
+  },
+  {
+    "id": 2402,
+    "name": "(일반) 강철 탄환통",
+    "slot_type": "보조무기",
+    "class_req": "해적",
+    "rarity": "일반",
+    "emoji": "💣",
+    "base_stats": {
+      "str": 0,
+      "dex": 10,
+      "int": 0,
+      "luk": 6,
+      "att": 14,
+      "m_att": 0,
+      "def": 4
+    },
+    "base_price": 200
+  },
+  {
+    "id": 2403,
+    "name": "(고급) 강철 탄환통",
+    "slot_type": "보조무기",
+    "class_req": "해적",
+    "rarity": "고급",
+    "emoji": "💣",
+    "base_stats": {
+      "str": 0,
+      "dex": 15,
+      "int": 0,
+      "luk": 9,
+      "att": 21,
+      "m_att": 0,
+      "def": 6
+    },
+    "base_price": 400
+  },
+  {
+    "id": 2404,
+    "name": "(희귀) 강철 탄환통",
+    "slot_type": "보조무기",
+    "class_req": "해적",
+    "rarity": "희귀",
+    "emoji": "💣",
+    "base_stats": {
+      "str": 0,
+      "dex": 20,
+      "int": 0,
+      "luk": 12,
+      "att": 28,
+      "m_att": 0,
+      "def": 8
+    },
+    "base_price": 600
+  },
+  {
+    "id": 2405,
+    "name": "(영웅) 강철 탄환통",
+    "slot_type": "보조무기",
+    "class_req": "해적",
+    "rarity": "영웅",
+    "emoji": "💣",
+    "base_stats": {
+      "str": 0,
+      "dex": 30,
+      "int": 0,
+      "luk": 18,
+      "att": 42,
+      "m_att": 0,
+      "def": 12
+    },
+    "base_price": 1000
+  },
+  {
+    "id": 2406,
+    "name": "(고유) 강철 탄환통",
+    "slot_type": "보조무기",
+    "class_req": "해적",
+    "rarity": "고유",
+    "emoji": "💣",
+    "base_stats": {
+      "str": 0,
+      "dex": 40,
+      "int": 0,
+      "luk": 24,
+      "att": 56,
+      "m_att": 0,
+      "def": 16
+    },
+    "base_price": 1600
+  },
+  {
+    "id": 2407,
+    "name": "(전설) 강철 탄환통",
+    "slot_type": "보조무기",
+    "class_req": "해적",
+    "rarity": "전설",
+    "emoji": "💣",
+    "base_stats": {
+      "str": 0,
+      "dex": 60,
+      "int": 0,
+      "luk": 36,
+      "att": 84,
+      "m_att": 0,
+      "def": 24
+    },
+    "base_price": 3000
+  },
+  {
+    "id": 2408,
+    "name": "(신화) 강철 탄환통",
+    "slot_type": "보조무기",
+    "class_req": "해적",
+    "rarity": "신화",
+    "emoji": "💣",
+    "base_stats": {
+      "str": 0,
+      "dex": 100,
+      "int": 0,
+      "luk": 60,
+      "att": 140,
+      "m_att": 0,
+      "def": 40
+    },
+    "base_price": 6000
+  },
+  {
+    "id": 2409,
+    "name": "(일반) 미스릴 탄환통",
+    "slot_type": "보조무기",
+    "class_req": "해적",
+    "rarity": "일반",
+    "emoji": "💣",
+    "base_stats": {
+      "str": 0,
+      "dex": 10,
+      "int": 0,
+      "luk": 6,
+      "att": 14,
+      "m_att": 0,
+      "def": 4
+    },
+    "base_price": 200
+  },
+  {
+    "id": 2410,
+    "name": "(고급) 미스릴 탄환통",
+    "slot_type": "보조무기",
+    "class_req": "해적",
+    "rarity": "고급",
+    "emoji": "💣",
+    "base_stats": {
+      "str": 0,
+      "dex": 15,
+      "int": 0,
+      "luk": 9,
+      "att": 21,
+      "m_att": 0,
+      "def": 6
+    },
+    "base_price": 400
+  },
+  {
+    "id": 2411,
+    "name": "(희귀) 미스릴 탄환통",
+    "slot_type": "보조무기",
+    "class_req": "해적",
+    "rarity": "희귀",
+    "emoji": "💣",
+    "base_stats": {
+      "str": 0,
+      "dex": 20,
+      "int": 0,
+      "luk": 12,
+      "att": 28,
+      "m_att": 0,
+      "def": 8
+    },
+    "base_price": 600
+  },
+  {
+    "id": 2412,
+    "name": "(영웅) 미스릴 탄환통",
+    "slot_type": "보조무기",
+    "class_req": "해적",
+    "rarity": "영웅",
+    "emoji": "💣",
+    "base_stats": {
+      "str": 0,
+      "dex": 30,
+      "int": 0,
+      "luk": 18,
+      "att": 42,
+      "m_att": 0,
+      "def": 12
+    },
+    "base_price": 1000
+  },
+  {
+    "id": 2413,
+    "name": "(고유) 미스릴 탄환통",
+    "slot_type": "보조무기",
+    "class_req": "해적",
+    "rarity": "고유",
+    "emoji": "💣",
+    "base_stats": {
+      "str": 0,
+      "dex": 40,
+      "int": 0,
+      "luk": 24,
+      "att": 56,
+      "m_att": 0,
+      "def": 16
+    },
+    "base_price": 1600
+  },
+  {
+    "id": 2414,
+    "name": "(전설) 미스릴 탄환통",
+    "slot_type": "보조무기",
+    "class_req": "해적",
+    "rarity": "전설",
+    "emoji": "💣",
+    "base_stats": {
+      "str": 0,
+      "dex": 60,
+      "int": 0,
+      "luk": 36,
+      "att": 84,
+      "m_att": 0,
+      "def": 24
+    },
+    "base_price": 3000
+  },
+  {
+    "id": 2415,
+    "name": "(신화) 미스릴 탄환통",
+    "slot_type": "보조무기",
+    "class_req": "해적",
+    "rarity": "신화",
+    "emoji": "💣",
+    "base_stats": {
+      "str": 0,
+      "dex": 100,
+      "int": 0,
+      "luk": 60,
+      "att": 140,
+      "m_att": 0,
+      "def": 40
+    },
+    "base_price": 6000
+  },
+  {
+    "id": 2416,
+    "name": "(일반) 오리할콘 탄환통",
+    "slot_type": "보조무기",
+    "class_req": "해적",
+    "rarity": "일반",
+    "emoji": "💣",
+    "base_stats": {
+      "str": 0,
+      "dex": 10,
+      "int": 0,
+      "luk": 6,
+      "att": 14,
+      "m_att": 0,
+      "def": 4
+    },
+    "base_price": 200
+  },
+  {
+    "id": 2417,
+    "name": "(고급) 오리할콘 탄환통",
+    "slot_type": "보조무기",
+    "class_req": "해적",
+    "rarity": "고급",
+    "emoji": "💣",
+    "base_stats": {
+      "str": 0,
+      "dex": 15,
+      "int": 0,
+      "luk": 9,
+      "att": 21,
+      "m_att": 0,
+      "def": 6
+    },
+    "base_price": 400
+  },
+  {
+    "id": 2418,
+    "name": "(희귀) 오리할콘 탄환통",
+    "slot_type": "보조무기",
+    "class_req": "해적",
+    "rarity": "희귀",
+    "emoji": "💣",
+    "base_stats": {
+      "str": 0,
+      "dex": 20,
+      "int": 0,
+      "luk": 12,
+      "att": 28,
+      "m_att": 0,
+      "def": 8
+    },
+    "base_price": 600
+  },
+  {
+    "id": 2419,
+    "name": "(영웅) 오리할콘 탄환통",
+    "slot_type": "보조무기",
+    "class_req": "해적",
+    "rarity": "영웅",
+    "emoji": "💣",
+    "base_stats": {
+      "str": 0,
+      "dex": 30,
+      "int": 0,
+      "luk": 18,
+      "att": 42,
+      "m_att": 0,
+      "def": 12
+    },
+    "base_price": 1000
+  },
+  {
+    "id": 2420,
+    "name": "(고유) 오리할콘 탄환통",
+    "slot_type": "보조무기",
+    "class_req": "해적",
+    "rarity": "고유",
+    "emoji": "💣",
+    "base_stats": {
+      "str": 0,
+      "dex": 40,
+      "int": 0,
+      "luk": 24,
+      "att": 56,
+      "m_att": 0,
+      "def": 16
+    },
+    "base_price": 1600
+  },
+  {
+    "id": 2421,
+    "name": "(전설) 오리할콘 탄환통",
+    "slot_type": "보조무기",
+    "class_req": "해적",
+    "rarity": "전설",
+    "emoji": "💣",
+    "base_stats": {
+      "str": 0,
+      "dex": 60,
+      "int": 0,
+      "luk": 36,
+      "att": 84,
+      "m_att": 0,
+      "def": 24
+    },
+    "base_price": 3000
+  },
+  {
+    "id": 2422,
+    "name": "(신화) 오리할콘 탄환통",
+    "slot_type": "보조무기",
+    "class_req": "해적",
+    "rarity": "신화",
+    "emoji": "💣",
+    "base_stats": {
+      "str": 0,
+      "dex": 100,
+      "int": 0,
+      "luk": 60,
+      "att": 140,
+      "m_att": 0,
+      "def": 40
+    },
+    "base_price": 6000
+  },
+  {
+    "id": 2423,
+    "name": "(일반) 전설의 탄환통",
+    "slot_type": "보조무기",
+    "class_req": "해적",
+    "rarity": "일반",
+    "emoji": "💣",
+    "base_stats": {
+      "str": 0,
+      "dex": 10,
+      "int": 0,
+      "luk": 6,
+      "att": 14,
+      "m_att": 0,
+      "def": 4
+    },
+    "base_price": 200
+  },
+  {
+    "id": 2424,
+    "name": "(고급) 전설의 탄환통",
+    "slot_type": "보조무기",
+    "class_req": "해적",
+    "rarity": "고급",
+    "emoji": "💣",
+    "base_stats": {
+      "str": 0,
+      "dex": 15,
+      "int": 0,
+      "luk": 9,
+      "att": 21,
+      "m_att": 0,
+      "def": 6
+    },
+    "base_price": 400
+  },
+  {
+    "id": 2425,
+    "name": "(희귀) 전설의 탄환통",
+    "slot_type": "보조무기",
+    "class_req": "해적",
+    "rarity": "희귀",
+    "emoji": "💣",
+    "base_stats": {
+      "str": 0,
+      "dex": 20,
+      "int": 0,
+      "luk": 12,
+      "att": 28,
+      "m_att": 0,
+      "def": 8
+    },
+    "base_price": 600
+  },
+  {
+    "id": 2426,
+    "name": "(영웅) 전설의 탄환통",
+    "slot_type": "보조무기",
+    "class_req": "해적",
+    "rarity": "영웅",
+    "emoji": "💣",
+    "base_stats": {
+      "str": 0,
+      "dex": 30,
+      "int": 0,
+      "luk": 18,
+      "att": 42,
+      "m_att": 0,
+      "def": 12
+    },
+    "base_price": 1000
+  },
+  {
+    "id": 2427,
+    "name": "(고유) 전설의 탄환통",
+    "slot_type": "보조무기",
+    "class_req": "해적",
+    "rarity": "고유",
+    "emoji": "💣",
+    "base_stats": {
+      "str": 0,
+      "dex": 40,
+      "int": 0,
+      "luk": 24,
+      "att": 56,
+      "m_att": 0,
+      "def": 16
+    },
+    "base_price": 1600
+  },
+  {
+    "id": 2428,
+    "name": "(전설) 전설의 탄환통",
+    "slot_type": "보조무기",
+    "class_req": "해적",
+    "rarity": "전설",
+    "emoji": "💣",
+    "base_stats": {
+      "str": 0,
+      "dex": 60,
+      "int": 0,
+      "luk": 36,
+      "att": 84,
+      "m_att": 0,
+      "def": 24
+    },
+    "base_price": 3000
+  },
+  {
+    "id": 2429,
+    "name": "(신화) 전설의 탄환통",
+    "slot_type": "보조무기",
+    "class_req": "해적",
+    "rarity": "신화",
+    "emoji": "💣",
+    "base_stats": {
+      "str": 0,
+      "dex": 100,
+      "int": 0,
+      "luk": 60,
+      "att": 140,
+      "m_att": 0,
+      "def": 40
+    },
+    "base_price": 6000
+  },
+  {
+    "id": 2430,
+    "name": "(일반) 신화의 탄환통",
+    "slot_type": "보조무기",
+    "class_req": "해적",
+    "rarity": "일반",
+    "emoji": "💣",
+    "base_stats": {
+      "str": 0,
+      "dex": 10,
+      "int": 0,
+      "luk": 6,
+      "att": 14,
+      "m_att": 0,
+      "def": 4
+    },
+    "base_price": 200
+  },
+  {
+    "id": 2431,
+    "name": "(고급) 신화의 탄환통",
+    "slot_type": "보조무기",
+    "class_req": "해적",
+    "rarity": "고급",
+    "emoji": "💣",
+    "base_stats": {
+      "str": 0,
+      "dex": 15,
+      "int": 0,
+      "luk": 9,
+      "att": 21,
+      "m_att": 0,
+      "def": 6
+    },
+    "base_price": 400
+  },
+  {
+    "id": 2432,
+    "name": "(희귀) 신화의 탄환통",
+    "slot_type": "보조무기",
+    "class_req": "해적",
+    "rarity": "희귀",
+    "emoji": "💣",
+    "base_stats": {
+      "str": 0,
+      "dex": 20,
+      "int": 0,
+      "luk": 12,
+      "att": 28,
+      "m_att": 0,
+      "def": 8
+    },
+    "base_price": 600
+  },
+  {
+    "id": 2433,
+    "name": "(영웅) 신화의 탄환통",
+    "slot_type": "보조무기",
+    "class_req": "해적",
+    "rarity": "영웅",
+    "emoji": "💣",
+    "base_stats": {
+      "str": 0,
+      "dex": 30,
+      "int": 0,
+      "luk": 18,
+      "att": 42,
+      "m_att": 0,
+      "def": 12
+    },
+    "base_price": 1000
+  },
+  {
+    "id": 2434,
+    "name": "(고유) 신화의 탄환통",
+    "slot_type": "보조무기",
+    "class_req": "해적",
+    "rarity": "고유",
+    "emoji": "💣",
+    "base_stats": {
+      "str": 0,
+      "dex": 40,
+      "int": 0,
+      "luk": 24,
+      "att": 56,
+      "m_att": 0,
+      "def": 16
+    },
+    "base_price": 1600
+  },
+  {
+    "id": 2435,
+    "name": "(전설) 신화의 탄환통",
+    "slot_type": "보조무기",
+    "class_req": "해적",
+    "rarity": "전설",
+    "emoji": "💣",
+    "base_stats": {
+      "str": 0,
+      "dex": 60,
+      "int": 0,
+      "luk": 36,
+      "att": 84,
+      "m_att": 0,
+      "def": 24
+    },
+    "base_price": 3000
+  },
+  {
+    "id": 2436,
+    "name": "(신화) 신화의 탄환통",
+    "slot_type": "보조무기",
+    "class_req": "해적",
+    "rarity": "신화",
+    "emoji": "💣",
+    "base_stats": {
+      "str": 0,
+      "dex": 100,
+      "int": 0,
+      "luk": 60,
+      "att": 140,
+      "m_att": 0,
+      "def": 40
+    },
+    "base_price": 6000
   }
 ]

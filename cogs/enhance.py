@@ -626,26 +626,38 @@ class EnhancementCog(commands.Cog):
         min_price = 5 + enhancement_level
         return max(final_price, min_price)
 
-    def calculate_combat_power(self, stats: Dict[str, int], character_class: str) -> int:
-        """Calculate total combat power based on stats and class"""
+    def calculate_combat_power(self, stats: Dict[str, int], character_class: str, slot_type: str = None) -> int:
+        """Balanced combat power calculation"""
         power = 0
+        # Base stats matter more
         power += stats["str"] * 4
         power += stats["dex"] * 4
         power += stats["int"] * 4
         power += stats["luk"] * 3
-        power += stats["att"] * 15
-        power += stats["m_att"] * 15
+
+        # Lower scaling for attack stats
+        power += stats["att"] * 6
+        power += stats["m_att"] * 6
+
+        # Class multipliers (keep but slightly nerfed if needed)
         class_multipliers = {
-            "전사": {"str": 1.5, "att": 1.3},
-            "법사": {"int": 1.5, "m_att": 1.3},
-            "도적": {"dex": 1.4, "att": 1.2, "luk": 1.3},
-            "궁수": {"dex": 1.5, "att": 1.2},
-            "해적": {"str": 1.2, "dex": 1.2, "att": 1.1}
+            "전사": {"str": 1.3, "att": 1.1},
+            "법사": {"int": 1.3, "m_att": 1.1},
+            "도적": {"dex": 1.2, "att": 1.05, "luk": 1.1},
+            "궁수": {"dex": 1.2, "att": 1.05},
+            "해적": {"str": 1.1, "dex": 1.1, "att": 1.05}
         }
         multipliers = class_multipliers.get(character_class, {})
         for stat, value in stats.items():
             if stat in multipliers:
                 power += int(value * multipliers[stat])
+
+        # Slot multipliers
+        if slot_type == "무기":
+            power = int(power * 0.7)
+        elif slot_type == "보조무기":
+            power = int(power * 0.8)
+
         return max(1, int(power))
 
     def get_random_item(self) -> Dict[str, Any]:
