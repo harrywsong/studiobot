@@ -801,16 +801,14 @@ class EnhancementCog(commands.Cog):
                 )
                 return
 
-            # --- Always delete the previous enhancement message before sending a new one ---
-            if item_id in self.last_enhancement_message:
-                old_msg = self.last_enhancement_message[item_id]
+            # --- Always delete ALL previous enhancement messages before sending a new one ---
+            for old_item_id, old_msg in list(self.last_enhancement_message.items()):
                 try:
                     await old_msg.delete()
                 except (discord.NotFound, discord.HTTPException):
                     pass
                 finally:
-                    self.last_enhancement_message.pop(item_id, None)
-
+                    self.last_enhancement_message.pop(old_item_id, None)
 
             # Calculate enhancement result
             fail_streak = item_row['fail_streak'] or 0
