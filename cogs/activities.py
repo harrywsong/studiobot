@@ -91,6 +91,7 @@ class ArenaView(discord.ui.View):
         try:
             await self.activities_cog.start_ranked_battle(interaction)
         except Exception as e:
+            self.activities_cog.logger.error(f"Ranked battle error: {e}")
             if not interaction.response.is_done():
                 await interaction.response.send_message(f"랭크전 시작 중 오류가 발생했습니다: {str(e)}", ephemeral=True)
             else:
@@ -104,7 +105,8 @@ class ArenaView(discord.ui.View):
         try:
             await self.activities_cog.start_practice_battle(interaction)
         except Exception as e:
-            if not interaction.response.is_done():
+            self.activities_cog.logger.error(f"Practice battle error: {e}")
+            if not interaction.response.send_message.is_done():
                 await interaction.response.send_message(f"연습전 시작 중 오류가 발생했습니다: {str(e)}", ephemeral=True)
             else:
                 await interaction.followup.send(f"연습전 시작 중 오류가 발생했습니다: {str(e)}", ephemeral=True)
@@ -114,6 +116,7 @@ class ArenaView(discord.ui.View):
         try:
             await self.activities_cog.show_arena_rankings(interaction)
         except Exception as e:
+            self.activities_cog.logger.error(f"Arena rankings error: {e}")
             if not interaction.response.is_done():
                 await interaction.response.send_message(f"랭킹 조회 중 오류가 발생했습니다: {str(e)}", ephemeral=True)
             else:
@@ -1125,7 +1128,6 @@ class ActivitiesCog(commands.Cog):
         except Exception as e:
             self.logger.error(f"Dungeon completion error: {e}")
 
-    # ARENA SYSTEM WITH BALANCED REWARDS
     @app_commands.command(name="아레나", description="다른 플레이어와 전투를 펼치세요!")
     async def arena(self, interaction: discord.Interaction):
         guild_id = interaction.guild.id
@@ -1133,6 +1135,7 @@ class ActivitiesCog(commands.Cog):
             await interaction.response.send_message("⚠️ 이 서버에서는 활동 시스템이 비활성화되어 있습니다.", ephemeral=True)
             return
 
+        # Check if command is used in correct channel
         if not self.check_channel(interaction, ARENA_CHANNEL_ID):
             arena_channel = self.bot.get_channel(ARENA_CHANNEL_ID)
             channel_mention = arena_channel.mention if arena_channel else f"<#{ARENA_CHANNEL_ID}>"
@@ -1142,53 +1145,61 @@ class ActivitiesCog(commands.Cog):
             )
             return
 
-        await interaction.response.defer()
-        user_id = interaction.user.id
+        try:
+            await interaction.response.defer()
+            user_id = interaction.user.id
 
-        # Get or create arena stats
-        arena_stats = await self.bot.pool.fetchrow(
-            "SELECT * FROM arena_stats WHERE user_id = $1 AND guild_id = $2",
-            user_id, guild_id
-        )
-
-        if not arena_stats:
-            await self.bot.pool.execute("""
-                INSERT INTO arena_stats (user_id, guild_id, tier, rating)
-                VALUES ($1, $2, 'bronze', 1000)
-            """, user_id, guild_id)
+            # Get or create arena stats
             arena_stats = await self.bot.pool.fetchrow(
                 "SELECT * FROM arena_stats WHERE user_id = $1 AND guild_id = $2",
                 user_id, guild_id
             )
 
-        # Get current tier info
-        current_tier = None
-        for tier_id, tier_info in self.arena_tiers.items():
-            if arena_stats['rating'] >= tier_info['min_rating']:
-                current_tier = tier_info
+            if not arena_stats:
+                await self.bot.pool.execute("""
+                    INSERT INTO arena_stats (user_id, guild_id, tier, rating)
+                    VALUES ($1, $2, 'bronze', 1000)
+                """, user_id, guild_id)
+                arena_stats = await self.bot.pool.fetchrow(
+                    "SELECT * FROM arena_stats WHERE user_id = $1 AND guild_id = $2",
+                    user_id, guild_id
+                )
+
+            # Get current tier info
+            current_tier = None
+            for tier_id, tier_info in self.arena_tiers.items():
+                if arena_stats['rating'] >= tier_info['min_rating']:
+                    current_tier = tier_info
+                else:
+                    break
+
+            if not current_tier:
+                current_tier = self.arena_tiers['bronze']
+
+            combat_power = await self.get_user_combat_power(user_id, guild_id)
+
+            embed = discord.Embed(
+                title="⚔️ 아레나 입장",
+                description="전투를 통해 실력을 증명하세요!",
+                color=discord.Color.red()
+            )
+
+            embed.add_field(name="현재 티어", value=f"{current_tier['emoji']} {current_tier['name']}", inline=True)
+            embed.add_field(name="레이팅", value=f"{arena_stats['rating']}", inline=True)
+            embed.add_field(name="전투력", value=f"{combat_power:,}", inline=True)
+            embed.add_field(name="전적", value=f"{arena_stats['wins']}승 {arena_stats['losses']}패", inline=True)
+            embed.add_field(name="연승", value=f"{arena_stats['current_streak']}연승", inline=True)
+            embed.add_field(name="최고 연승", value=f"{arena_stats['best_streak']}연승", inline=True)
+
+            view = ArenaView(self.bot, user_id, guild_id, arena_stats)
+            await interaction.followup.send(embed=embed, view=view)
+
+        except Exception as e:
+            self.logger.error(f"Arena command error: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"아레나 명령어 처리 중 오류가 발생했습니다: {str(e)}", ephemeral=True)
             else:
-                break
-
-        if not current_tier:
-            current_tier = self.arena_tiers['bronze']
-
-        combat_power = await self.get_user_combat_power(user_id, guild_id)
-
-        embed = discord.Embed(
-            title="⚔️ 아레나 입장",
-            description="전투를 통해 실력을 증명하세요!",
-            color=discord.Color.red()
-        )
-
-        embed.add_field(name="현재 티어", value=f"{current_tier['emoji']} {current_tier['name']}", inline=True)
-        embed.add_field(name="레이팅", value=f"{arena_stats['rating']}", inline=True)
-        embed.add_field(name="전투력", value=f"{combat_power:,}", inline=True)
-        embed.add_field(name="전적", value=f"{arena_stats['wins']}승 {arena_stats['losses']}패", inline=True)
-        embed.add_field(name="연승", value=f"{arena_stats['current_streak']}연승", inline=True)
-        embed.add_field(name="최고 연승", value=f"{arena_stats['best_streak']}연승", inline=True)
-
-        view = ArenaView(self.bot, user_id, guild_id, arena_stats)
-        await interaction.followup.send(embed=embed, view=view)
+                await interaction.followup.send(f"아레나 명령어 처리 중 오류가 발생했습니다: {str(e)}", ephemeral=True)
 
     async def start_ranked_battle(self, interaction: discord.Interaction):
         """Start a ranked battle - ENHANCED"""
