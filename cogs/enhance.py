@@ -344,6 +344,8 @@ class EnhancementCog(commands.Cog):
 
         # Marketplace channel ID
         self.marketplace_channel_id = 1421286971623477422
+        # Show-off channel ID for enhancement results and sales
+        self.showoff_channel_id = 1421290649277435904
 
         self.bot.loop.create_task(self.setup_system())
 
@@ -1270,7 +1272,15 @@ class EnhancementCog(commands.Cog):
 
             embed.set_footer(text="다른 플레이어들이 구매할 수 있습니다!")
 
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            # Send confirmation to user
+            await interaction.followup.send("마켓 등록이 완료되었습니다! 자랑 채널에 게시되었습니다.", ephemeral=True)
+
+            # Post to show-off channel
+            showoff_channel = self.bot.get_channel(self.showoff_channel_id)
+            if showoff_channel:
+                embed.add_field(name="판매자", value=interaction.user.mention, inline=True)
+                embed.title = "🏪 새로운 아이템이 마켓에 등록되었습니다!"
+                await showoff_channel.send(embed=embed)
 
             # Update marketplace message
             await self.create_marketplace_message()
@@ -1367,7 +1377,15 @@ class EnhancementCog(commands.Cog):
 
             embed.set_footer(text="아이템이 인벤토리에 추가되었습니다!")
 
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            # Send confirmation to user
+            await interaction.followup.send("구매가 완료되었습니다! 자랑 채널에 게시되었습니다.", ephemeral=True)
+
+            # Post to show-off channel
+            showoff_channel = self.bot.get_channel(self.showoff_channel_id)
+            if showoff_channel:
+                embed.add_field(name="구매자", value=interaction.user.mention, inline=True)
+                embed.title = "🛒 마켓에서 아이템 구매!"
+                await showoff_channel.send(embed=embed)
 
             # Notify seller via DM
             try:
@@ -1695,7 +1713,15 @@ class EnhancementCog(commands.Cog):
             embed.add_field(name="주요 능력치", value=" / ".join(class_info['primary_stats']), inline=True)
             embed.add_field(name="다음 변경 가능", value="30일 후", inline=True)
 
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            # Send confirmation to user
+            await interaction.followup.send("직업 선택이 완료되었습니다! 자랑 채널에 게시되었습니다.", ephemeral=True)
+
+            # Post to show-off channel
+            showoff_channel = self.bot.get_channel(self.showoff_channel_id)
+            if showoff_channel:
+                embed.add_field(name="플레이어", value=interaction.user.mention, inline=True)
+                embed.title = f"🎯 새로운 {character_class}이(가) 탄생했습니다!"
+                await showoff_channel.send(embed=embed)
 
             self.logger.info(f"사용자 {user_id}가 {character_class}로 전직했습니다.", extra={'guild_id': guild_id})
 
