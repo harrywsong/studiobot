@@ -882,6 +882,7 @@ class EnhancementCog(commands.Cog):
                 value=f"{current_level} → **{new_level if result != 'destroy' else '파괴'}**",
                 inline=True
             )
+            embed.add_field(name="플레이어", value=interaction.user.mention, inline=True)  # NEW
 
             if result != "destroy":
                 max_stars = 25
@@ -1119,6 +1120,7 @@ class EnhancementCog(commands.Cog):
 
             embed.add_field(name="판매된 아이템", value=item_display, inline=False)
             embed.add_field(name="💰 획득 코인", value=f"{sell_price:,} 코인", inline=True)
+            embed.add_field(name="플레이어", value=interaction.user.mention, inline=True)  # NEW
             embed.set_footer(text="상점 NPC와의 거래가 완료되었습니다!")
 
             await interaction.followup.send(embed=embed)
