@@ -360,10 +360,29 @@ class LeaderboardView(discord.ui.View):
     def __init__(self, bot, leaderboard_data: list, start_index: int = 0):
         super().__init__(timeout=None)  # persistent
         self.bot = bot
-        self.leaderboard_data = leaderboard_data
+        self.full_data = leaderboard_data  # store full leaderboard
         self.index = start_index
+        self.filtered_data = leaderboard_data  # default = all
 
-        # Navigation buttons
+        # --- Dropdown for class filtering ---
+        options = [
+            discord.SelectOption(label="전체", value="all", description="모든 직업"),
+            discord.SelectOption(label="전사", value="전사"),
+            discord.SelectOption(label="도적", value="도적"),
+            discord.SelectOption(label="마법사", value="마법사"),
+            discord.SelectOption(label="궁수", value="궁수"),
+            discord.SelectOption(label="해적", value="해적"),
+            discord.SelectOption(label="무직", value="무직"),
+        ]
+        self.class_select = discord.ui.Select(
+            placeholder="직업별로 보기",
+            options=options,
+            custom_id="lb_class_select"
+        )
+        self.class_select.callback = self.filter_by_class
+        self.add_item(self.class_select)
+
+        # --- Prev / Next buttons ---
         self.prev_button = discord.ui.Button(label="◀ 이전", style=discord.ButtonStyle.secondary, custom_id="lb_prev")
         self.prev_button.callback = self.prev_page
         self.add_item(self.prev_button)
@@ -372,8 +391,15 @@ class LeaderboardView(discord.ui.View):
         self.next_button.callback = self.next_page
         self.add_item(self.next_button)
 
+    # --- Embed generator (same as before) ---
     def get_embed(self) -> discord.Embed:
-        user, rank, power, stats, char_class, equipped_str = self.leaderboard_data[self.index]
+        if not self.filtered_data:
+            return discord.Embed(
+                title="⚠️ 해당 직업 랭킹 없음",
+                color=discord.Color.red()
+            )
+
+        user, rank, power, stats, char_class, equipped_str = self.filtered_data[self.index]
         rank_emoji = {1: "🥇", 2: "🥈", 3: "🥉"}.get(rank, f"#{rank}")
 
         embed = discord.Embed(
@@ -383,14 +409,8 @@ class LeaderboardView(discord.ui.View):
         )
         embed.set_thumbnail(url=user.display_avatar.url if user.display_avatar else None)
 
-        # Combat Power
-        embed.add_field(
-            name="⚔️ 전투력",
-            value=f"**{power:,}**",
-            inline=False
-        )
+        embed.add_field(name="⚔️ 전투력", value=f"**{power:,}**", inline=False)
 
-        # Main stats (formatted like Maple grid)
         stats_block = (
             f"**STR** {stats['str']:,}\n"
             f"**DEX** {stats['dex']:,}\n"
@@ -399,28 +419,34 @@ class LeaderboardView(discord.ui.View):
             f"**ATT** {stats['att']:,}\n"
             f"**M.ATT** {stats['m_att']:,}"
         )
-        embed.add_field(
-            name="📊 능력치",
-            value=stats_block,
-            inline=False
-        )
+        embed.add_field(name="📊 능력치", value=stats_block, inline=False)
+        embed.add_field(name="🪓 장착 아이템", value=equipped_str, inline=False)
 
-        # Equipped items
-        embed.add_field(
-            name="🪓 장착 아이템",
-            value=equipped_str,
-            inline=False
-        )
-
-        embed.set_footer(text=f"{rank}/{len(self.leaderboard_data)} • ◀ ▶ 버튼으로 이동")
+        embed.set_footer(text=f"{self.index+1}/{len(self.filtered_data)} • 직업별 필터링 가능")
         return embed
 
+    # --- Navigation ---
     async def prev_page(self, interaction: discord.Interaction):
-        self.index = (self.index - 1) % len(self.leaderboard_data)
+        if not self.filtered_data:
+            return
+        self.index = (self.index - 1) % len(self.filtered_data)
         await interaction.response.edit_message(embed=self.get_embed(), view=self)
 
     async def next_page(self, interaction: discord.Interaction):
-        self.index = (self.index + 1) % len(self.leaderboard_data)
+        if not self.filtered_data:
+            return
+        self.index = (self.index + 1) % len(self.filtered_data)
+        await interaction.response.edit_message(embed=self.get_embed(), view=self)
+
+    # --- Class filter ---
+    async def filter_by_class(self, interaction: discord.Interaction):
+        selected = self.class_select.values[0]
+        if selected == "all":
+            self.filtered_data = self.full_data
+        else:
+            self.filtered_data = [x for x in self.full_data if x[4] == selected]
+
+        self.index = 0
         await interaction.response.edit_message(embed=self.get_embed(), view=self)
 
 
