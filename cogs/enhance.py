@@ -783,7 +783,7 @@ class EnhancementCog(commands.Cog):
             # Check if user has enough coins
             current_coins = await coins_cog.get_user_coins(user_id, guild_id)
             if current_coins < cost:
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     f"⚠ 강화 비용이 부족합니다!\n필요: {cost:,} 코인\n보유: {current_coins:,} 코인",
                     ephemeral=True
                 )
