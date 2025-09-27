@@ -653,6 +653,8 @@ class ActivitiesCog(commands.Cog):
         view = AdventureView(self.bot, user_id, guild_id, adventures_data)
         await interaction.followup.send(embed=embed, view=view)
 
+    # Replace the start_adventure method (lines ~360-420) with this fixed version:
+
     async def start_adventure(self, interaction: discord.Interaction, adventure_id: str):
         """Start an adventure"""
         await interaction.response.defer()
@@ -683,9 +685,9 @@ class ActivitiesCog(commands.Cog):
         power_ratio = combat_power / adventure['min_power']
         base_success_chance = min(95, 50 + (power_ratio - 1) * 30)
 
-        # Start adventure - FIXED: Ensure both datetimes are timezone-aware
-        start_time = ensure_timezone_aware(datetime.now(timezone.utc))
-        end_time = start_time + timedelta(seconds=adventure['duration'])
+        # FIXED: Create timezone-aware datetimes consistently
+        start_time = datetime.now(timezone.utc)  # Already timezone-aware
+        end_time = start_time + timedelta(seconds=adventure['duration'])  # Will be timezone-aware
 
         # Store active adventure
         await self.bot.pool.execute("""
@@ -712,7 +714,6 @@ class ActivitiesCog(commands.Cog):
         # Schedule adventure completion
         await asyncio.sleep(adventure['duration'])
         await self.complete_adventure(user_id, guild_id, adventure_id, base_success_chance, combat_power)
-
     async def complete_adventure(self, user_id: int, guild_id: int, adventure_id: str, success_chance: float, combat_power: int):
         """Complete an adventure and give rewards"""
         try:
