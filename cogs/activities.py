@@ -493,6 +493,19 @@ class ActivitiesCog(commands.Cog):
                 )
             """)
 
+            # Add this to your setup_activities_database method
+            await self.bot.pool.execute("""
+                CREATE TABLE IF NOT EXISTS daily_activity_limits (
+                    user_id BIGINT,
+                    guild_id BIGINT,
+                    activity_date DATE DEFAULT CURRENT_DATE,
+                    adventure_count INTEGER DEFAULT 0,
+                    dungeon_count INTEGER DEFAULT 0,
+                    arena_count INTEGER DEFAULT 0,
+                    PRIMARY KEY (user_id, guild_id, activity_date)
+                )
+            """)
+
             # Party system
             await self.bot.pool.execute("""
                 CREATE TABLE IF NOT EXISTS parties (
@@ -597,7 +610,10 @@ class ActivitiesCog(commands.Cog):
         )
 
         if active:
-            remaining_time = active['end_time'] - datetime.now(timezone.utc)
+            end_time = active['end_time']
+            if end_time.tzinfo is None:
+                end_time = end_time.replace(tzinfo=timezone.utc)
+            remaining_time = end_time - datetime.now(timezone.utc)
             if remaining_time.total_seconds() > 0:
                 await interaction.followup.send(
                     f"⏰ 이미 모험을 진행 중입니다!\n남은 시간: {int(remaining_time.total_seconds() // 60)}분 {int(remaining_time.total_seconds() % 60)}초",
@@ -631,9 +647,15 @@ class ActivitiesCog(commands.Cog):
         user_id = interaction.user.id
         guild_id = interaction.guild.id
 
+        # Check daily limit
+        daily_limit_check = await self.check_daily_activity_limit(user_id, guild_id, "adventure")
+        if not daily_limit_check:
+            await interaction.followup.send("⚠ 일일 모험 한도에 도달했습니다! (하루 최대 10회)", ephemeral=True)
+            return
+
         adventure = self.adventures.get(adventure_id)
         if not adventure:
-            await interaction.followup.send("❌ 유효하지 않은 모험입니다.", ephemeral=True)
+            await interaction.followup.send("⚠ 유효하지 않은 모험입니다.", ephemeral=True)
             return
 
         combat_power = await self.get_user_combat_power(user_id, guild_id)
@@ -1110,9 +1132,15 @@ class ActivitiesCog(commands.Cog):
         user_id = interaction.user.id
         guild_id = interaction.guild.id
 
+        # Check daily limit
+        daily_limit_check = await self.check_daily_activity_limit(user_id, guild_id, "dungeon")
+        if not daily_limit_check:
+            await interaction.followup.send("⚠ 일일 던전 한도에 도달했습니다! (하루 최대 5회)", ephemeral=True)
+            return
+
         dungeon = self.dungeons.get(dungeon_id)
         if not dungeon:
-            await interaction.followup.send("❌ 유효하지 않은 던전입니다.", ephemeral=True)
+            await interaction.followup.send("⚠ 유효하지 않은 던전입니다.", ephemeral=True)
             return
 
         combat_power = await self.get_user_combat_power(user_id, guild_id)
@@ -1188,6 +1216,53 @@ class ActivitiesCog(commands.Cog):
         embed.add_field(name="전투력", value=f"{combat_power:,}", inline=True)
 
         await interaction.followup.send(embed=embed)
+
+    async def check_daily_activity_limit(self, user_id: int, guild_id: int, activity_type: str) -> bool:
+        """Check if user has exceeded daily activity limits"""
+        try:
+            # Define daily limits
+            daily_limits = {
+                "adventure": 10,  # 10 adventures per day
+                "dungeon": 5,  # 5 dungeons per day
+                "arena": 20  # 20 arena battles per day
+            }
+
+            limit = daily_limits.get(activity_type, 10)
+
+            if activity_type == "adventure":
+                # Check adventure logs from today
+                count = await self.bot.pool.fetchval("""
+                    SELECT COUNT(*) FROM adventure_logs 
+                    WHERE user_id = $1 AND guild_id = $2 
+                    AND DATE(start_time) = CURRENT_DATE
+                """, user_id, guild_id)
+
+            elif activity_type == "dungeon":
+                # Check dungeon attempts from today
+                count = await self.bot.pool.fetchval("""
+                    SELECT SUM(completions) FROM dungeon_progress 
+                    WHERE user_id = $1 AND guild_id = $2 
+                    AND DATE(last_attempt) = CURRENT_DATE
+                """, user_id, guild_id)
+                if count is None:
+                    count = 0
+
+            elif activity_type == "arena":
+                # Check arena battles from today
+                count = await self.bot.pool.fetchval("""
+                    SELECT COUNT(*) FROM arena_stats 
+                    WHERE user_id = $1 AND guild_id = $2 
+                    AND DATE(last_battle) = CURRENT_DATE
+                """, user_id, guild_id)
+
+            else:
+                return True  # Unknown activity type, allow it
+
+            return count < limit
+
+        except Exception as e:
+            self.logger.error(f"Daily limit check error: {e}")
+            return True  # Allow on error to prevent blocking gameplay
 
     @app_commands.command(name="파티", description="파티를 생성하고 관리하세요!")
     async def party(self, interaction: discord.Interaction):
