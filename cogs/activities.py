@@ -152,6 +152,140 @@ class PartyView(discord.ui.View):
         await self.activities_cog.show_my_party(interaction)
 
 
+class CreatePartyModal(discord.ui.Modal):
+    """Modal for creating a new party"""
+
+    def __init__(self, bot):
+        super().__init__(title="새 파티 생성")
+        self.bot = bot
+
+        self.party_name = discord.ui.TextInput(
+            label="파티 이름",
+            placeholder="파티 이름을 입력하세요...",
+            max_length=50,
+            required=True
+        )
+
+        self.description = discord.ui.TextInput(
+            label="파티 설명",
+            placeholder="파티에 대한 간단한 설명 (선택사항)",
+            style=discord.TextStyle.paragraph,
+            max_length=200,
+            required=False
+        )
+
+        self.min_power = discord.ui.TextInput(
+            label="최소 전투력",
+            placeholder="파티 참여에 필요한 최소 전투력",
+            max_length=10,
+            required=True
+        )
+
+        self.max_members = discord.ui.TextInput(
+            label="최대 인원",
+            placeholder="2-5 사이의 숫자를 입력하세요",
+            max_length=1,
+            required=True
+        )
+
+        self.add_item(self.party_name)
+        self.add_item(self.description)
+        self.add_item(self.min_power)
+        self.add_item(self.max_members)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        user_id = interaction.user.id
+        guild_id = interaction.guild.id
+
+        try:
+            min_power = int(self.min_power.value)
+            max_members = int(self.max_members.value)
+
+            if max_members < 2 or max_members > 5:
+                await interaction.followup.send("최대 인원은 2-5 사이여야 합니다!", ephemeral=True)
+                return
+
+            if min_power < 0:
+                await interaction.followup.send("최소 전투력은 0 이상이어야 합니다!", ephemeral=True)
+                return
+
+        except ValueError:
+            await interaction.followup.send("숫자를 올바르게 입력해주세요!", ephemeral=True)
+            return
+
+        # Check if user is already in a party
+        existing_party = await self.bot.pool.fetchrow("""
+            SELECT party_id FROM party_members pm
+            JOIN parties p ON pm.party_id = p.party_id
+            WHERE pm.user_id = $1 AND p.guild_id = $2 AND p.is_active = TRUE
+        """, user_id, guild_id)
+
+        if existing_party:
+            await interaction.followup.send("이미 파티에 속해있습니다! 먼저 현재 파티에서 탈퇴해주세요.", ephemeral=True)
+            return
+
+        # Check user's combat power
+        activities_cog = self.bot.get_cog('ActivitiesCog')
+        user_power = await activities_cog.get_user_combat_power(user_id, guild_id)
+
+        if user_power < min_power:
+            await interaction.followup.send(
+                f"파티를 생성하려면 최소 전투력을 충족해야 합니다!\n필요: {min_power:,}\n현재: {user_power:,}",
+                ephemeral=True
+            )
+            return
+
+        # Create party
+        party_id = str(uuid.uuid4())
+
+        await self.bot.pool.execute("""
+            INSERT INTO parties (party_id, leader_id, guild_id, name, description, max_members, min_power)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+        """, party_id, user_id, guild_id, self.party_name.value, self.description.value or None, max_members, min_power)
+
+        # Add creator as first member
+        await self.bot.pool.execute("""
+            INSERT INTO party_members (party_id, user_id, role)
+            VALUES ($1, $2, 'leader')
+        """, party_id, user_id)
+
+        embed = discord.Embed(
+            title="✅ 파티 생성 완료!",
+            description=f"**{self.party_name.value}** 파티가 생성되었습니다!",
+            color=discord.Color.green()
+        )
+
+        embed.add_field(name="파티장", value=interaction.user.display_name, inline=True)
+        embed.add_field(name="최소 전투력", value=f"{min_power:,}", inline=True)
+        embed.add_field(name="최대 인원", value=f"{max_members}명", inline=True)
+
+        if self.description.value:
+            embed.add_field(name="설명", value=self.description.value, inline=False)
+
+        embed.set_footer(text=f"파티 ID: {party_id}")
+
+        await interaction.followup.send(embed=embed)
+
+
+class GuildRaidView(discord.ui.View):
+    """Guild raid interface for future implementation"""
+
+    def __init__(self, bot, guild_id):
+        super().__init__(timeout=300)
+        self.bot = bot
+        self.guild_id = guild_id
+        self.activities_cog = bot.get_cog('ActivitiesCog')
+
+    @discord.ui.button(label="⚔️ 길드 레이드 참여", style=discord.ButtonStyle.danger, disabled=True)
+    async def join_raid(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message("길드 레이드는 곧 추가될 예정입니다!", ephemeral=True)
+
+    @discord.ui.button(label="🏆 레이드 기록", style=discord.ButtonStyle.secondary, disabled=True)
+    async def raid_records(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message("길드 레이드는 곧 추가될 예정입니다!", ephemeral=True)
+
+
 class ActivitiesCog(commands.Cog):
     """Adventure, Arena, Dungeon, and Party system"""
 
@@ -257,7 +391,7 @@ class ActivitiesCog(commands.Cog):
             "silver": {"name": "실버", "emoji": "🥈", "min_rating": 1200},
             "gold": {"name": "골드", "emoji": "🥇", "min_rating": 1500},
             "platinum": {"name": "플래티넘", "emoji": "💎", "min_rating": 1800},
-            "diamond": {"name": "다이아몬드", "emoji": "💠", "min_rating": 2100},
+            "diamond": {"name": "다이아몬드", "emoji": "💍", "min_rating": 2100},
             "master": {"name": "마스터", "emoji": "⭐", "min_rating": 2400},
             "grandmaster": {"name": "그랜드마스터", "emoji": "🌟", "min_rating": 2700}
         }
@@ -1160,145 +1294,6 @@ class ActivitiesCog(commands.Cog):
 
         await interaction.followup.send(embed=embed)
 
-
-class CreatePartyModal(discord.ui.Modal):
-    """Modal for creating a new party"""
-
-    def __init__(self, bot):
-        super().__init__(title="새 파티 생성")
-        self.bot = bot
-
-        self.party_name = discord.ui.TextInput(
-            label="파티 이름",
-            placeholder="파티 이름을 입력하세요...",
-            max_length=50,
-            required=True
-        )
-
-        self.description = discord.ui.TextInput(
-            label="파티 설명",
-            placeholder="파티에 대한 간단한 설명 (선택사항)",
-            style=discord.TextStyle.paragraph,
-            max_length=200,
-            required=False
-        )
-
-        self.min_power = discord.ui.TextInput(
-            label="최소 전투력",
-            placeholder="파티 참여에 필요한 최소 전투력",
-            max_length=10,
-            required=True
-        )
-
-        self.max_members = discord.ui.TextInput(
-            label="최대 인원",
-            placeholder="2-5 사이의 숫자를 입력하세요",
-            max_length=1,
-            required=True
-        )
-
-        self.add_item(self.party_name)
-        self.add_item(self.description)
-        self.add_item(self.min_power)
-        self.add_item(self.max_members)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.defer()
-        user_id = interaction.user.id
-        guild_id = interaction.guild.id
-
-        try:
-            min_power = int(self.min_power.value)
-            max_members = int(self.max_members.value)
-
-            if max_members < 2 or max_members > 5:
-                await interaction.followup.send("최대 인원은 2-5 사이여야 합니다!", ephemeral=True)
-                return
-
-            if min_power < 0:
-                await interaction.followup.send("최소 전투력은 0 이상이어야 합니다!", ephemeral=True)
-                return
-
-        except ValueError:
-            await interaction.followup.send("숫자를 올바르게 입력해주세요!", ephemeral=True)
-            return
-
-        # Check if user is already in a party
-        existing_party = await self.bot.pool.fetchrow("""
-            SELECT party_id FROM party_members pm
-            JOIN parties p ON pm.party_id = p.party_id
-            WHERE pm.user_id = $1 AND p.guild_id = $2 AND p.is_active = TRUE
-        """, user_id, guild_id)
-
-        if existing_party:
-            await interaction.followup.send("이미 파티에 속해있습니다! 먼저 현재 파티에서 탈퇴해주세요.", ephemeral=True)
-            return
-
-        # Check user's combat power
-        activities_cog = self.bot.get_cog('ActivitiesCog')
-        user_power = await activities_cog.get_user_combat_power(user_id, guild_id)
-
-        if user_power < min_power:
-            await interaction.followup.send(
-                f"파티를 생성하려면 최소 전투력을 충족해야 합니다!\n필요: {min_power:,}\n현재: {user_power:,}",
-                ephemeral=True
-            )
-            return
-
-        # Create party
-        party_id = str(uuid.uuid4())
-
-        await self.bot.pool.execute("""
-            INSERT INTO parties (party_id, leader_id, guild_id, name, description, max_members, min_power)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
-        """, party_id, user_id, guild_id, self.party_name.value, self.description.value or None, max_members, min_power)
-
-        # Add creator as first member
-        await self.bot.pool.execute("""
-            INSERT INTO party_members (party_id, user_id, role)
-            VALUES ($1, $2, 'leader')
-        """, party_id, user_id)
-
-        embed = discord.Embed(
-            title="✅ 파티 생성 완료!",
-            description=f"**{self.party_name.value}** 파티가 생성되었습니다!",
-            color=discord.Color.green()
-        )
-
-        embed.add_field(name="파티장", value=interaction.user.display_name, inline=True)
-        embed.add_field(name="최소 전투력", value=f"{min_power:,}", inline=True)
-        embed.add_field(name="최대 인원", value=f"{max_members}명", inline=True)
-
-        if self.description.value:
-            embed.add_field(name="설명", value=self.description.value, inline=False)
-
-        embed.set_footer(text=f"파티 ID: {party_id}")
-
-        await interaction.followup.send(embed=embed)
-
-
-# Guild Raid System (Future expansion)
-class GuildRaidView(discord.ui.View):
-    """Guild raid interface for future implementation"""
-
-    def __init__(self, bot, guild_id):
-        super().__init__(timeout=300)
-        self.bot = bot
-        self.guild_id = guild_id
-        self.activities_cog = bot.get_cog('ActivitiesCog')
-
-    @discord.ui.button(label="⚔️ 길드 레이드 참여", style=discord.ButtonStyle.danger, disabled=True)
-    async def join_raid(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message("길드 레이드는 곧 추가될 예정입니다!", ephemeral=True)
-
-    @discord.ui.button(label="🏆 레이드 기록", style=discord.ButtonStyle.secondary, disabled=True)
-    async def raid_records(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message("길드 레이드는 곧 추가될 예정입니다!", ephemeral=True)
-
-
-# Additional commands for party management
-class ActivitiesCog(ActivitiesCog):  # Extending the existing class
-
     @app_commands.command(name="파티참여", description="파티 ID로 파티에 참여합니다.")
     @app_commands.describe(party_id="참여할 파티의 ID")
     async def join_party(self, interaction: discord.Interaction, party_id: str):
@@ -1507,8 +1502,7 @@ class ActivitiesCog(ActivitiesCog):  # Extending the existing class
             for dungeon in dungeon_stats[:3]:  # Top 3 dungeons
                 dungeon_info = self.dungeons.get(dungeon['dungeon_name'])
                 name = dungeon_info['name'] if dungeon_info else dungeon['dungeon_name']
-                best_time_text = f"{dungeon['best_time'] // 60}분 {dungeon['best_time'] % 60}초" if dungeon[
-                                                                                                      'best_time'] > 0 else "기록 없음"
+                best_time_text = f"{dungeon['best_time'] // 60}분 {dungeon['best_time'] % 60}초" if dungeon['best_time'] > 0 else "기록 없음"
                 dungeon_text += f"**{name}**: {dungeon['completions']}회 클리어\n최고 기록: {best_time_text}\n"
         else:
             dungeon_text = "던전 기록 없음"
