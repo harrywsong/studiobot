@@ -813,38 +813,36 @@ class EnhancementCog(commands.Cog):
                     result_color = discord.Color.red()
                 else:
                     result = "destroy"
-                    new_level = max(0, current_level - 3)  # Drop 3 levels on destruction
+                    new_level = -1  # Item is destroyed, level is irrelevant
                     new_fail_streak = 0
                     result_text = "💥 **아이템 파괴!**"
                     result_color = discord.Color.dark_red()
 
-                    # --- ATOMIC TRANSACTION START: Deduct coins, update item, and log everything ---
+                    # --- ATOMIC TRANSACTION START: Deduct coins, delete item, and log everything ---
                     conn = self.bot.pool
                     try:
                         async with conn.transaction():
                             # 1. Deduct coins, update total_spent, and log the coin transaction
-                            # This ensures consistency with the CoinsCog's remove_coins method
                             await conn.execute("""
-                                    UPDATE user_coins 
-                                    SET coins = coins - $1, total_spent = total_spent + $1
-                                    WHERE user_id = $2 AND guild_id = $3
-                                """, cost, user_id, guild_id)
+                                                    UPDATE user_coins 
+                                                    SET coins = coins - $1, total_spent = total_spent + $1
+                                                    WHERE user_id = $2 AND guild_id = $3
+                                                """, cost, user_id, guild_id)
 
                             await conn.execute("""
-                                    INSERT INTO coin_transactions (user_id, guild_id, amount, transaction_type, description)
-                                    VALUES ($1, $2, $3, 'enhancement_cost', $4)
-                                """, user_id, guild_id, -cost,
-                                               f"강화: {template['name']} ({current_level} -> {new_level})")
+                                                    INSERT INTO coin_transactions (user_id, guild_id, amount, transaction_type, description)
+                                                    VALUES ($1, $2, $3, 'enhancement_cost', $4)
+                                                """, user_id, guild_id, -cost,
+                                               f"강화 파괴: {template['name']} ({current_level})")
 
-                            # 2. Update item in database
-                            # In the "destroy" block's transaction
+                            # 2. Delete the item from the database
                             await conn.execute("DELETE FROM user_items WHERE item_id = $1", item_id)
 
                             # 3. Log enhancement attempt
                             await conn.execute("""
-                                    INSERT INTO enhancement_logs (user_id, guild_id, item_id, old_level, new_level, result, cost)
-                                    VALUES ($1, $2, $3, $4, $5, $6, $7)
-                                """, user_id, guild_id, item_id, current_level, new_level, result, cost)
+                                                    INSERT INTO enhancement_logs (user_id, guild_id, item_id, old_level, new_level, result, cost)
+                                                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                                                """, user_id, guild_id, item_id, current_level, -1, result, cost)
 
                     except Exception as e:
                         # If any operation above fails, the transaction is automatically rolled back.
