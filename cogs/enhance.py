@@ -653,8 +653,9 @@ class EnhancementCog(commands.Cog):
             if stat in multipliers:
                 power += int(value * multipliers[stat])
 
-        # Remove problematic slot multipliers that cause power to drop to 1
+        # REMOVED: The problematic slot multipliers that were causing power to drop to 1
         # The slot_type parameter is not being passed correctly from activities.py anyway
+        # and was causing equipment changes to reset combat power to minimum
 
         return max(100, int(power))  # Ensure minimum 100 instead of 1
     def get_random_item(self) -> Dict[str, Any]:
