@@ -14,6 +14,8 @@ import math
 from utils.logger import get_logger
 from utils import config
 
+LEADERBOARD_CHANNEL_ID = 1421368148237619311
+
 
 class EnhancementView(discord.ui.View):
     """Interactive enhancement interface"""
@@ -465,7 +467,59 @@ class EnhancementCog(commands.Cog):
             self.logger.error(f"Error loading item_templates.json: {e}")
             return []
 
-    # ... (all other helper functions like show_detailed_item_info, get_rarity_multiplier, etc. remain the same) ...
+
+    async def post_or_update_leaderboard(self, guild: discord.Guild):
+        """Post or update the combat power leaderboard in the leaderboard channel."""
+        channel = guild.get_channel(LEADERBOARD_CHANNEL_ID)
+        if not channel:
+            return
+
+        # Fetch all users in this guild
+        records = await self.bot.pool.fetch(
+            """
+            SELECT DISTINCT user_id FROM user_items
+            WHERE guild_id = $1
+            """,
+            guild.id
+        )
+
+        leaderboard = []
+        for record in records:
+            user_id = record["user_id"]
+            user = guild.get_member(user_id)
+            if not user:
+                continue
+            power = await self.calculate_combat_power(user_id, guild.id)
+            leaderboard.append((user, power))
+
+        leaderboard.sort(key=lambda x: x[1], reverse=True)
+        top = leaderboard[:10]
+
+        embed = discord.Embed(
+            title="🏆 전투력 랭킹",
+            description="서버 최강자 순위!",
+            color=discord.Color.gold()
+        )
+        for rank, (user, power) in enumerate(top, start=1):
+            embed.add_field(
+                name=f"{rank}. {user.display_name}",
+                value=f"⚔️ 전투력: {power:,}",
+                inline=False
+            )
+
+        # Save message id somewhere (DB or in-memory)
+        if hasattr(self, "leaderboard_message_id"):
+            try:
+                msg = await channel.fetch_message(self.leaderboard_message_id)
+                await msg.edit(embed=embed)
+                return
+            except discord.NotFound:
+                pass
+
+        # Post new leaderboard if none exists
+        msg = await channel.send(embed=embed)
+        self.leaderboard_message_id = msg.id
+
     async def show_detailed_item_info(self, interaction: discord.Interaction, item_id: str):
         """Show detailed item information"""
         await self.show_item_management(interaction, item_id)
@@ -539,6 +593,8 @@ class EnhancementCog(commands.Cog):
         await self.bot.wait_until_ready()
         await self.setup_database()
         await self.setup_marketplace_message()
+        for guild in self.bot.guilds:
+            await self.post_or_update_leaderboard(guild)
 
     async def setup_database(self):
         """데이터베이스 테이블 생성"""
@@ -648,10 +704,14 @@ class EnhancementCog(commands.Cog):
                     items_text += (
                         f"**{i}.** {template['emoji']} **{template['name']}** {enh}\n"
                         f"   {rarity_info['name']} | {template['slot_type']} | 💰 **{entry['price']:,}** 코인\n"
-                        f"   판매자: <@{entry['seller_id']}>\n\n"
+                        f"   판매자: <@{entry['seller_id']}> | ID: `{entry['market_id']}`\n\n"
                     )
+
                 embed.add_field(name="🛒 판매중인 아이템", value=items_text, inline=False)
-                embed.set_footer(text="드롭다운으로 아이템을 구매하세요! (10분마다 자동 갱신)")
+                embed.set_footer(
+                    text="드롭다운으로 아이템을 구매하세요! (10분마다 자동 갱신)\n"
+                         "❌ 판매 취소: /마켓제거 <market_id>"
+                )
                 view = MarketplaceView(self.bot, market_items)
 
             # --- Reuse or create message ---
@@ -876,6 +936,8 @@ class EnhancementCog(commands.Cog):
                 f"사용자 {user_id}가 {template['name']} 강화: {current_level}→{new_level if result != 'destroy' else '파괴'} ({result})",
                 extra={'guild_id': guild_id}
             )
+            await self.post_or_update_leaderboard(interaction.guild)
+
 
         except Exception as e:
             self.logger.error(f"강화 처리 중 심각한 오류 발생: {e}", extra={'guild_id': guild_id}, exc_info=True)
@@ -933,6 +995,9 @@ class EnhancementCog(commands.Cog):
                 await showoff_channel.send(embed=embed)
             else:
                 await interaction.followup.send(embed=embed, ephemeral=True)
+
+            await self.post_or_update_leaderboard(interaction.guild)
+
         except Exception as e:
             self.logger.error(f"장착 오류: {e}", extra={'guild_id': guild_id})
             await interaction.followup.send(f"❌ 장착 중 오류가 발생했습니다: {e}", ephemeral=True)
@@ -974,6 +1039,8 @@ class EnhancementCog(commands.Cog):
                 await showoff_channel.send(embed=embed)
             else:
                 await interaction.followup.send(embed=embed, ephemeral=True)
+            await self.post_or_update_leaderboard(interaction.guild)
+
         except Exception as e:
             self.logger.error(f"장착 해제 오류: {e}", extra={'guild_id': guild_id})
             await interaction.followup.send(f"❌ 장착 해제 중 오류가 발생했습니다: {e}", ephemeral=True)
@@ -1049,6 +1116,8 @@ class EnhancementCog(commands.Cog):
                 embed.title = "🏪 새로운 아이템이 마켓에 등록되었습니다!"
                 await showoff_channel.send(embed=embed)
             await self.create_marketplace_message()
+            await self.post_or_update_leaderboard(interaction.guild)
+
         except Exception as e:
             self.logger.error(f"마켓 등록 오류: {e}", extra={'guild_id': guild_id})
             await interaction.followup.send(f"❌ 마켓 등록 중 오류가 발생했습니다: {e}", ephemeral=True)
@@ -1120,6 +1189,8 @@ class EnhancementCog(commands.Cog):
                 pass
             await self.create_marketplace_message()
             self.logger.info(f"마켓 거래 완료: {user_id}가 {template['name']}을 {price:,} 코인에 구매", extra={'guild_id': guild_id})
+            await self.post_or_update_leaderboard(interaction.guild)
+
         except Exception as e:
             self.logger.error(f"마켓 구매 오류: {e}", extra={'guild_id': guild_id})
             await interaction.followup.send(f"❌ 구매 중 오류가 발생했습니다: {e}", ephemeral=True)
@@ -1137,6 +1208,45 @@ class EnhancementCog(commands.Cog):
         except Exception as e:
             self.logger.error(f"장착 아이템 조회 오류: {e}", extra={'guild_id': guild_id})
             return {}
+
+    async def remove_item_from_market(self, interaction: discord.Interaction, market_id: str):
+        """Allow a seller to remove their item from the marketplace"""
+        await interaction.response.defer(ephemeral=True)
+        user_id = interaction.user.id
+        guild_id = interaction.guild.id
+        try:
+            market_entry = await self.bot.pool.fetchrow(
+                "SELECT * FROM marketplace WHERE market_id = $1 AND guild_id = $2",
+                market_id, guild_id
+            )
+            if not market_entry:
+                await interaction.followup.send("❌ 해당 아이템이 마켓에 없습니다.", ephemeral=True)
+                return
+            if market_entry["seller_id"] != user_id:
+                await interaction.followup.send("❌ 자신이 등록한 아이템만 제거할 수 있습니다.", ephemeral=True)
+                return
+
+            # Return item to seller
+            await self.bot.pool.execute(
+                "UPDATE user_items SET user_id = $1 WHERE item_id = $2",
+                user_id, market_entry["item_id"]
+            )
+            await self.bot.pool.execute("DELETE FROM marketplace WHERE market_id = $1", market_id)
+
+            template = self.get_item_template(market_entry['template_id'])
+            embed = discord.Embed(
+                title="🗑️ 마켓 아이템 제거 완료",
+                description=f"{template['emoji']} **{template['name']}** 을(를) 마켓에서 제거했습니다.",
+                color=discord.Color.orange()
+            )
+            await interaction.followup.send(embed=embed, ephemeral=True)
+
+            # Refresh marketplace message
+            await self.create_marketplace_message()
+
+        except Exception as e:
+            self.logger.error(f"마켓 아이템 제거 오류: {e}", extra={'guild_id': guild_id})
+            await interaction.followup.send(f"❌ 아이템 제거 중 오류 발생: {e}", ephemeral=True)
 
     async def calculate_total_stats(self, user_id: int, guild_id: int) -> Dict[str, int]:
         """총 능력치 계산"""
@@ -1392,6 +1502,11 @@ class EnhancementCog(commands.Cog):
             await interaction.followup.send(embed=embed, view=view, ephemeral=True)
         else:
             await interaction.followup.send(embed=embed, ephemeral=True)
+
+    @app_commands.command(name="마켓제거", description="자신이 올린 아이템을 마켓에서 제거합니다.")
+    async def market_remove(self, interaction: discord.Interaction, market_id: str):
+        """Slash command to remove your own item from the marketplace"""
+        await self.remove_item_from_market(interaction, market_id)
 
     @app_commands.command(name="아이템정보", description="특정 아이템의 상세 정보를 확인합니다.")
     @app_commands.describe(item_id="확인할 아이템 ID")
