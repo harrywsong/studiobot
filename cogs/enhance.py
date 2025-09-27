@@ -654,8 +654,10 @@ class EnhancementCog(commands.Cog):
                 await interaction.followup.send("❌ 코인 시스템을 사용할 수 없습니다.", ephemeral=True)
                 return
 
-            current_coins = await coins_cog.get_user_coins(user_id, guild_id)
-            if current_coins < cost:
+            description = f"강화: {template['name']}"  # Description for the log
+            # This single call now handles the check, deduction, and logging atomically.
+            if not await coins_cog.remove_coins(user_id, guild_id, cost, "enhancement", description):
+                current_coins = await coins_cog.get_user_coins(user_id, guild_id)
                 await interaction.followup.send(f"❌ 강화 비용이 부족합니다!\n필요: {cost:,} 코인\n보유: {current_coins:,} 코인",
                                                 ephemeral=True)
                 return
@@ -678,18 +680,9 @@ class EnhancementCog(commands.Cog):
                     result, new_level, new_fail_streak, result_text, result_color = "destroy", -1, 0, "💥 **아이템 파괴!**", discord.Color.dark_red()
 
             try:
-                # Use a single transaction to ensure atomicity
+                # The transaction now only handles item and log updates
                 async with self.bot.pool.transaction():
-                    # 1. Deduct coins & Log transaction
-                    description = f"강화: {template['name']} ({result})"
-                    await self.bot.pool.execute(
-                        "UPDATE user_coins SET coins = coins - $3, total_spent = total_spent + $3 WHERE user_id = $1 AND guild_id = $2",
-                        user_id, guild_id, cost)
-                    await self.bot.pool.execute(
-                        "INSERT INTO coin_transactions (user_id, guild_id, amount, transaction_type, description) VALUES ($1, $2, $3, $4, $5)",
-                        user_id, guild_id, -cost, "enhancement", description)
-
-                    # 2. Update item database
+                    # Update item database
                     if result in ["success", "fail"]:
                         await self.bot.pool.execute(
                             "UPDATE user_items SET enhancement_level = $1, fail_streak = $2, last_enhanced = CURRENT_TIMESTAMP WHERE item_id = $3",
@@ -697,14 +690,16 @@ class EnhancementCog(commands.Cog):
                     elif result == "destroy":
                         await self.bot.pool.execute("DELETE FROM user_items WHERE item_id = $1", item_id)
 
-                    # 3. Log enhancement
+                    # Log enhancement
                     await self.bot.pool.execute(
                         "INSERT INTO enhancement_logs (user_id, guild_id, item_id, old_level, new_level, result, cost) VALUES ($1, $2, $3, $4, $5, $6, $7)",
                         user_id, guild_id, item_id, current_level, new_level, result, cost)
 
             except Exception as e:
-                self.logger.error(f"Enhancement database transaction failed for user {user_id}: {e}", exc_info=True)
-                await interaction.followup.send(f"⚠️ **강화 오류!** 데이터베이스 처리 중 문제가 발생했습니다. 변경사항이 적용되지 않았습니다.",
+                self.logger.error(f"Enhancement item-update transaction failed for user {user_id}: {e}", exc_info=True)
+                # Refund coins if the item update fails
+                await coins_cog.add_coins(user_id, guild_id, cost, "enhancement_refund", "강화 실패로 인한 환불")
+                await interaction.followup.send(f"⚠️ **강화 오류!** 아이템 정보 업데이트 중 문제가 발생했습니다. 코인이 환불되었습니다.",
                                                 ephemeral=True)
                 return
 
