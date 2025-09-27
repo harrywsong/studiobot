@@ -623,7 +623,7 @@ class ActivitiesCog(commands.Cog):
 
         if active:
             end_time = ensure_timezone_aware(active['end_time'])
-            current_time = ensure_timezone_aware(datetime.now(timezone.utc))
+            current_time = datetime.now(timezone.utc)  # Already timezone-aware
             remaining_time = end_time - current_time
 
             if remaining_time.total_seconds() > 0:
@@ -1302,7 +1302,7 @@ class ActivitiesCog(commands.Cog):
     async def check_completed_adventures(self):
         """Check for adventures that should be completed but haven't been processed"""
         try:
-            current_time = ensure_timezone_aware(datetime.now(timezone.utc))
+            current_time = datetime.now(timezone.utc)  # Already timezone-aware
 
             # Find adventures that should be completed
             completed_adventures = await self.bot.pool.fetch("""
