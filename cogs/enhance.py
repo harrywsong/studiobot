@@ -473,12 +473,8 @@ class EnhancementCog(commands.Cog):
         if not channel:
             return
 
-        # Fetch all users who own items in this guild
         records = await self.bot.pool.fetch(
-            """
-            SELECT DISTINCT user_id FROM user_items
-            WHERE guild_id = $1
-            """,
+            "SELECT DISTINCT user_id FROM user_items WHERE guild_id = $1",
             guild.id
         )
 
@@ -489,13 +485,11 @@ class EnhancementCog(commands.Cog):
             if not user:
                 continue
 
-            # --- Get stats, class, and power ---
             stats = await self.calculate_total_stats(user_id, guild.id)
             character = await self.get_user_character(user_id, guild.id)
-            char_class = character['class'] if character else "전사"
+            char_class = character['class'] if character else "무직"
             power = self.calculate_combat_power(stats, char_class)
 
-            # --- Get equipped items (names) ---
             equipped = await self.get_equipped_items(user_id, guild.id)
             equipped_names = []
             for slot, item_data in equipped.items():
@@ -503,11 +497,10 @@ class EnhancementCog(commands.Cog):
                 if template:
                     enh = f"+{item_data['enhancement_level']}" if item_data['enhancement_level'] > 0 else ""
                     equipped_names.append(f"{template['emoji']}{template['name']}{enh}")
-            equipped_str = ", ".join(equipped_names) if equipped_names else "없음"
+            equipped_str = " | ".join(equipped_names) if equipped_names else "없음"
 
-            leaderboard.append((user, power, stats, equipped_str))
+            leaderboard.append((user, power, stats, char_class, equipped_str))
 
-        # Sort by combat power
         leaderboard.sort(key=lambda x: x[1], reverse=True)
         top = leaderboard[:10]
 
@@ -517,23 +510,27 @@ class EnhancementCog(commands.Cog):
             color=discord.Color.gold()
         )
 
-        for rank, (user, power, stats, equipped_str) in enumerate(top, start=1):
-            stats_line = (
+        for rank, (user, power, stats, char_class, equipped_str) in enumerate(top, start=1):
+            stats_block = (
+                f"🧩 **스탯**\n"
                 f"STR {stats['str']} | DEX {stats['dex']} | "
-                f"INT {stats['int']} | LUK {stats['luk']} | "
+                f"INT {stats['int']} | LUK {stats['luk']}\n"
                 f"ATT {stats['att']} | M.ATT {stats['m_att']}"
             )
+
+            value_text = (
+                f"👤 직업: {char_class}\n"
+                f"⚔️ 전투력: **{power:,}**\n\n"
+                f"{stats_block}\n\n"
+                f"🪓 **장착 아이템**\n{equipped_str}"
+            )
+
             embed.add_field(
                 name=f"{rank}. {user.display_name}",
-                value=(
-                    f"⚔️ 전투력: **{power:,}**\n"
-                    f"📊 {stats_line}\n"
-                    f"🪓 장착: {equipped_str}"
-                ),
+                value=value_text,
                 inline=False
             )
 
-        # Update existing leaderboard message or create new one
         if hasattr(self, "leaderboard_message_id"):
             try:
                 msg = await channel.fetch_message(self.leaderboard_message_id)
