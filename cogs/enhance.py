@@ -382,25 +382,33 @@ class EnhancementCog(commands.Cog):
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 items = json.load(f)
-                # Ensure 'id' is int if needed elsewhere
+                valid_items = []
                 for item in items:
-                     # Item IDs might be stored as strings in JSON keys, ensure proper type conversion
-                     if 'id' in item and isinstance(item['id'], str):
-                         item['id'] = int(item['id'])
-                self.logger.info(f"Loaded {len(items)} items from item_templates.json.")
-                return items
+                    # --- START OF FIX ---
+                    # Check if the 'id' key exists and is not None before processing
+                    if 'id' in item and item['id'] is not None:
+                        # Item IDs might be stored as strings in JSON keys, ensure proper type conversion
+                        if isinstance(item['id'], str):
+                            try:
+                                item['id'] = int(item['id'])
+                            except ValueError:
+                                self.logger.warning(
+                                    f"Skipping item with non-integer ID: {item.get('name', 'Unnamed Item')}")
+                                continue  # Skip this item if ID cannot be converted to int
+
+                        valid_items.append(item)
+                    else:
+                        self.logger.warning(f"Skipping item due to missing 'id': {item.get('name', 'Unnamed Item')}")
+                    # --- END OF FIX ---
+
+                self.logger.info(f"Loaded {len(valid_items)} valid items from item_templates.json.")
+                return valid_items
         except FileNotFoundError:
             self.logger.error(f"FATAL: item_templates.json not found at {file_path}. The item pool is empty.")
             return []
         except Exception as e:
             self.logger.error(f"Error loading item_templates.json: {e}")
             return []
-
-
-
-
-
-
 
     async def show_detailed_item_info(self, interaction: discord.Interaction, item_id: str):
         """Show detailed item information"""
