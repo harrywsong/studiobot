@@ -596,24 +596,26 @@ class EnhancementCog(commands.Cog):
         base = rarity_prices.get(rarity, 100)
         return int(base * (tier + 1) * 1.5)
 
-    def calculate_vendor_sell_price(self, template: Dict, enhancement_level: int) -> int:
-        """Calculate fair system vendor sell price"""
+    def calculate_vendor_sell_price(template: dict, enhancement_level: int) -> int:
         base_price = template.get('base_price', 100)
 
-        # Much more conservative rarity multipliers
+        # conservative rarity multipliers
         rarity_multipliers = {
-            "일반": 0.3, "고급": 0.5, "희귀": 0.7, "영웅": 1.0,
-            "고유": 1.4, "전설": 2.0, "신화": 2.8
+            "일반": 0.2, "고급": 0.35, "희귀": 0.5, "영웅": 0.7,
+            "고유": 1.0, "전설": 1.4, "신화": 1.8
         }
+        rarity_multiplier = rarity_multipliers.get(template['rarity'], 0.2)
 
-        # Enhancement adds modest value (5% per level instead of 15%)
-        enhancement_multiplier = 1 + (enhancement_level * 0.05)
+        # enhancement scaling
+        if enhancement_level <= 15:
+            enhancement_multiplier = 1.0  # flat, no resale growth until late-game
+        else:
+            enhancement_multiplier = 1.15 ** (enhancement_level - 15)
 
-        rarity_multiplier = rarity_multipliers.get(template['rarity'], 0.3)
-        final_price = int(base_price * enhancement_multiplier * rarity_multiplier)
+        final_price = int(base_price * rarity_multiplier * enhancement_multiplier)
 
-        # Reasonable minimum price
-        min_price = 3 + (enhancement_level * 2)
+        # minimum safeguard (so trash still sells for something)
+        min_price = 5 + enhancement_level
         return max(final_price, min_price)
 
     def calculate_combat_power(self, stats: Dict[str, int], character_class: str) -> int:

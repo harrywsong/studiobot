@@ -1480,34 +1480,20 @@ class ActivitiesCog(commands.Cog):
         # Check daily limit for arena battles
         if not await self.check_daily_activity_limit(user_id, guild_id, "arena"):
             await interaction.followup.send(
-                f"⚠️ 일일 아레나 한도에 도달했습니다! (하루 최대 {self.daily_limits['arena']}회)",
+                f"⚠️ Daily arena limit reached! (Max {self.daily_limits['arena']} per day)",
                 ephemeral=True
             )
             return
 
-        # Find opponent with similar rating
+        # Get the player's stats
         user_stats = await self.bot.pool.fetchrow(
             "SELECT * FROM arena_stats WHERE user_id = $1 AND guild_id = $2",
             user_id, guild_id
         )
 
-        # Get potential opponents (±200 rating range)
-        opponents = await self.bot.pool.fetch("""
-            SELECT user_id, rating FROM arena_stats 
-            WHERE guild_id = $1 AND user_id != $2 
-            AND rating BETWEEN $3 AND $4
-            ORDER BY ABS(rating - $5)
-            LIMIT 10
-        """, guild_id, user_id, user_stats['rating'] - 200, user_stats['rating'] + 200, user_stats['rating'])
-
-        if not opponents:
-            # Create AI opponent
-            ai_rating = user_stats['rating'] + random.randint(-50, 50)
-            await self.battle_ai_opponent(interaction, user_stats, ai_rating)
-        else:
-            # Battle random opponent
-            opponent_data = random.choice(opponents)
-            await self.battle_player_opponent(interaction, user_stats, opponent_data)
+        # 👉 Force AI battle only
+        ai_rating = user_stats['rating'] + random.randint(-50, 50)
+        await self.battle_ai_opponent(interaction, user_stats, ai_rating)
 
     async def battle_ai_opponent(self, interaction: discord.Interaction, user_stats: dict, ai_rating: int):
         """Battle against AI opponent - BALANCED REWARDS"""
