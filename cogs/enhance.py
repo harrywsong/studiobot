@@ -626,7 +626,7 @@ class EnhancementCog(commands.Cog):
 
     async def handle_enhancement(self, interaction: discord.Interaction, item_id: str):
         """Handle item enhancement with MapleStory-style rates"""
-        await interaction.response.defer(ephemeral=True)
+        # await interaction.response.defer(ephemeral=True)
 
         user_id = interaction.user.id
         guild_id = interaction.guild.id
