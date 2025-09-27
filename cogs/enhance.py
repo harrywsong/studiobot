@@ -424,13 +424,13 @@ class EnhancementCog(commands.Cog):
         }
 
         self.item_rarities = {
-            "일반": {"name": "일반", "color": 0x808080, "weight": 70},  # Increased from 45
-            "고급": {"name": "고급", "color": 0x00FF00, "weight": 20},  # Reduced from 30
-            "희귀": {"name": "희귀", "color": 0x0080FF, "weight": 7},  # Reduced from 15
-            "영웅": {"name": "영웅", "color": 0x8000FF, "weight": 2.5},  # Reduced from 7
-            "고유": {"name": "고유", "color": 0xFF8000, "weight": 0.2},  # Reduced from 2.5
-            "전설": {"name": "전설", "color": 0xFF0000, "weight": 0.09},  # Reduced from 0.4
-            "신화": {"name": "신화", "color": 0xFFD700, "weight": 0.01}  # Reduced from 0.1
+            "일반": {"name": "일반", "color": 0x808080, "weight": 50},  # Decreased from 70
+            "고급": {"name": "고급", "color": 0x00FF00, "weight": 25},  # Increased from 20
+            "희귀": {"name": "희귀", "color": 0x0080FF, "weight": 15},  # Increased from 7
+            "영웅": {"name": "영웅", "color": 0x8000FF, "weight": 7},  # Increased from 2.5
+            "고유": {"name": "고유", "color": 0xFF8000, "weight": 2},  # Increased from 0.2
+            "전설": {"name": "전설", "color": 0xFF0000, "weight": 0.8},  # Increased from 0.09
+            "신화": {"name": "신화", "color": 0xFFD700, "weight": 0.2}  # Increased from 0.01
         }
 
         self.equipment_slots = [
