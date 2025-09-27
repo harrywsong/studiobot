@@ -514,6 +514,21 @@ class EnhancementCog(commands.Cog):
         if not channel:
             return
 
+        # --- START MODIFICATION ---
+        # 1. Clear all previous messages in the channel
+        try:
+            # Delete all messages in the channel efficiently
+            # Note: The bot needs 'manage_messages' permission for channel.purge()
+            await channel.purge()
+        except discord.Forbidden:
+            self.logger.error(
+                f"Failed to purge leaderboard channel in guild {guild.id}: Missing 'manage_messages' permission.")
+            return
+        except discord.HTTPException as e:
+            self.logger.error(f"HTTP exception during channel purge in guild {guild.id}: {e}")
+            return
+        # --- END MODIFICATION ---
+
         # Initialize leaderboard_messages dict if it doesn't exist
         if not hasattr(self, 'leaderboard_messages'):
             self.leaderboard_messages = {}
@@ -550,26 +565,15 @@ class EnhancementCog(commands.Cog):
         leaderboard = [(u, i + 1, p, s, c, e) for i, (u, _, p, s, c, e) in enumerate(leaderboard)]
 
         if not leaderboard:
-            # Only send this message if we haven't already posted a leaderboard for this guild
-            if guild.id not in self.leaderboard_messages:
-                msg = await channel.send("⚠️ 현재 랭킹에 표시할 유저가 없습니다.")
-                self.leaderboard_messages[guild.id] = msg.id
+            # Always send a new message since the channel was purged
+            msg = await channel.send("⚠️ 현재 랭킹에 표시할 유저가 없습니다.")
+            self.leaderboard_messages[guild.id] = msg.id
             return
 
         view = LeaderboardView(self.bot, leaderboard, 0)
         embed = view.get_embed()
 
-        # Check if we already have a leaderboard message for this guild
-        if guild.id in self.leaderboard_messages:
-            try:
-                msg = await channel.fetch_message(self.leaderboard_messages[guild.id])
-                await msg.edit(embed=embed, view=view)
-                return
-            except discord.NotFound:
-                # Message was deleted, remove from tracking
-                del self.leaderboard_messages[guild.id]
-
-        # Create new message and track it per guild
+        # 2. Create new message and track it per guild (replacing the old edit logic)
         msg = await channel.send(embed=embed, view=view)
         self.leaderboard_messages[guild.id] = msg.id
     async def show_detailed_item_info(self, interaction: discord.Interaction, item_id: str):

@@ -154,11 +154,21 @@ class ArenaChallengeView(discord.ui.View):
     async def accept_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         for item in self.children:
             item.disabled = True
-
         await interaction.response.edit_message(content=f"**✅ 도전 수락!** 아레나 매치를 시작합니다...", view=self)
         self.stop()
 
-        await self.cog.start_arena_match(self.challenger_id, self.target_id, interaction.channel)
+        # handle wager if present
+        wager = getattr(self, "wager", None)
+        if wager:
+            coins_cog = self.cog.bot.get_cog('CoinsCog')
+            if coins_cog:
+                # withdraw from both players; handle insufficient balance, refunds, etc.
+                await coins_cog.remove_coins(self.challenger_id, interaction.guild.id, wager, "arena_wager",
+                                             f"아레나 내기 vs {self.target_id}")
+                await coins_cog.remove_coins(self.target_id, interaction.guild.id, wager, "arena_wager",
+                                             f"아레나 내기 vs {self.challenger_id}")
+
+        await self.cog.start_arena_match(self.challenger_id, self.target_id, interaction.channel, wager=wager)
 
     @discord.ui.button(label="거절", style=discord.ButtonStyle.red)
     async def decline_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -1388,28 +1398,96 @@ class ActivitiesCog(commands.Cog):
         except Exception as e:
             self.logger.error(f"Dungeon completion error: {e}")
 
-    @app_commands.command(name="아레나", description="다른 플레이어와 전투를 펼치세요!")
-    async def arena(self, interaction: discord.Interaction):
+    # Add at top if not already: from typing import Optional
+
+    @app_commands.command(name="아레나", description="다른 플레이어와 전투를 펼치세요! (대상/내기 선택 가능)")
+    @app_commands.describe(target="도전할 플레이어를 선택하세요 (선택사항).", wager="내기 코인 (선택사항)", note="짧은 메모 (선택사항)")
+    async def arena(self, interaction: discord.Interaction, target: Optional[discord.Member] = None,
+                    wager: Optional[int] = None, note: Optional[str] = None):
         guild_id = interaction.guild.id
         if not config.is_feature_enabled(guild_id, 'casino_games'):
             await interaction.response.send_message("⚠️ 이 서버에서는 활동 시스템이 비활성화되어 있습니다.", ephemeral=True)
             return
 
-        # Check if command is used in correct channel
-        if not self.check_channel(interaction, ARENA_CHANNEL_ID):
-            arena_channel = self.bot.get_channel(ARENA_CHANNEL_ID)
-            channel_mention = arena_channel.mention if arena_channel else f"<#{ARENA_CHANNEL_ID}>"
-            await interaction.response.send_message(
-                f"⚔️ 아레나는 {channel_mention} 채널에서만 이용할 수 있습니다!",
-                ephemeral=True
-            )
-            return
+        # If a target is provided, treat this as a challenge request
+        if target is not None:
+            # Reuse most of challenge_player validation/flow
+            challenger = interaction.user
 
+            # Channel check
+            if not self.check_channel(interaction, ARENA_CHANNEL_ID):
+                arena_channel = self.bot.get_channel(ARENA_CHANNEL_ID)
+                channel_mention = arena_channel.mention if arena_channel else f"<#{ARENA_CHANNEL_ID}>"
+                await interaction.response.send_message(
+                    f"⚔️ 아레나 도전은 {channel_mention} 채널에서만 이용할 수 있습니다!",
+                    ephemeral=True
+                )
+                return
+
+            if challenger.id == target.id:
+                return await interaction.response.send_message("자신에게 도전할 수 없습니다!", ephemeral=True)
+            if target.bot:
+                return await interaction.response.send_message("봇에게 도전할 수 없습니다!", ephemeral=True)
+
+            # Wager validation (if present)
+            if wager is not None:
+                if wager < 0:
+                    return await interaction.response.send_message("내기는 0 이상의 값이어야 합니다.", ephemeral=True)
+                # Optionally: check challenger has enough coins (if you have CoinsCog)
+                coins_cog = self.bot.get_cog('CoinsCog')
+                if coins_cog:
+                    balance = await coins_cog.get_coins(challenger.id, guild_id)  # implement or adapt to your coin API
+                    if balance is not None and balance < wager:
+                        return await interaction.response.send_message("내기에 필요한 코인이 부족합니다.", ephemeral=True)
+
+            # check existing active challenges
+            if target.id in self.active_challenges:
+                return await interaction.response.send_message(f"**{target.display_name}**님은 이미 다른 도전을 받고 있습니다.",
+                                                               ephemeral=True)
+            if challenger.id in self.active_challenges.values():
+                return await interaction.response.send_message("이미 진행 중인 도전이 있습니다. 응답을 기다려주세요.", ephemeral=True)
+
+            # store active challenge
+            self.active_challenges[target.id] = challenger.id
+
+            # Create a challenge message including wager/note
+            wager_text = f"\n💰 내기: {wager:,} 코인" if wager is not None else ""
+            note_text = f"\n📝 메모: {note}" if note else ""
+
+            challenge_message = (
+                f"**⚔️ 아레나 도전! (ARENA CHALLENGE)**\n\n"
+                f"<@{target.id}>님, **{challenger.display_name}**님이 아레나 PvP 매치를 신청했습니다!"
+                f"{wager_text}{note_text}\n\n"
+                f"도전을 수락하시겠습니까?"
+            )
+
+            # Create view that can carry extra metadata (wager/note)
+            view = ArenaChallengeView(
+                challenger_id=challenger.id,
+                target_id=target.id,
+                cog_instance=self
+            )
+            # Attach optional metadata to view instance for later reference
+            view.wager = wager
+            view.note = note
+
+            await interaction.response.send_message(content=challenge_message, view=view,
+                                                    allowed_mentions=discord.AllowedMentions(users=[target]))
+            timed_out = await view.wait()
+            if timed_out:
+                if target.id in self.active_challenges and self.active_challenges.get(target.id) == challenger.id:
+                    del self.active_challenges[target.id]
+                    await interaction.followup.send(f"⚠️ **도전 시간 초과.** <@{target.id}>님의 응답이 없어 도전이 취소되었습니다.",
+                                                    ephemeral=False)
+
+            return  # challenge flow finished
+
+        # --- If no target provided: show the standard arena UI (unchanged) ---
         try:
             await interaction.response.defer()
             user_id = interaction.user.id
 
-            # Get or create arena stats
+            # Get or create arena stats (same logic as before)
             arena_stats = await self.bot.pool.fetchrow(
                 "SELECT * FROM arena_stats WHERE user_id = $1 AND guild_id = $2",
                 user_id, guild_id
@@ -1425,14 +1503,13 @@ class ActivitiesCog(commands.Cog):
                     user_id, guild_id
                 )
 
-            # Get current tier info
+            # determine current tier
             current_tier = None
             for tier_id, tier_info in self.arena_tiers.items():
                 if arena_stats['rating'] >= tier_info['min_rating']:
                     current_tier = tier_info
                 else:
                     break
-
             if not current_tier:
                 current_tier = self.arena_tiers['bronze']
 
@@ -1443,7 +1520,6 @@ class ActivitiesCog(commands.Cog):
                 description="전투를 통해 실력을 증명하세요!",
                 color=discord.Color.red()
             )
-
             embed.add_field(name="현재 티어", value=f"{current_tier['emoji']} {current_tier['name']}", inline=True)
             embed.add_field(name="레이팅", value=f"{arena_stats['rating']}", inline=True)
             embed.add_field(name="전투력", value=f"{combat_power:,}", inline=True)
