@@ -795,8 +795,9 @@ class EnhancementCog(commands.Cog):
                 )
                 return
 
-                # Get rates for display (needed for footer)
+            # Get rates for display
             rates = self.starforce_rates.get(current_level, (30, 67, 3))
+            result, new_level, new_fail_streak, result_text, result_color = "", 0, 0, "", discord.Color.default()
 
             # Calculate enhancement result
             if fail_streak >= 2:
@@ -808,8 +809,8 @@ class EnhancementCog(commands.Cog):
                 result_color = discord.Color.gold()
             else:
                 # Normal rates
-                success_rate, fail_rate, destroy_rate = rates
-                roll = random.randint(1, 100)
+                success_rate, fail_rate, _ = rates
+                roll = random.uniform(0, 100)
                 if roll <= success_rate:
                     result = "success"
                     new_level = current_level + 1
@@ -818,78 +819,67 @@ class EnhancementCog(commands.Cog):
                     result_color = discord.Color.green()
                 elif roll <= success_rate + fail_rate:
                     result = "fail"
-                    # Levels 0-15 don't go down on fail
-                    if current_level <= 15:
-                        new_level = current_level
-                    else:
-                        new_level = current_level - 1
+                    new_level = current_level - 1 if current_level in [15, 20] else current_level
                     new_fail_streak = fail_streak + 1
                     result_text = "❌ **강화 실패**"
                     result_color = discord.Color.red()
                 else:
                     result = "destroy"
-                    new_level = -1  # Item is destroyed, level is irrelevant
+                    new_level = -1
                     new_fail_streak = 0
                     result_text = "💥 **아이템 파괴!**"
                     result_color = discord.Color.dark_red()
 
-                    # --- ATOMIC TRANSACTION START: Deduct coins, delete item, and log everything ---
-                    conn = self.bot.pool
-                    try:
-                        async with conn.transaction():
-                            # 1. Deduct coins, update total_spent, and log the coin transaction
-                            await conn.execute("""
-                                                    UPDATE user_coins 
-                                                    SET coins = coins - $1, total_spent = total_spent + $1
-                                                    WHERE user_id = $2 AND guild_id = $3
-                                                """, cost, user_id, guild_id)
+            # --- START OF FIX: DATABASE UPDATE LOGIC ---
+            conn = self.bot.pool
+            try:
+                async with conn.transaction():
+                    # 1. Deduct coins and log the coin transaction for all cases
+                    await coins_cog.remove_coins(user_id, guild_id, cost, "enhancement",
+                                                 f"강화: {template['name']} ({result})")
 
-                            await conn.execute("""
-                                                    INSERT INTO coin_transactions (user_id, guild_id, amount, transaction_type, description)
-                                                    VALUES ($1, $2, $3, 'enhancement_cost', $4)
-                                                """, user_id, guild_id, -cost,
-                                               f"강화 파괴: {template['name']} ({current_level})")
+                    # 2. Update database based on result
+                    if result in ["success", "fail"]:
+                        # Update item level and fail streak
+                        await conn.execute("""
+                            UPDATE user_items
+                            SET enhancement_level = $1, fail_streak = $2, last_enhanced = CURRENT_TIMESTAMP
+                            WHERE item_id = $3
+                        """, new_level, new_fail_streak, item_id)
 
-                            # 2. Delete the item from the database
-                            await conn.execute("DELETE FROM user_items WHERE item_id = $1", item_id)
+                        # Log the enhancement attempt
+                        await conn.execute("""
+                            INSERT INTO enhancement_logs (user_id, guild_id, item_id, old_level, new_level, result, cost)
+                            VALUES ($1, $2, $3, $4, $5, $6, $7)
+                        """, user_id, guild_id, item_id, current_level, new_level, result, cost)
 
-                            # 3. Log enhancement attempt
-                            await conn.execute("""
-                                                    INSERT INTO enhancement_logs (user_id, guild_id, item_id, old_level, new_level, result, cost)
-                                                    VALUES ($1, $2, $3, $4, $5, $6, $7)
-                                                """, user_id, guild_id, item_id, current_level, -1, result, cost)
+                    elif result == "destroy":
+                        # Delete the item from the database
+                        await conn.execute("DELETE FROM user_items WHERE item_id = $1", item_id)
 
-                    except Exception as e:
-                        # If any operation above fails, the transaction is automatically rolled back.
-                        self.logger.error(f"Enhancement transaction failed for user {user_id}: {e}")
-                        await interaction.followup.send(
-                            f"⚠️ **강화 오류!** 데이터베이스 트랜잭션 실패. 비용이 환불되었거나 아이템 상태가 변경되지 않았습니다. ({e})", ephemeral=True)
-                        return
-                    # --- ATOMIC TRANSACTION END ---
+                        # Log the destruction
+                        await conn.execute("""
+                            INSERT INTO enhancement_logs (user_id, guild_id, item_id, old_level, new_level, result, cost)
+                            VALUES ($1, $2, $3, $4, $5, $6, $7)
+                        """, user_id, guild_id, item_id, current_level, -1, result, cost)
 
-            # Create result embed with visual effects
+            except Exception as e:
+                self.logger.error(f"Enhancement database transaction failed for user {user_id}: {e}", exc_info=True)
+                await interaction.followup.send(f"⚠️ **강화 오류!** 데이터베이스 처리 중 문제가 발생했습니다. 변경사항이 적용되지 않았을 수 있습니다.",
+                                                ephemeral=True)
+                return
+            # --- END OF FIX ---
+
+            # Create result embed
             rarity_info = self.item_rarities[template['rarity']]
-            embed = discord.Embed(
-                title=result_text,
-                color=result_color,
-                timestamp=datetime.now(timezone.utc)
-            )
-
-            # Add visual flair based on result
-            if result == "success":
-                if new_level >= 15:
-                    embed.description = "✨⭐✨⭐✨⭐✨⭐✨⭐✨"
-                else:
-                    embed.description = "⚡💫⚡💫⚡💫⚡💫⚡"
-            elif result == "fail":
-                embed.description = "💔😢💔😢💔😢💔😢💔"
-            else:  # destroy
-                embed.description = "💥💀💥💀💥💀💥💀💥"
+            embed = discord.Embed(title=result_text, color=result_color, timestamp=datetime.now(timezone.utc))
 
             item_display = f"{template['emoji']} **{template['name']}**"
+            level_change_display = f"{current_level} → **{new_level if result != 'destroy' else '파괴'}**"
+
             embed.add_field(name="아이템", value=item_display, inline=True)
             embed.add_field(name="등급", value=rarity_info['name'], inline=True)
-            embed.add_field(name="레벨 변화", value=f"{current_level} → **{new_level}**", inline=True)
+            embed.add_field(name="레벨 변화", value=level_change_display, inline=True)
 
             if result == "success":
                 embed.add_field(name="🎉 성공!", value="강화 레벨이 상승했습니다!", inline=False)
@@ -897,64 +887,39 @@ class EnhancementCog(commands.Cog):
                 embed.add_field(name="💔 실패", value=f"연속 실패: {new_fail_streak}회", inline=False)
                 if new_fail_streak >= 2:
                     embed.add_field(name="✨ 다음 강화 보장!", value="다음 강화는 100% 성공합니다!", inline=False)
-            else:
-                embed.add_field(name="💥 파괴", value="아이템이 파괴되어 3레벨 하락했습니다!", inline=False)
+            else:  # destroy
+                embed.add_field(name="💥 파괴", value="아이템이 파괴되었습니다!", inline=False)
 
+            # Get refreshed coin balance
+            refreshed_coins = await coins_cog.get_user_coins(user_id, guild_id)
             embed.add_field(name="💰 소모 코인", value=f"{cost:,} 코인", inline=True)
-            embed.add_field(name="💳 남은 코인", value=f"{current_coins - cost:,} 코인", inline=True)
-
-            # Show new stats preview
-            enhanced_stats = template['base_stats'].copy()
-            enhancement_multiplier = 1 + (new_level * 0.1)
-
-            stats_text = ""
-            for stat, value in enhanced_stats.items():
-                if value > 0:
-                    enhanced_value = int(value * enhancement_multiplier)
-                    stats_text += f"{stat.upper()}: {enhanced_value} "
-
-            if stats_text:
-                embed.add_field(name="📊 현재 능력치", value=stats_text.strip(), inline=False)
+            embed.add_field(name="💳 남은 코인", value=f"{refreshed_coins:,} 코인", inline=True)
 
             embed.set_footer(text=f"강화 확률: 성공 {rates[0]}% | 실패 {rates[1]}% | 파괴 {rates[2]}%")
 
-            # Post result to show-off channel with action buttons
-            showoff_channel = self.bot.get_channel(self.showoff_channel_id)
-            if showoff_channel:
-                embed.add_field(name="플레이어", value=interaction.user.mention, inline=True)
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
-                # Get updated item info for the view
-                updated_item_query = """
-                    SELECT item_id, template_id, enhancement_level, is_equipped, equipped_slot, fail_streak
-                    FROM user_items
-                    WHERE item_id = $1
-                """
-                updated_item_row = await self.bot.pool.fetchrow(updated_item_query, item_id)
+            # Post result to show-off channel if it's not a destroy
+            if result != 'destroy':
+                showoff_channel = self.bot.get_channel(self.showoff_channel_id)
+                if showoff_channel:
+                    public_embed = embed.copy()
+                    public_embed.add_field(name="플레이어", value=interaction.user.mention, inline=True)
 
-                # Create view with action buttons
-                # Create view with action buttons - convert to dict for easier access
-                item_dict = {
-                    'item_id': updated_item_row['item_id'],
-                    'template_id': updated_item_row['template_id'],
-                    'enhancement_level': updated_item_row['enhancement_level'],
-                    'is_equipped': updated_item_row['is_equipped'],
-                    'equipped_slot': updated_item_row['equipped_slot'],
-                    'fail_streak': updated_item_row['fail_streak']
-                }
-                view = EnhancementResultView(self.bot, user_id, guild_id, item_dict, template)
-                await showoff_channel.send(embed=embed, view=view)
+                    updated_item_row = await self.bot.pool.fetchrow("SELECT * FROM user_items WHERE item_id = $1",
+                                                                    item_id)
 
-            # Send brief confirmation to user
+                    view = EnhancementResultView(self.bot, user_id, guild_id, dict(updated_item_row), template)
+                    await showoff_channel.send(embed=public_embed, view=view)
 
             self.logger.info(
-                f"사용자 {user_id}가 {template['name']} 강화: {current_level}→{new_level} ({result})",
+                f"사용자 {user_id}가 {template['name']} 강화: {current_level}→{new_level if result != 'destroy' else '파괴'} ({result})",
                 extra={'guild_id': guild_id}
             )
 
         except Exception as e:
-            self.logger.error(f"강화 처리 오류: {e}", extra={'guild_id': guild_id})
-            await interaction.followup.send(f"❌ 강화 처리 중 오류가 발생했습니다: {e}", ephemeral=True)
-
+            self.logger.error(f"강화 처리 중 심각한 오류 발생: {e}", extra={'guild_id': guild_id}, exc_info=True)
+            await interaction.followup.send(f"❌ 강화 처리 중 예측하지 못한 오류가 발생했습니다: {e}", ephemeral=True)
     async def equip_item(self, interaction: discord.Interaction, item_id: str):
         """Equip an item"""
         await interaction.response.defer(ephemeral=True)
