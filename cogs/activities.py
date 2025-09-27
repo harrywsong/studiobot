@@ -21,6 +21,15 @@ DUNGEON_CHANNEL_ID = 1421505682250666034  # Replace with actual channel ID
 GUILD_CHANNEL_ID = 1421505709509443759  # Replace with actual channel ID
 
 
+def ensure_timezone_aware(dt):
+    """Ensure datetime object is timezone-aware (UTC)"""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
 class AdventureView(discord.ui.View):
     """Adventure selection and management view"""
 
@@ -613,12 +622,8 @@ class ActivitiesCog(commands.Cog):
         )
 
         if active:
-            end_time = active['end_time']
-            # FIXED: Ensure end_time is timezone-aware
-            if end_time.tzinfo is None:
-                end_time = end_time.replace(tzinfo=timezone.utc)
-
-            current_time = datetime.now(timezone.utc)
+            end_time = ensure_timezone_aware(active['end_time'])
+            current_time = ensure_timezone_aware(datetime.now(timezone.utc))
             remaining_time = end_time - current_time
 
             if remaining_time.total_seconds() > 0:
@@ -679,7 +684,7 @@ class ActivitiesCog(commands.Cog):
         base_success_chance = min(95, 50 + (power_ratio - 1) * 30)
 
         # Start adventure - FIXED: Ensure both datetimes are timezone-aware
-        start_time = datetime.now(timezone.utc)
+        start_time = ensure_timezone_aware(datetime.now(timezone.utc))
         end_time = start_time + timedelta(seconds=adventure['duration'])
 
         # Store active adventure
@@ -708,8 +713,7 @@ class ActivitiesCog(commands.Cog):
         await asyncio.sleep(adventure['duration'])
         await self.complete_adventure(user_id, guild_id, adventure_id, base_success_chance, combat_power)
 
-    async def complete_adventure(self, user_id: int, guild_id: int, adventure_id: str, success_chance: float,
-                                 combat_power: int):
+    async def complete_adventure(self, user_id: int, guild_id: int, adventure_id: str, success_chance: float, combat_power: int):
         """Complete an adventure and give rewards"""
         try:
             adventure = self.adventures.get(adventure_id)
@@ -1154,12 +1158,12 @@ class ActivitiesCog(commands.Cog):
         # Check daily limit
         daily_limit_check = await self.check_daily_activity_limit(user_id, guild_id, "dungeon")
         if not daily_limit_check:
-            await interaction.followup.send("⚠ 일일 던전 한도에 도달했습니다! (하루 최대 5회)", ephemeral=True)
+            await interaction.followup.send("⚠️ 일일 던전 한도에 도달했습니다! (하루 최대 5회)", ephemeral=True)
             return
 
         dungeon = self.dungeons.get(dungeon_id)
         if not dungeon:
-            await interaction.followup.send("⚠ 유효하지 않은 던전입니다.", ephemeral=True)
+            await interaction.followup.send("⚠️ 유효하지 않은 던전입니다.", ephemeral=True)
             return
 
         combat_power = await self.get_user_combat_power(user_id, guild_id)
@@ -1220,8 +1224,7 @@ class ActivitiesCog(commands.Cog):
                     item_data = enhancement_cog.get_random_item()
                     if item_data:
                         await enhancement_cog.create_item_in_db(user_id, guild_id, item_data)
-                        embed.add_field(name="🎁 보너스 아이템", value=f"{item_data['emoji']} {item_data['name']}",
-                                        inline=True)
+                        embed.add_field(name="🎁 보너스 아이템", value=f"{item_data['emoji']} {item_data['name']}", inline=True)
 
             embed.description = f"**{dungeon['name']}**을 성공적으로 클리어했습니다!"
             embed.add_field(name="완료 시간", value=f"{completion_time // 60}분 {completion_time % 60}초", inline=True)
@@ -1298,7 +1301,7 @@ class ActivitiesCog(commands.Cog):
     async def check_completed_adventures(self):
         """Check for adventures that should be completed but haven't been processed"""
         try:
-            current_time = datetime.now(timezone.utc)
+            current_time = ensure_timezone_aware(datetime.now(timezone.utc))
 
             # Find adventures that should be completed
             completed_adventures = await self.bot.pool.fetch("""
@@ -1330,6 +1333,7 @@ class ActivitiesCog(commands.Cog):
 
         except Exception as e:
             self.logger.error(f"Error checking completed adventures: {e}")
+
     @app_commands.command(name="파티", description="파티를 생성하고 관리하세요!")
     async def party(self, interaction: discord.Interaction):
         guild_id = interaction.guild.id
@@ -1370,8 +1374,7 @@ class ActivitiesCog(commands.Cog):
 
             embed.add_field(name="현재 파티", value=current_party['name'], inline=True)
             embed.add_field(name="파티장", value=leader_name, inline=True)
-            embed.add_field(name="인원", value=f"{current_party['member_count']}/{current_party['max_members']}",
-                            inline=True)
+            embed.add_field(name="인원", value=f"{current_party['member_count']}/{current_party['max_members']}", inline=True)
             embed.add_field(name="권한", value="파티장" if is_leader else "파티원", inline=True)
         else:
             embed.description = "현재 파티에 속해있지 않습니다.\n파티를 생성하거나 기존 파티에 참여해보세요!"
@@ -1480,8 +1483,7 @@ class ActivitiesCog(commands.Cog):
                 role_emoji = "👑" if member['user_id'] == party_info['leader_id'] else "👤"
                 members_text += f"{role_emoji} {member_user.display_name} (전투력: {combat_power:,})\n"
 
-        embed.add_field(name=f"파티원 ({len(members)}/{party_info['max_members']})", value=members_text or "파티원 없음",
-                        inline=False)
+        embed.add_field(name=f"파티원 ({len(members)}/{party_info['max_members']})", value=members_text or "파티원 없음", inline=False)
 
         await interaction.followup.send(embed=embed)
 
@@ -1545,8 +1547,7 @@ class ActivitiesCog(commands.Cog):
             color=discord.Color.green()
         )
 
-        embed.add_field(name="현재 인원", value=f"{party_info['current_members'] + 1}/{party_info['max_members']}",
-                        inline=True)
+        embed.add_field(name="현재 인원", value=f"{party_info['current_members'] + 1}/{party_info['max_members']}", inline=True)
         embed.add_field(name="내 전투력", value=f"{user_power:,}", inline=True)
 
         await interaction.followup.send(embed=embed, ephemeral=True)
