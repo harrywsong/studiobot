@@ -48,7 +48,13 @@ class AdventureView(discord.ui.View):
             if interaction.user.id != self.user_id:
                 await interaction.response.send_message("다른 사용자의 모험을 시작할 수 없습니다.", ephemeral=True)
                 return
-            await self.activities_cog.start_adventure(interaction, adventure_id)
+            try:
+                await self.activities_cog.start_adventure(interaction, adventure_id)
+            except Exception as e:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(f"모험 시작 중 오류가 발생했습니다: {str(e)}", ephemeral=True)
+                else:
+                    await interaction.followup.send(f"모험 시작 중 오류가 발생했습니다: {str(e)}", ephemeral=True)
 
         return adventure_callback
 
@@ -69,18 +75,36 @@ class ArenaView(discord.ui.View):
         if interaction.user.id != self.user_id:
             await interaction.response.send_message("다른 사용자의 아레나에 참여할 수 없습니다.", ephemeral=True)
             return
-        await self.activities_cog.start_ranked_battle(interaction)
+        try:
+            await self.activities_cog.start_ranked_battle(interaction)
+        except Exception as e:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"랭크전 시작 중 오류가 발생했습니다: {str(e)}", ephemeral=True)
+            else:
+                await interaction.followup.send(f"랭크전 시작 중 오류가 발생했습니다: {str(e)}", ephemeral=True)
 
     @discord.ui.button(label="🎯 연습전", style=discord.ButtonStyle.secondary)
     async def practice_battle(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.user_id:
             await interaction.response.send_message("다른 사용자의 아레나에 참여할 수 없습니다.", ephemeral=True)
             return
-        await self.activities_cog.start_practice_battle(interaction)
+        try:
+            await self.activities_cog.start_practice_battle(interaction)
+        except Exception as e:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"연습전 시작 중 오류가 발생했습니다: {str(e)}", ephemeral=True)
+            else:
+                await interaction.followup.send(f"연습전 시작 중 오류가 발생했습니다: {str(e)}", ephemeral=True)
 
     @discord.ui.button(label="🏆 아레나 랭킹", style=discord.ButtonStyle.primary)
     async def arena_rankings(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.activities_cog.show_arena_rankings(interaction)
+        try:
+            await self.activities_cog.show_arena_rankings(interaction)
+        except Exception as e:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"랭킹 조회 중 오류가 발생했습니다: {str(e)}", ephemeral=True)
+            else:
+                await interaction.followup.send(f"랭킹 조회 중 오류가 발생했습니다: {str(e)}", ephemeral=True)
 
 
 class DungeonView(discord.ui.View):
@@ -117,7 +141,13 @@ class DungeonView(discord.ui.View):
             if interaction.user.id != self.user_id:
                 await interaction.response.send_message("다른 사용자의 던전에 참여할 수 없습니다.", ephemeral=True)
                 return
-            await self.activities_cog.start_dungeon(interaction, dungeon_id)
+            try:
+                await self.activities_cog.start_dungeon(interaction, dungeon_id)
+            except Exception as e:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(f"던전 시작 중 오류가 발생했습니다: {str(e)}", ephemeral=True)
+                else:
+                    await interaction.followup.send(f"던전 시작 중 오류가 발생했습니다: {str(e)}", ephemeral=True)
 
         return dungeon_callback
 
@@ -142,14 +172,26 @@ class PartyView(discord.ui.View):
 
     @discord.ui.button(label="🔍 파티 찾기", style=discord.ButtonStyle.primary)
     async def find_party(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.activities_cog.show_available_parties(interaction)
+        try:
+            await self.activities_cog.show_available_parties(interaction)
+        except Exception as e:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"파티 목록 조회 중 오류가 발생했습니다: {str(e)}", ephemeral=True)
+            else:
+                await interaction.followup.send(f"파티 목록 조회 중 오류가 발생했습니다: {str(e)}", ephemeral=True)
 
     @discord.ui.button(label="📋 내 파티", style=discord.ButtonStyle.secondary)
     async def my_party(self, interaction: discord.Interaction, button: discord.ui.Button):
         if interaction.user.id != self.user_id:
             await interaction.response.send_message("다른 사용자의 파티를 볼 수 없습니다.", ephemeral=True)
             return
-        await self.activities_cog.show_my_party(interaction)
+        try:
+            await self.activities_cog.show_my_party(interaction)
+        except Exception as e:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(f"파티 정보 조회 중 오류가 발생했습니다: {str(e)}", ephemeral=True)
+            else:
+                await interaction.followup.send(f"파티 정보 조회 중 오류가 발생했습니다: {str(e)}", ephemeral=True)
 
 
 class CreatePartyModal(discord.ui.Modal):
@@ -491,7 +533,6 @@ class ActivitiesCog(commands.Cog):
             """)
 
             self.logger.info("활동 시스템 데이터베이스가 준비되었습니다.")
-
         except Exception as e:
             self.logger.error(f"활동 데이터베이스 설정 실패: {e}")
 
@@ -503,12 +544,15 @@ class ActivitiesCog(commands.Cog):
 
     async def get_user_combat_power(self, user_id: int, guild_id: int) -> int:
         """Get user's combat power from enhancement cog"""
-        enhancement_cog = self.bot.get_cog('EnhancementCog')
-        if enhancement_cog:
-            character = await enhancement_cog.get_user_character(user_id, guild_id)
-            if character:
-                stats = await enhancement_cog.calculate_total_stats(user_id, guild_id)
-                return enhancement_cog.calculate_combat_power(stats, character['class'])
+        try:
+            enhancement_cog = self.bot.get_cog('EnhancementCog')
+            if enhancement_cog:
+                character = await enhancement_cog.get_user_character(user_id, guild_id)
+                if character:
+                    stats = await enhancement_cog.calculate_total_stats(user_id, guild_id)
+                    return enhancement_cog.calculate_combat_power(stats, character['class'])
+        except Exception as e:
+            self.logger.error(f"Error getting combat power for user {user_id}: {e}")
         return 100  # Default minimum power
 
     def get_recommended_adventures(self, combat_power: int) -> List[Dict]:
@@ -706,9 +750,15 @@ class ActivitiesCog(commands.Cog):
 
     @app_commands.command(name="아레나", description="다른 플레이어와 전투를 펼치세요!")
     async def arena(self, interaction: discord.Interaction):
-        guild_id = interaction.guild.id
-        if not config.is_feature_enabled(guild_id, 'casino_games'):
-            await interaction.response.send_message("⚠️ 이 서버에서는 활동 시스템이 비활성화되어 있습니다.", ephemeral=True)
+        try:
+            guild_id = interaction.guild.id
+            if not config.is_feature_enabled(guild_id, 'casino_games'):
+                await interaction.response.send_message("⚠️ 이 서버에서는 활동 시스템이 비활성화되어 있습니다.", ephemeral=True)
+                return
+        except Exception as e:
+            self.logger.error(f"Arena command error: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.send_message("아레나 시스템에 오류가 발생했습니다.", ephemeral=True)
             return
 
         if not self.check_channel(interaction, ARENA_CHANNEL_ID):
