@@ -59,6 +59,7 @@ class EnhancementView(discord.ui.View):
 
         await self.enhancement_cog.show_market_sell_confirmation(interaction, self.item_row['item_id'])
 
+
 class MarketSellConfirmView(discord.ui.View):
     """Confirmation view for automatic market pricing"""
 
@@ -79,6 +80,7 @@ class MarketSellConfirmView(discord.ui.View):
     @discord.ui.button(label="❌ 취소", style=discord.ButtonStyle.danger)
     async def cancel_sell(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_message("판매가 취소되었습니다.", ephemeral=True)
+
 
 class EquipmentSelectView(discord.ui.View):
     """Equipment slot selection view"""
@@ -173,6 +175,19 @@ class ItemManagementView(discord.ui.View):
         self.template = template
         self.enhancement_cog = bot.get_cog('EnhancementCog')
 
+        # --- START: BUTTON CONSISTENCY FIX ---
+        # Order: Enhance, Equip/Unequip, Sell
+
+        # Enhancement button
+        enhance_button = discord.ui.Button(
+            label="⭐ 강화하기",
+            style=discord.ButtonStyle.primary,
+            custom_id="enhance_item",
+            emoji="⚡"
+        )
+        enhance_button.callback = self.enhance_item
+        self.add_item(enhance_button)
+
         # Equip/Unequip button
         if item_row['is_equipped']:
             equip_button = discord.ui.Button(
@@ -186,28 +201,18 @@ class ItemManagementView(discord.ui.View):
                 style=discord.ButtonStyle.success,
                 custom_id="equip_item"
             )
-
         equip_button.callback = self.toggle_equip
         self.add_item(equip_button)
-
-        # Enhancement button
-        enhance_button = discord.ui.Button(
-            label="⭐ 강화하기",
-            style=discord.ButtonStyle.primary,
-            custom_id="enhance_item",
-            emoji="⚡"
-        )
-        enhance_button.callback = self.enhance_item
-        self.add_item(enhance_button)
 
         # Market sell button
         market_button = discord.ui.Button(
             label="💰 마켓 판매",
-            style=discord.ButtonStyle.success,
+            style=discord.ButtonStyle.secondary,  # Changed to secondary for consistency
             custom_id="market_sell"
         )
         market_button.callback = self.market_sell
         self.add_item(market_button)
+        # --- END: BUTTON CONSISTENCY FIX ---
 
     async def toggle_equip(self, interaction: discord.Interaction):
         if interaction.user.id != self.user_id:
@@ -245,6 +250,7 @@ class ItemManagementView(discord.ui.View):
                 await self.message.edit(view=self)
         except discord.NotFound:
             pass  # Message was deleted
+
 
 class MarketplaceView(discord.ui.View):
     """Marketplace viewing and purchasing interface"""
@@ -830,45 +836,50 @@ class EnhancementCog(commands.Cog):
                     result_text = "💥 **아이템 파괴!**"
                     result_color = discord.Color.dark_red()
 
-            # --- START OF FIX: DATABASE UPDATE LOGIC ---
-            conn = self.bot.pool
+            # --- START: DATABASE TRANSACTION FIX ---
             try:
-                async with conn.transaction():
-                    # 1. Deduct coins and log the coin transaction for all cases
-                    await coins_cog.remove_coins(user_id, guild_id, cost, "enhancement",
-                                                 f"강화: {template['name']} ({result})")
+                # Use a single transaction to ensure atomicity
+                async with self.bot.pool.transaction():
+                    # 1. Deduct coins from user
+                    await self.bot.pool.execute("""
+                        UPDATE user_coins 
+                        SET coins = coins - $3, total_spent = total_spent + $3
+                        WHERE user_id = $1 AND guild_id = $2
+                    """, user_id, guild_id, cost)
 
-                    # 2. Update database based on result
+                    # 2. Log the coin transaction
+                    description = f"강화: {template['name']} ({result})"
+                    await self.bot.pool.execute("""
+                        INSERT INTO coin_transactions (user_id, guild_id, amount, transaction_type, description)
+                        VALUES ($1, $2, $3, $4, $5)
+                    """, user_id, guild_id, -cost, "enhancement", description)
+
+                    # 3. Update database based on enhancement result
                     if result in ["success", "fail"]:
                         # Update item level and fail streak
-                        await conn.execute("""
+                        await self.bot.pool.execute("""
                             UPDATE user_items
                             SET enhancement_level = $1, fail_streak = $2, last_enhanced = CURRENT_TIMESTAMP
                             WHERE item_id = $3
                         """, new_level, new_fail_streak, item_id)
 
-                        # Log the enhancement attempt
-                        await conn.execute("""
-                            INSERT INTO enhancement_logs (user_id, guild_id, item_id, old_level, new_level, result, cost)
-                            VALUES ($1, $2, $3, $4, $5, $6, $7)
-                        """, user_id, guild_id, item_id, current_level, new_level, result, cost)
-
                     elif result == "destroy":
                         # Delete the item from the database
-                        await conn.execute("DELETE FROM user_items WHERE item_id = $1", item_id)
+                        await self.bot.pool.execute("DELETE FROM user_items WHERE item_id = $1", item_id)
 
-                        # Log the destruction
-                        await conn.execute("""
-                            INSERT INTO enhancement_logs (user_id, guild_id, item_id, old_level, new_level, result, cost)
-                            VALUES ($1, $2, $3, $4, $5, $6, $7)
-                        """, user_id, guild_id, item_id, current_level, -1, result, cost)
+                    # 4. Log the enhancement attempt itself
+                    await self.bot.pool.execute("""
+                        INSERT INTO enhancement_logs (user_id, guild_id, item_id, old_level, new_level, result, cost)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    """, user_id, guild_id, item_id, current_level, new_level, result, cost)
 
             except Exception as e:
                 self.logger.error(f"Enhancement database transaction failed for user {user_id}: {e}", exc_info=True)
-                await interaction.followup.send(f"⚠️ **강화 오류!** 데이터베이스 처리 중 문제가 발생했습니다. 변경사항이 적용되지 않았을 수 있습니다.",
+                # This message is sent to the user if the transaction fails
+                await interaction.followup.send(f"⚠️ **강화 오류!** 데이터베이스 처리 중 문제가 발생했습니다. 변경사항이 적용되지 않았습니다.",
                                                 ephemeral=True)
                 return
-            # --- END OF FIX ---
+            # --- END: DATABASE TRANSACTION FIX ---
 
             # Create result embed
             rarity_info = self.item_rarities[template['rarity']]
@@ -920,6 +931,7 @@ class EnhancementCog(commands.Cog):
         except Exception as e:
             self.logger.error(f"강화 처리 중 심각한 오류 발생: {e}", extra={'guild_id': guild_id}, exc_info=True)
             await interaction.followup.send(f"❌ 강화 처리 중 예측하지 못한 오류가 발생했습니다: {e}", ephemeral=True)
+
     async def equip_item(self, interaction: discord.Interaction, item_id: str):
         """Equip an item"""
         await interaction.response.defer(ephemeral=True)
@@ -1778,6 +1790,7 @@ class EnhancementCog(commands.Cog):
         if not self.update_marketplace.is_running():
             self.update_marketplace.start()
 
+
 class EnhancementResultView(discord.ui.View):
     """View for enhancement results with action buttons"""
 
@@ -1835,6 +1848,7 @@ class EnhancementResultView(discord.ui.View):
                 await self.message.edit(view=self)
         except discord.NotFound:
             pass  # Message was deleted
+
 
 async def setup(bot):
     await bot.add_cog(EnhancementCog(bot))
