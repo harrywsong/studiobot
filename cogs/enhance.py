@@ -624,7 +624,8 @@ class EnhancementCog(commands.Cog):
                 return item
         return None
 
-    # --- START OF DATABASE TRANSACTION FIX ---
+    # Replace the transaction section in handle_enhancement method (around lines 400-450)
+
     async def handle_enhancement(self, interaction: discord.Interaction, item_id: str):
         """Handle item enhancement with MapleStory-style rates"""
         await interaction.response.defer(ephemeral=True)
@@ -633,37 +634,39 @@ class EnhancementCog(commands.Cog):
         guild_id = interaction.guild.id
 
         try:
+            # First, get item information
             item_row = await self.bot.pool.fetchrow(
                 "SELECT item_id, template_id, enhancement_level, fail_streak, user_id FROM user_items WHERE item_id = $1 AND user_id = $2 AND guild_id = $3",
                 item_id, user_id, guild_id)
+
             if not item_row:
-                await interaction.followup.send("❌ 아이템을 찾을 수 없습니다.", ephemeral=True)
+                await interaction.followup.send("⚠ 아이템을 찾을 수 없습니다.", ephemeral=True)
                 return
 
             template = self.get_item_template(item_row['template_id'])
             if not template:
-                await interaction.followup.send("❌ 아이템 정보를 불러올 수 없습니다.", ephemeral=True)
+                await interaction.followup.send("⚠ 아이템 정보를 불러올 수 없습니다.", ephemeral=True)
                 return
 
             current_level = item_row['enhancement_level']
             if current_level >= 24:
-                await interaction.followup.send("❌ 최대 강화 레벨에 도달했습니다.", ephemeral=True)
+                await interaction.followup.send("⚠ 최대 강화 레벨에 도달했습니다.", ephemeral=True)
                 return
 
             cost = self.enhancement_costs.get(current_level, 1000)
             coins_cog = self.bot.get_cog('CoinsCog')
             if not coins_cog:
-                await interaction.followup.send("❌ 코인 시스템을 사용할 수 없습니다.", ephemeral=True)
+                await interaction.followup.send("⚠ 코인 시스템을 사용할 수 없습니다.", ephemeral=True)
                 return
 
-            description = f"강화: {template['name']}"  # Description for the log
-            # This single call now handles the check, deduction, and logging atomically.
-            if not await coins_cog.remove_coins(user_id, guild_id, cost, "enhancement", description):
-                current_coins = await coins_cog.get_user_coins(user_id, guild_id)
-                await interaction.followup.send(f"❌ 강화 비용이 부족합니다!\n필요: {cost:,} 코인\n보유: {current_coins:,} 코인",
+            # Check if user has enough coins (but don't deduct yet)
+            current_coins = await coins_cog.get_user_coins(user_id, guild_id)
+            if current_coins < cost:
+                await interaction.followup.send(f"⚠ 강화 비용이 부족합니다!\n필요: {cost:,} 코인\n보유: {current_coins:,} 코인",
                                                 ephemeral=True)
                 return
 
+            # Calculate enhancement result
             fail_streak = item_row['fail_streak'] or 0
             rates = self.starforce_rates.get(current_level, (30, 67, 3))
             result, new_level, new_fail_streak, result_text, result_color = "", 0, 0, "", discord.Color.default()
@@ -677,14 +680,20 @@ class EnhancementCog(commands.Cog):
                     result, new_level, new_fail_streak, result_text, result_color = "success", current_level + 1, 0, "✅ **강화 성공!**", discord.Color.green()
                 elif roll <= success_rate + fail_rate:
                     new_level_on_fail = current_level - 1 if current_level in [15, 20] else current_level
-                    result, new_level, new_fail_streak, result_text, result_color = "fail", new_level_on_fail, fail_streak + 1, "❌ **강화 실패**", discord.Color.red()
+                    result, new_level, new_fail_streak, result_text, result_color = "fail", new_level_on_fail, fail_streak + 1, "⚠ **강화 실패**", discord.Color.red()
                 else:
                     result, new_level, new_fail_streak, result_text, result_color = "destroy", -1, 0, "💥 **아이템 파괴!**", discord.Color.dark_red()
 
+            # NOW do everything in one atomic transaction
             try:
-                # The transaction now only handles item and log updates
                 async with self.bot.pool.transaction():
-                    # Update item database
+                    # 1. Deduct coins
+                    description = f"강화: {template['name']}"
+                    if not await coins_cog.remove_coins(user_id, guild_id, cost, "enhancement", description):
+                        # This should not happen since we checked above, but just in case
+                        raise Exception("코인 차감 실패")
+
+                    # 2. Update item based on result
                     if result in ["success", "fail"]:
                         await self.bot.pool.execute(
                             "UPDATE user_items SET enhancement_level = $1, fail_streak = $2, last_enhanced = CURRENT_TIMESTAMP WHERE item_id = $3",
@@ -692,20 +701,18 @@ class EnhancementCog(commands.Cog):
                     elif result == "destroy":
                         await self.bot.pool.execute("DELETE FROM user_items WHERE item_id = $1", item_id)
 
-                    # Log enhancement
+                    # 3. Log enhancement
                     await self.bot.pool.execute(
                         "INSERT INTO enhancement_logs (user_id, guild_id, item_id, old_level, new_level, result, cost) VALUES ($1, $2, $3, $4, $5, $6, $7)",
                         user_id, guild_id, item_id, current_level, new_level, result, cost)
 
             except Exception as e:
-                self.logger.error(f"Enhancement item-update transaction failed for user {user_id}: {e}", exc_info=True)
-                # Refund coins if the item update fails
-                await coins_cog.add_coins(user_id, guild_id, cost, "enhancement_refund", "강화 실패로 인한 환불")
-                await interaction.followup.send(f"⚠️ **강화 오류!** 아이템 정보 업데이트 중 문제가 발생했습니다. 코인이 환불되었습니다.",
+                self.logger.error(f"Enhancement transaction failed for user {user_id}: {e}", exc_info=True)
+                await interaction.followup.send("⚠️ **강화 오류!** 데이터베이스 처리 중 문제가 발생했습니다. 다시 시도해주세요.",
                                                 ephemeral=True)
                 return
 
-            # Create and send result embed
+            # Create and send result embed (rest of the method stays the same)
             rarity_info = self.item_rarities[template['rarity']]
             embed = discord.Embed(title=result_text, color=result_color, timestamp=datetime.now(timezone.utc))
             embed.add_field(name="아이템", value=f"{template['emoji']} **{template['name']}**", inline=True)
@@ -728,6 +735,7 @@ class EnhancementCog(commands.Cog):
             embed.set_footer(text=f"강화 확률: 성공 {rates[0]}% | 실패 {rates[1]}% | 파괴 {rates[2]}%")
             await interaction.followup.send(embed=embed, ephemeral=True)
 
+            # Send to showoff channel if not destroyed
             if result != 'destroy':
                 showoff_channel = self.bot.get_channel(self.showoff_channel_id)
                 if showoff_channel:
@@ -744,11 +752,8 @@ class EnhancementCog(commands.Cog):
 
         except Exception as e:
             self.logger.error(f"강화 처리 중 심각한 오류 발생: {e}", extra={'guild_id': guild_id}, exc_info=True)
-            await interaction.followup.send(f"❌ 강화 처리 중 예측하지 못한 오류가 발생했습니다: {e}", ephemeral=True)
+            await interaction.followup.send(f"⚠ 강화 처리 중 예측하지 못한 오류가 발생했습니다: {e}", ephemeral=True)
 
-    # --- END OF DATABASE TRANSACTION FIX ---
-
-    # ... (all other functions like equip_item, unequip_item, character_sheet, etc. remain the same) ...
     async def equip_item(self, interaction: discord.Interaction, item_id: str):
         """Equip an item"""
         await interaction.response.defer(ephemeral=True)
