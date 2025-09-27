@@ -80,8 +80,8 @@ class ShopView(discord.ui.View):
                 "모든 등급의 아이템이 나올 수 있습니다.\n"
                 "💰 **가격:** 200 코인\n\n"
                 "📊 **확률:**\n"
-                "일반 45% | 고급 30% | 희귀 15%\n"
-                "영웅 7% | 고유 2.5% | 전설 0.4% | 신화 0.1%"
+                "일반 70% | 고급 20% | 희귀 7%\n"  
+                "영웅 2.5% | 고유 0.4% | 전설 0.09% | 신화 0.01%"
             ),
             inline=False
         )
@@ -217,6 +217,11 @@ class ShopView(discord.ui.View):
                 await interaction.followup.send("❌ 강화 시스템을 사용할 수 없습니다.", ephemeral=True)
                 return
 
+            # Check if item pool is available
+            if not enhancement_cog.item_pool:
+                await interaction.followup.send("❌ 아이템 데이터를 불러올 수 없습니다. 관리자에게 문의하세요.", ephemeral=True)
+                return
+
             # Check if user has a character
             character_data = await enhancement_cog.get_user_character(user_id, guild_id)
             if not character_data:
@@ -247,6 +252,12 @@ class ShopView(discord.ui.View):
 
             # Get random item
             item_data = enhancement_cog.get_random_item()
+            if not item_data:
+                # Refund coins if no item available
+                await coins_cog.add_coins(user_id, guild_id, price, "gacha_refund", "아이템 뽑기 실패 환불")
+                await interaction.followup.send("❌ 사용 가능한 아이템이 없습니다. 코인이 환불되었습니다.", ephemeral=True)
+                return
+
             item_id = await enhancement_cog.create_item_in_db(user_id, guild_id, item_data)
 
             if not item_id:

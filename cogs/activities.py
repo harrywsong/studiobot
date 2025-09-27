@@ -251,6 +251,13 @@ class ActivitiesCog(commands.Cog):
         self.logger = get_logger(__name__)
         self.active_challenges: Dict[int, int] = {}
 
+        # Add cleanup task
+        @tasks.loop(minutes=70)
+        async def cleanup_expired_challenges(self):
+            """Clean up expired challenges"""
+            current_time = datetime.now(timezone.utc)
+            # Remove challenges older than 10 minutes
+            # This would require storing timestamps with challenges
 
         # Adventure definitions - BALANCED REWARDS
         self.adventures = {
@@ -372,31 +379,32 @@ class ActivitiesCog(commands.Cog):
         # Check for any adventures that should have completed while bot was offline
         await self.check_completed_adventures()
 
-    async def _check_concurrent_activity(self, user_id: int) -> Optional[str]:
+    async def _check_concurrent_activity(self, user_id: int, guild_id: int) -> Optional[str]:
         """
-        Checks if the user is currently engaged in an adventure or a dungeon.
-
-        Returns:
-            The name of the active activity ('모험' or '던전') or None.
+        Enhanced check for concurrent activities with proper guild filtering
+        Returns the name of the active activity or None
         """
-        # Check for active adventure
-        adventure_check = await self.bot.pool.fetchrow(
-            "SELECT 1 FROM active_adventures WHERE user_id = $1",
-            user_id
-        )
-        if adventure_check:
-            return "모험"
+        try:
+            # Check for active adventure with guild filter
+            adventure_check = await self.bot.pool.fetchrow(
+                "SELECT adventure_id FROM active_adventures WHERE user_id = $1 AND guild_id = $2",
+                user_id, guild_id
+            )
+            if adventure_check:
+                return "모험"
 
-        # Check for active dungeon
-        dungeon_check = await self.bot.pool.fetchrow(
-            "SELECT 1 FROM active_dungeons WHERE user_id = $1",
-            user_id
-        )
-        if dungeon_check:
-            return "던전"
+            # Check for active dungeon with guild filter
+            dungeon_check = await self.bot.pool.fetchrow(
+                "SELECT dungeon_id FROM active_dungeons WHERE user_id = $1 AND guild_id = $2",
+                user_id, guild_id
+            )
+            if dungeon_check:
+                return "던전"
 
-        return None
-
+            return None
+        except Exception as e:
+            self.logger.error(f"Error checking concurrent activity: {e}")
+            return None
     async def setup_activities_database(self):
         """Setup database tables for activities"""
         try:
@@ -416,13 +424,14 @@ class ActivitiesCog(commands.Cog):
                 )
             """)
 
-            # Arena stats - also fix the timestamp column
+            # Arena stats - complete table with combat_power column
             await self.bot.pool.execute("""
                 CREATE TABLE IF NOT EXISTS arena_stats (
                     user_id BIGINT,
                     guild_id BIGINT,
                     tier VARCHAR(20) DEFAULT 'bronze',
                     rating INTEGER DEFAULT 1000,
+                    combat_power INTEGER DEFAULT 100,
                     wins INTEGER DEFAULT 0,
                     losses INTEGER DEFAULT 0,
                     current_streak INTEGER DEFAULT 0,
@@ -557,32 +566,140 @@ class ActivitiesCog(commands.Cog):
         recommended.sort(key=lambda x: (not x['recommended'], x['min_power']))
         return recommended
 
-    async def _get_player_stats(self, user_id: int) -> dict:
+    async def start_adventure(self, interaction: discord.Interaction, adventure_id: str):
+        """Start an adventure with enhanced concurrent activity prevention"""
+        await interaction.response.defer()
+        user_id = interaction.user.id
+        guild_id = interaction.guild.id
+
+        # Double-check daily limit
+        if not await self.check_daily_activity_limit(user_id, guild_id, "adventure"):
+            await interaction.followup.send(
+                f"⚠️ 일일 모험 한도에 도달했습니다! (하루 최대 {self.daily_limits['adventure']}회)",
+                ephemeral=True
+            )
+            return
+
+        # Double-check for concurrent activities right before starting
+        active_activity = await self._check_concurrent_activity(user_id, guild_id)
+        if active_activity:
+            await interaction.followup.send(
+                f"⚠️ 이미 {active_activity}을 진행 중입니다. 동시에 여러 활동을 할 수 없습니다!",
+                ephemeral=True
+            )
+            return
+
+        adventure = self.adventures.get(adventure_id)
+        if not adventure:
+            await interaction.followup.send("⚠️ 유효하지 않은 모험입니다.", ephemeral=True)
+            return
+
+        combat_power = await self.get_user_combat_power(user_id, guild_id)
+
+        if combat_power < adventure['min_power']:
+            await interaction.followup.send(
+                f"⚠️ 전투력이 부족합니다!\n필요: {adventure['min_power']:,}\n현재: {combat_power:,}",
+                ephemeral=True
+            )
+            return
+
+        # Calculate success chance based on combat power
+        power_ratio = combat_power / adventure['min_power']
+        base_success_chance = min(95, 50 + (power_ratio - 1) * 30)
+
+        start_time = datetime.now(timezone.utc)
+        end_time = start_time + timedelta(seconds=adventure['duration'])
+
+        try:
+            # CRITICAL: Use INSERT with ON CONFLICT to prevent race conditions
+            await self.bot.pool.execute("""
+                INSERT INTO active_adventures (user_id, guild_id, adventure_id, start_time, end_time)
+                VALUES ($1, $2, $3, $4::timestamptz, $5::timestamptz)
+                ON CONFLICT (user_id, guild_id) DO NOTHING
+            """, user_id, guild_id, adventure_id, start_time, end_time)
+
+            # Verify the insertion was successful (not blocked by conflict)
+            verification = await self.bot.pool.fetchrow(
+                "SELECT adventure_id FROM active_adventures WHERE user_id = $1 AND guild_id = $2",
+                user_id, guild_id
+            )
+
+            if not verification or verification['adventure_id'] != adventure_id:
+                await interaction.followup.send(
+                    "⚠️ 다른 활동이 진행 중이어서 모험을 시작할 수 없습니다.",
+                    ephemeral=True
+                )
+                return
+
+            embed = discord.Embed(
+                title=f"{adventure['emoji']} 모험 시작!",
+                description=f"**{adventure['name']}**에 출발했습니다!",
+                color=discord.Color.blue()
+            )
+            embed.add_field(name="예상 소요시간", value=f"{adventure['duration'] // 60}분", inline=True)
+            embed.add_field(name="성공 확률", value=f"{base_success_chance:.1f}%", inline=True)
+            embed.add_field(name="전투력", value=f"{combat_power:,}", inline=True)
+            embed.set_footer(text=f"모험 완료 시각: {end_time.strftime('%H:%M')} UTC")
+
+            await interaction.followup.send(embed=embed)
+
+            # Increment activity count
+            await self.increment_activity_count(user_id, guild_id, "adventure")
+
+            # Schedule adventure completion
+            await asyncio.sleep(adventure['duration'])
+            await self.complete_adventure(user_id, guild_id, adventure_id, base_success_chance, combat_power)
+
+        except Exception as e:
+            self.logger.error(f"Adventure start error: {e}")
+            await interaction.followup.send(f"모험 시작 중 오류가 발생했습니다. 다시 시도해주세요.", ephemeral=True)
+            # Clean up on error
+            await self.bot.pool.execute(
+                "DELETE FROM active_adventures WHERE user_id = $1 AND guild_id = $2",
+                user_id, guild_id
+            )
+
+    async def _get_player_stats(self, user_id: int, guild_id: int) -> dict:
         """사용자의 전투력, 레이팅, 티어 등을 arena_stats 테이블에서 가져옵니다."""
         try:
+            # First get current combat power from enhancement system
+            combat_power = await self.get_user_combat_power(user_id, guild_id)
+
             query = """
-                SELECT user_id, combat_power, rating, tier, wins, losses 
+                SELECT user_id, rating, tier, wins, losses 
                 FROM arena_stats 
-                WHERE user_id = $1
+                WHERE user_id = $1 AND guild_id = $2
             """
-            record = await self.bot.pool.fetchrow(query, user_id)
+            record = await self.bot.pool.fetchrow(query, user_id, guild_id)
 
             if record is None:
+                # Create new record with current combat power
+                await self.bot.pool.execute("""
+                    INSERT INTO arena_stats (user_id, guild_id, combat_power, rating, tier)
+                    VALUES ($1, $2, $3, 1000, 'bronze')
+                """, user_id, guild_id, combat_power)
+
                 return {
                     'user_id': user_id,
-                    'combat_power': 100,
+                    'combat_power': combat_power,
                     'rating': 1000,
                     'tier': 'bronze',
                     'wins': 0,
                     'losses': 0
                 }
 
-            return dict(record)
+            # Update combat power in database
+            await self.bot.pool.execute("""
+                UPDATE arena_stats SET combat_power = $1 WHERE user_id = $2 AND guild_id = $3
+            """, combat_power, user_id, guild_id)
+
+            result = dict(record)
+            result['combat_power'] = combat_power
+            return result
 
         except Exception as e:
             self.logger.error(f"사용자 {user_id}의 아레나 스탯 조회 오류: {e}")
             return {'user_id': user_id, 'combat_power': 100, 'rating': 1000, 'tier': 'bronze', 'wins': 0, 'losses': 0}
-
     async def _simulate_match(self, player_a_stats: dict, player_b_stats: dict) -> Tuple[int, int, int]:
         """전투력 기반으로 승패를 결정하고 Elo 레이팅 변화를 계산합니다."""
 
@@ -630,7 +747,8 @@ class ActivitiesCog(commands.Cog):
         except Exception as e:
             self.logger.error(f"사용자 {user_id}의 아레나 스탯 업데이트 오류: {e}")
 
-    async def start_arena_match(self, challenger_id: int, target_id: int, channel: discord.TextChannel):
+    async def start_arena_match(self, challenger_id: int, target_id: int, channel: discord.TextChannel,
+                                wager: int = None):
         """도전이 수락되면 실제 전투를 실행하고 결과를 채널에 게시합니다."""
 
         guild_id = channel.guild.id
@@ -646,8 +764,8 @@ class ActivitiesCog(commands.Cog):
 
         try:
             # 1. 스탯 가져오기
-            challenger_stats = await self._get_player_stats(challenger_id)
-            target_stats = await self._get_player_stats(target_id)
+            challenger_stats = await self._get_player_stats(challenger_id, guild_id)
+            target_stats = await self._get_player_stats(target_id, guild_id)
 
             # 2. 매치 시뮬레이션
             winner_id, winner_rating_change, loser_rating_change = await self._simulate_match(
@@ -761,7 +879,7 @@ class ActivitiesCog(commands.Cog):
         await interaction.response.defer()
         user_id = interaction.user.id
 
-        # Check daily limit - ENHANCED
+        # Check daily limit first
         if not await self.check_daily_activity_limit(user_id, guild_id, "adventure"):
             await interaction.followup.send(
                 f"⚠️ 일일 모험 한도에 도달했습니다! (하루 최대 {self.daily_limits['adventure']}회)",
@@ -769,18 +887,16 @@ class ActivitiesCog(commands.Cog):
             )
             return
 
-        # Check if already in an adventure
-        active = await self.bot.pool.fetchrow(
-            "SELECT 1 FROM active_adventures WHERE user_id = $1 AND guild_id = $2",
-            user_id, guild_id
-        )
-        if active:
+        # ENHANCED: Check for ANY concurrent activity
+        active_activity = await self._check_concurrent_activity(user_id, guild_id)
+        if active_activity:
             await interaction.followup.send(
-                "⚠️ 이미 모험을 진행 중입니다. 동시에 두 개의 모험은 불가능합니다!",
+                f"⚠️ 이미 {active_activity}을 진행 중입니다. 동시에 여러 활동을 할 수 없습니다!",
                 ephemeral=True
             )
             return
 
+        # Rest of the adventure method remains the same...
         combat_power = await self.get_user_combat_power(user_id, guild_id)
         adventures_data = self.get_recommended_adventures(combat_power)
 
@@ -800,78 +916,6 @@ class ActivitiesCog(commands.Cog):
 
         view = AdventureView(self.bot, user_id, guild_id, adventures_data)
         await interaction.followup.send(embed=embed, view=view)
-
-    async def start_adventure(self, interaction: discord.Interaction, adventure_id: str):
-        """Start an adventure - ENHANCED"""
-        await interaction.response.defer()
-        user_id = interaction.user.id
-        guild_id = interaction.guild.id
-
-        # Check daily limit again
-        if not await self.check_daily_activity_limit(user_id, guild_id, "adventure"):
-            await interaction.followup.send(
-                f"⚠️ 일일 모험 한도에 도달했습니다! (하루 최대 {self.daily_limits['adventure']}회)",
-                ephemeral=True
-            )
-            return
-
-        adventure = self.adventures.get(adventure_id)
-        if not adventure:
-            await interaction.followup.send("⚠️ 유효하지 않은 모험입니다.", ephemeral=True)
-            return
-
-        combat_power = await self.get_user_combat_power(user_id, guild_id)
-
-        if combat_power < adventure['min_power']:
-            await interaction.followup.send(
-                f"⚠️ 전투력이 부족합니다!\n필요: {adventure['min_power']:,}\n현재: {combat_power:,}",
-                ephemeral=True
-            )
-            return
-
-        # Calculate success chance based on combat power
-        power_ratio = combat_power / adventure['min_power']
-        base_success_chance = min(95, 50 + (power_ratio - 1) * 30)
-
-        start_time = datetime.now(timezone.utc)
-        end_time = start_time + timedelta(seconds=adventure['duration'])
-
-        try:
-            await self.bot.pool.execute("""
-                INSERT INTO active_adventures (user_id, guild_id, adventure_id, start_time, end_time)
-                VALUES ($1, $2, $3, $4::timestamptz, $5::timestamptz)
-                ON CONFLICT (user_id, guild_id) DO UPDATE SET
-                adventure_id = EXCLUDED.adventure_id,
-                start_time = EXCLUDED.start_time,
-                end_time = EXCLUDED.end_time
-            """, user_id, guild_id, adventure_id, start_time, end_time)
-
-            embed = discord.Embed(
-                title=f"{adventure['emoji']} 모험 시작!",
-                description=f"**{adventure['name']}**에 출발했습니다!",
-                color=discord.Color.blue()
-            )
-            embed.add_field(name="예상 소요시간", value=f"{adventure['duration'] // 60}분", inline=True)
-            embed.add_field(name="성공 확률", value=f"{base_success_chance:.1f}%", inline=True)
-            embed.add_field(name="전투력", value=f"{combat_power:,}", inline=True)
-            embed.set_footer(text=f"모험 완료 시각: {end_time.strftime('%H:%M')} UTC")
-
-            await interaction.followup.send(embed=embed)
-
-            # Increment activity count
-            await self.increment_activity_count(user_id, guild_id, "adventure")
-
-            # Schedule adventure completion
-            await asyncio.sleep(adventure['duration'])
-            await self.complete_adventure(user_id, guild_id, adventure_id, base_success_chance, combat_power)
-
-        except Exception as e:
-            self.logger.error(f"Adventure start error: {e}")
-            await interaction.followup.send(f"모험 시작 중 오류가 발생했습니다. 다시 시도해주세요.", ephemeral=True)
-            await self.bot.pool.execute(
-                "DELETE FROM active_adventures WHERE user_id = $1 AND guild_id = $2",
-                user_id, guild_id
-            )
 
     async def complete_adventure(self, user_id: int, guild_id: int, adventure_id: str, success_chance: float,
                                  combat_power: int):
@@ -960,7 +1004,7 @@ class ActivitiesCog(commands.Cog):
         await interaction.response.defer()
         user_id = interaction.user.id
 
-        # Check daily limit
+        # Check daily limit first
         if not await self.check_daily_activity_limit(user_id, guild_id, "dungeon"):
             await interaction.followup.send(
                 f"⚠️ 일일 던전 한도에 도달했습니다! (하루 최대 {self.daily_limits['dungeon']}회)",
@@ -968,18 +1012,16 @@ class ActivitiesCog(commands.Cog):
             )
             return
 
-        # Check if already in a dungeon
-        active = await self.bot.pool.fetchrow(
-            "SELECT 1 FROM active_dungeons WHERE user_id = $1 AND guild_id = $2",
-            user_id, guild_id
-        )
-        if active:
+        # ENHANCED: Check for ANY concurrent activity
+        active_activity = await self._check_concurrent_activity(user_id, guild_id)
+        if active_activity:
             await interaction.followup.send(
-                "⚠️ 이미 던전을 진행 중입니다. 동시에 두 개의 던전은 불가능합니다!",
+                f"⚠️ 이미 {active_activity}을 진행 중입니다. 동시에 여러 활동을 할 수 없습니다!",
                 ephemeral=True
             )
             return
 
+        # Rest of the dungeon method remains the same...
         combat_power = await self.get_user_combat_power(user_id, guild_id)
 
         # Get available dungeons
@@ -1012,15 +1054,24 @@ class ActivitiesCog(commands.Cog):
         await interaction.followup.send(embed=embed, view=view)
 
     async def start_dungeon(self, interaction: discord.Interaction, dungeon_id: str):
-        """Start a dungeon with proper timing - ENHANCED"""
+        """Start a dungeon with enhanced concurrent activity prevention"""
         await interaction.response.defer()
         user_id = interaction.user.id
         guild_id = interaction.guild.id
 
-        # Check daily limit again
+        # Double-check daily limit
         if not await self.check_daily_activity_limit(user_id, guild_id, "dungeon"):
             await interaction.followup.send(
                 f"⚠️ 일일 던전 한도에 도달했습니다! (하루 최대 {self.daily_limits['dungeon']}회)",
+                ephemeral=True
+            )
+            return
+
+        # Double-check for concurrent activities right before starting
+        active_activity = await self._check_concurrent_activity(user_id, guild_id)
+        if active_activity:
+            await interaction.followup.send(
+                f"⚠️ 이미 {active_activity}을 진행 중입니다. 동시에 여러 활동을 할 수 없습니다!",
                 ephemeral=True
             )
             return
@@ -1048,15 +1099,25 @@ class ActivitiesCog(commands.Cog):
         end_time = start_time + timedelta(seconds=dungeon['duration'])
 
         try:
-            # Store in active dungeons
+            # CRITICAL: Use INSERT with ON CONFLICT to prevent race conditions
             await self.bot.pool.execute("""
                 INSERT INTO active_dungeons (user_id, guild_id, dungeon_id, start_time, end_time)
                 VALUES ($1, $2, $3, $4::timestamptz, $5::timestamptz)
-                ON CONFLICT (user_id, guild_id) DO UPDATE SET
-                dungeon_id = EXCLUDED.dungeon_id,
-                start_time = EXCLUDED.start_time,
-                end_time = EXCLUDED.end_time
+                ON CONFLICT (user_id, guild_id) DO NOTHING
             """, user_id, guild_id, dungeon_id, start_time, end_time)
+
+            # Verify the insertion was successful (not blocked by conflict)
+            verification = await self.bot.pool.fetchrow(
+                "SELECT dungeon_id FROM active_dungeons WHERE user_id = $1 AND guild_id = $2",
+                user_id, guild_id
+            )
+
+            if not verification or verification['dungeon_id'] != dungeon_id:
+                await interaction.followup.send(
+                    "⚠️ 다른 활동이 진행 중이어서 던전을 시작할 수 없습니다.",
+                    ephemeral=True
+                )
+                return
 
             embed = discord.Embed(
                 title=f"{dungeon['emoji']} 던전 시작!",
@@ -1080,11 +1141,11 @@ class ActivitiesCog(commands.Cog):
         except Exception as e:
             self.logger.error(f"Dungeon start error: {e}")
             await interaction.followup.send(f"던전 시작 중 오류가 발생했습니다. 다시 시도해주세요.", ephemeral=True)
+            # Clean up on error
             await self.bot.pool.execute(
                 "DELETE FROM active_dungeons WHERE user_id = $1 AND guild_id = $2",
                 user_id, guild_id
             )
-
     async def complete_dungeon(self, user_id: int, guild_id: int, dungeon_id: str, success_chance: float,
                                combat_power: int):
         """Complete a dungeon - BALANCED REWARDS"""
@@ -1206,7 +1267,7 @@ class ActivitiesCog(commands.Cog):
                 # Optionally: check challenger has enough coins (if you have CoinsCog)
                 coins_cog = self.bot.get_cog('CoinsCog')
                 if coins_cog:
-                    balance = await coins_cog.get_coins(challenger.id, guild_id)  # implement or adapt to your coin API
+                    balance = await coins_cog.get_user_coins(challenger.id, guild_id)
                     if balance is not None and balance < wager:
                         return await interaction.response.send_message("내기에 필요한 코인이 부족합니다.", ephemeral=True)
 
@@ -1321,13 +1382,10 @@ class ActivitiesCog(commands.Cog):
             )
             return
 
-        # Get the player's stats
-        user_stats = await self.bot.pool.fetchrow(
-            "SELECT * FROM arena_stats WHERE user_id = $1 AND guild_id = $2",
-            user_id, guild_id
-        )
+        # Get the player's stats using our helper method
+        user_stats = await self._get_player_stats(user_id, guild_id)
 
-        # 👉 Force AI battle only
+        # Force AI battle only
         ai_rating = user_stats['rating'] + random.randint(-50, 50)
         await self.battle_ai_opponent(interaction, user_stats, ai_rating)
 

@@ -424,13 +424,13 @@ class EnhancementCog(commands.Cog):
         }
 
         self.item_rarities = {
-            "일반": {"name": "일반", "color": 0x808080, "weight": 45},
-            "고급": {"name": "고급", "color": 0x00FF00, "weight": 30},
-            "희귀": {"name": "희귀", "color": 0x0080FF, "weight": 15},
-            "영웅": {"name": "영웅", "color": 0x8000FF, "weight": 7},
-            "고유": {"name": "고유", "color": 0xFF8000, "weight": 2.5},
-            "전설": {"name": "전설", "color": 0xFF0000, "weight": 0.4},
-            "신화": {"name": "신화", "color": 0xFFD700, "weight": 0.1}
+            "일반": {"name": "일반", "color": 0x808080, "weight": 60},  # Increased from 45
+            "고급": {"name": "고급", "color": 0x00FF00, "weight": 25},  # Reduced from 30
+            "희귀": {"name": "희귀", "color": 0x0080FF, "weight": 10},  # Reduced from 15
+            "영웅": {"name": "영웅", "color": 0x8000FF, "weight": 3.5},  # Reduced from 7
+            "고유": {"name": "고유", "color": 0xFF8000, "weight": 1.2},  # Reduced from 2.5
+            "전설": {"name": "전설", "color": 0xFF0000, "weight": 0.25},  # Reduced from 0.4
+            "신화": {"name": "신화", "color": 0xFFD700, "weight": 0.05}  # Reduced from 0.1
         }
 
         self.equipment_slots = [
@@ -665,11 +665,19 @@ class EnhancementCog(commands.Cog):
         """Get a random item based on rarity weights using random.choices."""
         items = self.item_pool
         if not items:
+            self.logger.warning("Item pool is empty, returning None")
             return None
+
         rarity_weights = {
             r: data['weight'] for r, data in self.item_rarities.items()
         }
-        weights = [rarity_weights.get(item['rarity'], 0) for item in items]
+        weights = [rarity_weights.get(item.get('rarity', 'common'), 0) for item in items]
+
+        # Check if all weights are zero
+        if sum(weights) == 0:
+            self.logger.warning("All item weights are zero, using equal weights")
+            weights = [1] * len(items)
+
         chosen_item = random.choices(items, weights=weights, k=1)[0]
         return chosen_item.copy()
 
@@ -687,7 +695,7 @@ class EnhancementCog(commands.Cog):
             await self.bot.pool.execute("""
                 CREATE TABLE IF NOT EXISTS user_characters (
                     user_id BIGINT, guild_id BIGINT, character_class VARCHAR(20) NOT NULL,
-                    last_class_change TIMESTAMP DEFAULT CURRENT_TIMESTAMP, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_class_change TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP, created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
                     PRIMARY KEY (user_id, guild_id)
                 )
             """)
@@ -696,8 +704,8 @@ class EnhancementCog(commands.Cog):
                 CREATE TABLE IF NOT EXISTS user_items (
                     item_id VARCHAR(50) PRIMARY KEY, user_id BIGINT NOT NULL, guild_id BIGINT NOT NULL,
                     template_id INTEGER NOT NULL, enhancement_level INTEGER DEFAULT 0, is_equipped BOOLEAN DEFAULT FALSE,
-                    equipped_slot VARCHAR(20), fail_streak INTEGER DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    last_enhanced TIMESTAMP
+                    equipped_slot VARCHAR(20), fail_streak INTEGER DEFAULT 0, created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                    last_enhanced TIMESTAMPTZ
                 )
             """)
             # Equipment slots table
@@ -726,13 +734,14 @@ class EnhancementCog(commands.Cog):
                 )
             """)
 
-            # Arena stats table (NEW)
+            # Arena stats table (NEW) - complete with all required columns
             await self.bot.pool.execute("""
                 CREATE TABLE IF NOT EXISTS arena_stats (
-                    user_id BIGINT, guild_id BIGINT, tier VARCHAR(20) DEFAULT '브론즈',
+                    user_id BIGINT, guild_id BIGINT, tier VARCHAR(20) DEFAULT 'bronze',
+                    rating INTEGER DEFAULT 1000, combat_power INTEGER DEFAULT 100,
                     wins INTEGER DEFAULT 0, losses INTEGER DEFAULT 0,
                     current_streak INTEGER DEFAULT 0, best_streak INTEGER DEFAULT 0,
-                    last_battle TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_battle TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
                     PRIMARY KEY (user_id, guild_id)
                 )
             """)
