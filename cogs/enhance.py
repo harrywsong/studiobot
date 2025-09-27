@@ -246,8 +246,8 @@ class ItemManagementView(discord.ui.View):
         except discord.NotFound:
             pass  # Message was deleted
 
-    class MarketplaceView(discord.ui.View):
-        """Marketplace viewing and purchasing interface"""
+class MarketplaceView(discord.ui.View):
+    """Marketplace viewing and purchasing interface"""
 
     def __init__(self, bot, market_items: List):
         super().__init__(timeout=None)
@@ -258,7 +258,8 @@ class ItemManagementView(discord.ui.View):
         # Add purchase buttons for each item
         for i, item_data in enumerate(market_items[:20]):  # Limit to 20 items
             market_entry, template = item_data
-            enhancement_text = f"+{market_entry['enhancement_level']}" if market_entry['enhancement_level'] > 0 else ""
+            enhancement_text = f"+{market_entry['enhancement_level']}" if market_entry[
+                                                                              'enhancement_level'] > 0 else ""
 
             button = discord.ui.Button(
                 label=f"{template['emoji']}{template['name'][:12]}{enhancement_text} {market_entry['price']:,}💰",
@@ -817,34 +818,41 @@ class EnhancementCog(commands.Cog):
                     result_text = "💥 **아이템 파괴!**"
                     result_color = discord.Color.dark_red()
 
-            # --- ATOMIC TRANSACTION START: Deduct coins, update item, and log enhancement ---
-            conn = self.bot.pool
-            try:
-                async with conn.transaction():
-                    # 1. Deduct coins (raw SQL for atomicity)
-                    await conn.execute(
-                        "UPDATE user_coins SET coins = coins - $1 WHERE user_id = $2 AND guild_id = $3", cost,
-                        user_id, guild_id)
+                    # --- ATOMIC TRANSACTION START: Deduct coins, update item, and log everything ---
+                    conn = self.bot.pool
+                    try:
+                        async with conn.transaction():
+                            # 1. Deduct coins, update total_spent, and log the coin transaction
+                            # This ensures consistency with the CoinsCog's remove_coins method
+                            await conn.execute("""
+                                    UPDATE user_coins 
+                                    SET coins = coins - $1, total_spent = total_spent + $1
+                                    WHERE user_id = $2 AND guild_id = $3
+                                """, cost, user_id, guild_id)
 
-                    # 2. Update item in database
-                    await conn.execute("""
-                        UPDATE user_items SET enhancement_level = $1, fail_streak = $2, last_enhanced = CURRENT_TIMESTAMP
-                        WHERE item_id = $3
-                    """, new_level, new_fail_streak, item_id)
+                            await conn.execute("""
+                                    INSERT INTO coin_transactions (user_id, guild_id, amount, transaction_type, description)
+                                    VALUES ($1, $2, $3, 'enhancement_cost', $4)
+                                """, user_id, guild_id, -cost,
+                                               f"강화: {template['name']} ({current_level} -> {new_level})")
 
-                    # 3. Log enhancement attempt
-                    await conn.execute("""
-                        INSERT INTO enhancement_logs (user_id, guild_id, item_id, old_level, new_level, result, cost)
-                        VALUES ($1, $2, $3, $4, $5, $6, $7)
-                    """, user_id, guild_id, item_id, current_level, new_level, result, cost)
+                            # 2. Update item in database
+                            # In the "destroy" block's transaction
+                            await conn.execute("DELETE FROM user_items WHERE item_id = $1", item_id)
 
-            except Exception as e:
-                # If any operation above fails, the transaction is automatically rolled back.
-                self.logger.error(f"Enhancement transaction failed for user {user_id}: {e}")
-                await interaction.followup.send(
-                    f"⚠️ **강화 오류!** 데이터베이스 트랜잭션 실패. 비용이 환불되었거나 아이템 상태가 변경되지 않았습니다. ({e})", ephemeral=True)
-                return
-            # --- ATOMIC TRANSACTION END ---
+                            # 3. Log enhancement attempt
+                            await conn.execute("""
+                                    INSERT INTO enhancement_logs (user_id, guild_id, item_id, old_level, new_level, result, cost)
+                                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                                """, user_id, guild_id, item_id, current_level, new_level, result, cost)
+
+                    except Exception as e:
+                        # If any operation above fails, the transaction is automatically rolled back.
+                        self.logger.error(f"Enhancement transaction failed for user {user_id}: {e}")
+                        await interaction.followup.send(
+                            f"⚠️ **강화 오류!** 데이터베이스 트랜잭션 실패. 비용이 환불되었거나 아이템 상태가 변경되지 않았습니다. ({e})", ephemeral=True)
+                        return
+                    # --- ATOMIC TRANSACTION END ---
 
             # Create result embed with visual effects
             rarity_info = self.item_rarities[template['rarity']]
@@ -1849,10 +1857,6 @@ class EnhancementResultView(discord.ui.View):
                 await self.message.edit(view=self)
         except discord.NotFound:
             pass  # Message was deleted
-
-
-class MarketplaceView(discord.ui.View):
-    """Marketplace viewing and purchasing interface"""
 
 async def setup(bot):
     await bot.add_cog(EnhancementCog(bot))
