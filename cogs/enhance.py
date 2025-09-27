@@ -375,16 +375,23 @@ class EnhancementCog(commands.Cog):
 
         self.bot.loop.create_task(self.setup_system())
 
+        # enhance.py
+
     def load_item_pool(self) -> List[Dict]:
         """Load the massive item pool from a static JSON file."""
-        # Assumes item_templates.json is in the same directory as this cog file
-        file_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'item_templates.json')
+
+        # --- START OF FIX ---
+        # Get the directory where this cog file (enhance.py) is located
+        cog_dir = os.path.dirname(os.path.abspath(__file__))
+        # Construct the path to the project root (one level up) and then into the data folder
+        file_path = os.path.join(cog_dir, '..', 'data', 'item_templates.json')
+        # --- END OF FIX ---
+
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 items = json.load(f)
                 valid_items = []
                 for item in items:
-                    # --- START OF FIX ---
                     # Check if the 'id' key exists and is not None before processing
                     if 'id' in item and item['id'] is not None:
                         # Item IDs might be stored as strings in JSON keys, ensure proper type conversion
@@ -398,10 +405,10 @@ class EnhancementCog(commands.Cog):
 
                         valid_items.append(item)
                     else:
-                        self.logger.warning(f"Skipping item due to missing 'id': {item.get('name', 'Unnamed Item')}")
-                    # --- END OF FIX ---
+                        self.logger.warning(
+                            f"Skipping item due to missing 'id': {item.get('name', 'Unnamed Item')}")
 
-                self.logger.info(f"Loaded {len(valid_items)} valid items from item_templates.json.")
+                self.logger.info(f"Loaded {len(valid_items)} valid items from {file_path}.")
                 return valid_items
         except FileNotFoundError:
             self.logger.error(f"FATAL: item_templates.json not found at {file_path}. The item pool is empty.")
