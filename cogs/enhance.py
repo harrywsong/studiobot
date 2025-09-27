@@ -607,25 +607,22 @@ class EnhancementCog(commands.Cog):
         base = rarity_prices.get(rarity, 100)
         return int(base * (tier + 1) * 1.5)
 
-    def calculate_vendor_sell_price(template: dict, enhancement_level: int) -> int:
+    def calculate_vendor_sell_price(self, template: dict, enhancement_level: int) -> int:
         base_price = template.get('base_price', 100)
 
-        # conservative rarity multipliers
         rarity_multipliers = {
-            "일반": 0.2, "고급": 0.35, "희귀": 0.5, "영웅": 0.7,
-            "고유": 1.0, "전설": 1.4, "신화": 1.8
+            "Common": 0.2, "Uncommon": 0.35, "Rare": 0.5, "Epic": 0.7,
+            "Unique": 1.0, "Legendary": 1.4, "Mythic": 1.8
         }
-        rarity_multiplier = rarity_multipliers.get(template['rarity'], 0.2)
+        rarity_multiplier = rarity_multipliers.get(template.get('rarity'), 0.2)
 
-        # enhancement scaling
         if enhancement_level <= 15:
-            enhancement_multiplier = 1.0  # flat, no resale growth until late-game
+            enhancement_multiplier = 1.0
         else:
             enhancement_multiplier = 1.15 ** (enhancement_level - 15)
 
         final_price = int(base_price * rarity_multiplier * enhancement_multiplier)
 
-        # minimum safeguard (so trash still sells for something)
         min_price = 5 + enhancement_level
         return max(final_price, min_price)
 
