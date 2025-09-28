@@ -10,7 +10,7 @@ import os
 
 from utils.logger import get_logger
 from utils import config
-
+##
 
 class ShopView(discord.ui.View):
     """Persistent view for the shop system"""
