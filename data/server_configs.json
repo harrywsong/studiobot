@@ -1,0 +1,171 @@
+{
+  "1059211805567746090": {
+    "guild_id": "1059211805567746090",
+    "guild_name": "스튜디오",
+    "channels": {
+      "log_channel": {
+        "id": 1417714557295792229,
+        "name": "╔🦾┆봇기록"
+      },
+      "welcome_channel": {
+        "id": 1417714107745829007,
+        "name": "╚🎊┆환영합니다"
+      },
+      "goodbye_channel": {
+        "id": 1417714121960456255,
+        "name": "╚👋🏻┆빠이요"
+      },
+      "member_chat_channel": {
+        "id": 1417714744869130240,
+        "name": "╔💬┆잡담"
+      },
+      "message_history_channel": {
+        "id": 1417714380119871530,
+        "name": "╠💾┆채팅-기록"
+      },
+      "slots_channel": {
+        "id": 1417712553966178374,
+        "name": "slots"
+      },
+      "blackjack_channel": {
+        "id": 1417712589269373039,
+        "name": "blackjack"
+      },
+      "hilow_channel": {
+        "id": 1417712642713194608,
+        "name": "hilo"
+      },
+      "dice_channel": {
+        "id": 1417712783646265456,
+        "name": "dice"
+      },
+      "roulette_channel": {
+        "id": 1417712820296089750,
+        "name": "roulette"
+      },
+      "lottery_channel": {
+        "id": 1417712860926312508,
+        "name": "lottery"
+      },
+      "coinflip_channel": {
+        "id": 1417712892614017185,
+        "name": "coin-toss"
+      },
+      "minesweeper_channel": {
+        "id": 1417712923597340783,
+        "name": "minesweeper"
+      },
+      "bingo_channel": {
+        "id": 1417712963493826651,
+        "name": "bingo"
+      },
+      "crash_channel": {
+        "id": 1417712995194241055,
+        "name": "crash"
+      },
+      "holdem_channel": {
+        "id": 1418010194364858480,
+        "name": "pvp-games"
+      },
+      "carddraw_channel": {
+        "id": 1418012530327949443,
+        "name": "pvp-games"
+      },
+      "rps_channel": {
+        "id": 1418010133753106565,
+        "name": "pvp-games"
+      },
+      "achievement_channel": {
+        "id": 1417713177071845446,
+        "name": "achievement-leaderboard"
+      },
+      "achievement_alert_channel": {
+        "id": 1417713231002075146,
+        "name": "achievement-alert"
+      },
+      "leaderboard_channel": {
+        "id": 1417713298400481323,
+        "name": "coin-leaderboard"
+      },
+      "ticket_category": {
+        "id": 1417715508207157459,
+        "name": "-- 🪽 신들의 안내센터 --"
+      },
+      "ticket_channel": {
+        "id": 1417715586900951082,
+        "name": "❓┆고객센터"
+      },
+      "ticket_history_channel": {
+        "id": 1417715631108788244,
+        "name": "❗┆문의로그"
+      },
+      "temp_voice_category": {
+        "id": 1417715706694340669,
+        "name": "-- 🚂 바다를 건너는 기차 --"
+      },
+      "lobby_voice": {
+        "id": 1417715860382027886,
+        "name": "🔊┆임시 음성채널 생성"
+      },
+      "scrim_channel": {
+        "id": 1417716006281023559,
+        "name": "내전-로비"
+      }
+    },
+    "roles": {
+      "staff_role": {
+        "id": 1417771791384051823,
+        "name": "토토로"
+      },
+      "admin_role": {
+        "id": 1417711511518056458,
+        "name": "admin"
+      },
+      "member_role": {
+        "id": 1059223354101481512,
+        "name": "정령"
+      },
+      "unverified_role": null
+    },
+    "features": {
+      "casino_games": true,
+      "achievements": true,
+      "ticket_system": true,
+      "voice_channels": true,
+      "scrim_system": true,
+      "welcome_messages": true,
+      "auto_moderation": true,
+      "reaction_roles": true,
+      "message_history": true
+    },
+    "settings": {
+      "starting_coins": 200
+    },
+    "auto_role_ids": [1366087688263827477, 1059223354101481512, 1366084112791765192, 1367056177476665384, 1378102068199428186, 1368443372884463616],
+    "reaction_roles": {
+      "1417793257433333831": {
+        "<:valorant:1367050356852396106>": 1209013681753563156,
+        "<:tft:1367065410419298326>": 1333664246608957461,
+        "<:lol:1367065409240698942>": 1209014051317743626,
+        "<:1016_pubghelmet3:1417766085486317637>": 1417766140121186359,
+        "🎮": 1417766914003959878
+      },
+      "1417793351779876997": {
+        "<:valorantradiant:1367055860479692822>": 1367056117280149525,
+        "<:valorantimmortal:1367050346874011668>": 1367056231792902204,
+        "<:valorantascendant:1367050328976920606>": 1367056342732242944,
+        "<:valorantdiamond:1367055861351972905>": 1367056373963296768,
+        "<:valorantplatinum:1367055859435175986>": 1367056400710242405,
+        "<:valorantgold:1367050331242106951>": 1367056422495584349,
+        "<:valorantsilver:1367050333083402280>": 1367056435669635072,
+        "<:valorantbronze:1367050339987095563>": 1367056446092738561,
+        "<:valorantiron:1367050325457899590>": 1367056457543188520
+      },
+      "1417801375622103165": {
+            "🎰": 1417801257640394874,
+            "🏆": 1417801307149963264,
+            "🧪": 1421269629585850439,
+      }
+    }
+  }
+}
