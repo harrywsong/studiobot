@@ -726,17 +726,17 @@ class MyBot(commands.Bot):
         await self._handle_startup_logs()
 
         # Get a valid log channel from any configured server for global logging
-        log_channel_id = self._get_global_log_channel()
+        # log_channel_id = self._get_global_log_channel() # COMMENTED OUT: Not needed here
 
         # Configure enhanced logging
         # Configure enhanced logging
         try:
-            # Note: We now pass the bot instance to configure the DiscordHandler
-            logger_module.setup_logging(
-                bot=self
-            )
+            # NOTE: Discord logger setup MOVED to on_ready() to prevent early access errors.
+            # logger_module.setup_logging(
+            #     bot=self
+            # )
             self.logger = logging.getLogger('main_bot')
-            self.logger.info("✅ Bot logger configured successfully.")
+            self.logger.info("✅ Bot logger initialized (Discord setup moved to on_ready).")
         except Exception as e:
             self.logger.error(f"❌ Error setting up logger: {e}", exc_info=True)
 
@@ -924,6 +924,19 @@ class MyBot(commands.Bot):
 
     async def on_ready(self):
         """Enhanced on_ready with better initialization"""
+
+        # --- LOGGING SETUP MOVED FROM setup_hook ---
+        try:
+            # Re-run setup_logging now that the bot is ready and has cached guilds/channels.
+            # This is essential to prevent the "log channel not available" error.
+            logger_module.setup_logging(bot=self)
+            self.logger = logging.getLogger('main_bot')
+            self.logger.info("✅ Discord log handler enabled.")
+        except Exception as e:
+            # Use the already available logger for this error
+            self.logger.error(f"❌ Error setting up Discord log handler in on_ready: {e}", exc_info=True)
+        # --- END LOGGING SETUP ---
+
         self.logger.info(f"--- Bot login complete: {self.user} (ID: {self.user.id}) ---")
         self.logger.info(f"Bot connected to the following guilds:")
 
