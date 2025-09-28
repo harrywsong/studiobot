@@ -60,9 +60,12 @@ class DiscordHandler(logging.Handler):
                     self.channel_cache[guild_id] = channel
                     return channel
 
-        # 3. Fallback to the global log channel from environment variables
-        global_log_channel_id_str = os.getenv("DISCORD_LOG_CHANNEL_ID")
-        global_log_channel_id = int(global_log_channel_id_str) if global_log_channel_id_str else None
+                # 3. Fallback to the global log channel (HARDCODED: 1417714557295792229)
+                GLOBAL_LOG_CHANNEL_ID_HARDCODED = 1417714557295792229
+                global_log_channel_id_str = os.getenv("DISCORD_LOG_CHANNEL_ID")
+                # Use the environment variable if present, otherwise use the hardcoded ID
+                global_log_channel_id = int(
+                    global_log_channel_id_str) if global_log_channel_id_str else GLOBAL_LOG_CHANNEL_ID_HARDCODED
 
         if global_log_channel_id and 0 not in self.channel_cache:
             global_channel = self.bot.get_channel(global_log_channel_id)
